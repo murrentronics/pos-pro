@@ -161,3 +161,25 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # ── 19. Deploy download page to Cloudflare Pages (pos-pro) ────────────
+      - name: Prepare download page for deploy
+        run: |
+          mkdir -p dist/download
+          cp public/download.html dist/download/index.html
+          # Copy assets needed by the download page
+          cp -r public/assets dist/download/assets 2>/dev/null || true
+          cp public/logo.svg dist/download/logo.svg 2>/dev/null || true
+          # _redirects: serve index.html for all routes
+          echo "/* /index.html 200" > dist/download/_redirects
+
+      - name: Deploy to Cloudflare Pages (pos-pro download)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '3.90.0'
+          command: pages deploy dist/download --project-name=pos-pro --commit-dirty=true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

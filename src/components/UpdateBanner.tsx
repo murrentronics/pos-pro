@@ -22,7 +22,7 @@ interface Props {
 export function UpdateBanner({ update, onDismiss }: Props) {
   const [downloading, setDownloading] = useState(false);
 
-  const DOWNLOAD_PAGE = "https://pos-pro.pages.dev/download.html";
+  const DOWNLOAD_PAGE = "https://pos-pro.pages.dev";
 
   const handleUpdate = async () => {
     setDownloading(true);

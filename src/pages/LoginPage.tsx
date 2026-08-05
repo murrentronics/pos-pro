@@ -49,7 +49,7 @@ export default function LoginPage() {
             <Wine className="h-8 w-8 text-primary-foreground" />
           </div>
           <h1 className="text-4xl font-black tracking-tight">P.O.S. Pro</h1>
-          <p className="text-muted-foreground mt-1">{t("bar_pos_wallet", "Bar POS & Wallet")}</p>
+          <p className="text-muted-foreground mt-1">{t("business_pos_wallet", "Business POS & Wallet")}</p>
         </div>
 
         <Tabs defaultValue="signin" className="w-full">
