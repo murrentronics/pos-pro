@@ -32,10 +32,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       // Viewport: covers notch/safe areas, prevents zoom
       { name: "viewport", content: "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" },
-      { title: "Bartendaz Pro — Bar POS & Wallet" },
+      { title: "P.O.S. Pro — Bar POS & Wallet" },
       { name: "description", content: "Fast bar POS for owners and cashiers. Cash items, track wallet, manage staff." },
-      { property: "og:title", content: "Bartendaz Pro — Bar POS & Wallet" },
-      { name: "twitter:title", content: "Bartendaz Pro — Bar POS & Wallet" },
+      { property: "og:title", content: "P.O.S. Pro — Bar POS & Wallet" },
+      { name: "twitter:title", content: "P.O.S. Pro — Bar POS & Wallet" },
       { property: "og:description", content: "Fast bar POS for owners and cashiers. Cash items, track wallet, manage staff." },
       { name: "twitter:description", content: "Fast bar POS for owners and cashiers. Cash items, track wallet, manage staff." },
       { property: "og:image", content: "" },
@@ -47,10 +47,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "apple-mobile-web-app-capable", content: "yes" },
       // "black-translucent" lets content go under the status bar (notch area)
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
-      { name: "apple-mobile-web-app-title", content: "Bartendaz" },
-      { name: "theme-color", content: "#0a0a0a" },
+      { name: "apple-mobile-web-app-title", content: "P.O.S. Pro" },
+      { name: "theme-color", content: "#020810" },
       // Android Chrome — hide address bar when added to home screen
-      { name: "application-name", content: "Bartendaz Pro" },
+      { name: "application-name", content: "P.O.S. Pro" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

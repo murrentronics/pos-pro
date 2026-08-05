@@ -21,13 +21,10 @@ function LoginPage() {
   useEffect(() => {
     if (!loading && session && profile) {
       const isManager = profile.role === "manager" || (profile as any)?.job_title === "manager";
-      const isMachinesOnly = (profile as any)?.is_machines_account || profile.plan_type === "machines_only";
       const dest = profile.role === "admin"
         ? "/admin"
         : isManager
         ? "/products"
-        : isMachinesOnly
-        ? "/machines"
         : "/register";
       nav({ to: dest as any });
     }
@@ -35,14 +32,14 @@ function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-3 py-8"
-      style={{ background: "radial-gradient(circle at 20% 0%, oklch(0.3 0.05 60) 0%, oklch(0.15 0.02 60) 60%)" }}>
+      style={{ background: "radial-gradient(circle at 20% 0%, oklch(0.22 0.08 240) 0%, oklch(0.08 0.04 240) 60%)" }}>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl mb-4"
             style={{ background: "var(--gradient-hero)", boxShadow: "var(--shadow-glow)" }}>
             <Wine className="h-8 w-8 text-primary-foreground" />
           </div>
-          <h1 className="text-4xl font-black tracking-tight">Bartendaz Pro</h1>
+          <h1 className="text-4xl font-black tracking-tight">P.O.S. Pro</h1>
           <p className="text-muted-foreground mt-1">Bar POS & Wallet</p>
         </div>
 

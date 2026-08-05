@@ -39,58 +39,57 @@
 
 :root {
   --radius: 0.875rem;
-  /* Deep amber/charcoal bar theme */
-  /* Hex fallbacks are listed first so browsers that don't support oklch() still render correctly */
-  --background: #2a2318;
-  --background: oklch(0.18 0.02 60);
-  --foreground: #f7f4ef;
-  --foreground: oklch(0.97 0.02 80);
-  --card: #332c20;
-  --card: oklch(0.23 0.025 60);
-  --card-foreground: #f7f4ef;
-  --card-foreground: oklch(0.97 0.02 80);
-  --popover: #2f2820;
-  --popover: oklch(0.21 0.025 60);
-  --popover-foreground: #f7f4ef;
-  --popover-foreground: oklch(0.97 0.02 80);
-  --primary: #d4a043;
-  --primary: oklch(0.78 0.17 65);
-  --primary-foreground: #1e1a13;
-  --primary-foreground: oklch(0.18 0.03 60);
-  --secondary: #3d3426;
-  --secondary: oklch(0.3 0.03 60);
-  --secondary-foreground: #f7f4ef;
-  --secondary-foreground: oklch(0.97 0.02 80);
-  --muted: #38301f;
-  --muted: oklch(0.27 0.02 60);
-  --muted-foreground: #a89070;
-  --muted-foreground: oklch(0.7 0.03 70);
-  --accent: #b84a1e;
-  --accent: oklch(0.65 0.2 30);
-  --accent-foreground: #faf9f7;
-  --accent-foreground: oklch(0.98 0.01 80);
-  --destructive: #c0391a;
+  /* Futuristic digital blue theme */
+  --background: #050d1a;
+  --background: oklch(0.10 0.04 240);
+  --foreground: #e8f4ff;
+  --foreground: oklch(0.95 0.02 220);
+  --card: #0a1628;
+  --card: oklch(0.14 0.05 240);
+  --card-foreground: #e8f4ff;
+  --card-foreground: oklch(0.95 0.02 220);
+  --popover: #080f20;
+  --popover: oklch(0.12 0.045 240);
+  --popover-foreground: #e8f4ff;
+  --popover-foreground: oklch(0.95 0.02 220);
+  --primary: #00b4ff;
+  --primary: oklch(0.72 0.18 220);
+  --primary-foreground: #000d1a;
+  --primary-foreground: oklch(0.08 0.04 240);
+  --secondary: #0f1f38;
+  --secondary: oklch(0.18 0.06 240);
+  --secondary-foreground: #e8f4ff;
+  --secondary-foreground: oklch(0.95 0.02 220);
+  --muted: #0c1a30;
+  --muted: oklch(0.16 0.05 240);
+  --muted-foreground: #5b8db8;
+  --muted-foreground: oklch(0.62 0.08 220);
+  --accent: #0066cc;
+  --accent: oklch(0.55 0.18 240);
+  --accent-foreground: #e8f4ff;
+  --accent-foreground: oklch(0.95 0.02 220);
+  --destructive: #e03c3c;
   --destructive: oklch(0.6 0.22 27);
-  --destructive-foreground: #faf9f7;
-  --destructive-foreground: oklch(0.98 0.01 80);
-  --success: #3a9e5a;
-  --success: oklch(0.7 0.18 150);
-  --success-foreground: #0d2918;
-  --success-foreground: oklch(0.15 0.03 150);
-  --border: #3d3426;
-  --border: oklch(0.3 0.02 60);
-  --input: #38301f;
-  --input: oklch(0.27 0.02 60);
-  --ring: #d4a043;
-  --ring: oklch(0.78 0.17 65);
+  --destructive-foreground: #fff0f0;
+  --destructive-foreground: oklch(0.98 0.01 27);
+  --success: #00c97a;
+  --success: oklch(0.72 0.18 160);
+  --success-foreground: #001a0e;
+  --success-foreground: oklch(0.10 0.04 160);
+  --border: #0e2040;
+  --border: oklch(0.20 0.07 240);
+  --input: #0c1a30;
+  --input: oklch(0.16 0.05 240);
+  --ring: #00b4ff;
+  --ring: oklch(0.72 0.18 220);
 
-  --gradient-hero: linear-gradient(135deg, #d4a043 0%, #b84a1e 100%);
-  --gradient-hero: linear-gradient(135deg, oklch(0.78 0.17 65) 0%, oklch(0.65 0.2 30) 100%);
-  --gradient-card: linear-gradient(160deg, #352e1e 0%, #2f2820 100%);
-  --gradient-card: linear-gradient(160deg, oklch(0.26 0.03 60) 0%, oklch(0.21 0.025 60) 100%);
-  --shadow-elegant: 0 12px 40px -12px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 30px rgba(212, 160, 67, 0.35);
-  --shadow-glow: 0 0 30px oklch(0.78 0.17 65 / 0.35);
+  --gradient-hero: linear-gradient(135deg, #0099e6 0%, #0047ab 100%);
+  --gradient-hero: linear-gradient(135deg, oklch(0.68 0.18 220) 0%, oklch(0.45 0.20 250) 100%);
+  --gradient-card: linear-gradient(160deg, #0a1a32 0%, #060f1e 100%);
+  --gradient-card: linear-gradient(160deg, oklch(0.15 0.06 240) 0%, oklch(0.10 0.04 240) 100%);
+  --shadow-elegant: 0 12px 40px -12px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 30px rgba(0, 180, 255, 0.30);
+  --shadow-glow: 0 0 30px oklch(0.72 0.18 220 / 0.30);
 }
 
 .dark { color-scheme: dark; }
@@ -146,7 +145,7 @@ select,
 textarea {
   background-color: #ffffff !important;
   color: #111111 !important;
-  border: 1.5px solid #d1a84b !important; /* amber accent border */
+  border: 1.5px solid #0099e6 !important; /* blue accent border */
   border-radius: var(--radius-md, 0.5rem);
 }
 
@@ -154,8 +153,8 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="
 select:focus,
 textarea:focus {
   outline: none !important;
-  border-color: #f5c842 !important;
-  box-shadow: 0 0 0 2px oklch(0.78 0.17 65 / 0.35) !important;
+  border-color: #00b4ff !important;
+  box-shadow: 0 0 0 2px oklch(0.72 0.18 220 / 0.35) !important;
 }
 
 input::placeholder,

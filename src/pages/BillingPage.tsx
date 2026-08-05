@@ -303,13 +303,12 @@ export default function BillingPage() {
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const pendingPayment  = payments.find(p => p.status === "pending");
-  const hasActive       = profile?.billing_status === "active" ||
-    ((profile?.plan_type === "machines_only" || (profile?.plan_type as string) === "machines_only_20") && !!profile?.machines_addon_active);
+  const hasActive       = profile?.billing_status === "active";
   const isSpecial       = userEmail === SPECIAL_EMAIL;
   const isBasic         = profile?.plan_type === "basic";
   const isPremium       = profile?.plan_type === "premium" || (profile?.plan_type as string) === "premium_20";
   const isChain         = false; // chain plan retired — premium handles multi-bar
-  const isMachinesOnly  = profile?.plan_type === "machines_only" || (profile?.plan_type as string) === "machines_only_20";
+  const isMachinesOnly  = false; // machines feature removed from P.O.S. Pro
 
   const basicPlan             = plans.find(p => p.plan_type === "basic");
   const premiumPlan           = plans.find(p => p.plan_type === "premium");
@@ -349,10 +348,10 @@ export default function BillingPage() {
   const premOverdue   = premEnd ? premEnd < new Date() : false;
   const premCanRenew  = premOverdue || (premDaysLeft !== null && premDaysLeft <= 7);
 
-  const addonEnd      = profile?.machines_addon_end_date ? new Date(profile.machines_addon_end_date) : null;
-  const addonDaysLeft = addonEnd ? Math.ceil((addonEnd.getTime() - Date.now()) / 86400000) : null;
-  const addonOverdue  = addonEnd ? addonEnd < new Date() : false;
-  const addonCanRenew = addonOverdue || (addonDaysLeft !== null && addonDaysLeft <= 7);
+  const addonEnd      = null as Date | null;
+  const addonDaysLeft = null as number | null;
+  const addonOverdue  = false;
+  const addonCanRenew = false;
 
   // Chain plan retired — premium is now the multi-bar plan
   // keeping these as null so nothing breaks if old chain profile rows exist
@@ -400,13 +399,8 @@ export default function BillingPage() {
     if (!isAddonPlanSelected) return null;
     if ((profile?.plan_type === "premium" || (profile?.plan_type as string) === "premium_20") && profile?.premium_subscription_end_date)
       return new Date(profile.premium_subscription_end_date);
-    if (profile?.plan_type === "machines_only" && profile?.machines_addon_end_date)
-      return new Date(profile.machines_addon_end_date);
     if (profile?.subscription_end_date)
       return new Date(profile.subscription_end_date);
-    // machines_only uses machines_addon_end_date — also check it as fallback
-    if ((profile as any)?.machines_addon_end_date)
-      return new Date((profile as any).machines_addon_end_date);
     return null;
   })();
 

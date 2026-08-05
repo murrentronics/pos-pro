@@ -60,7 +60,7 @@ serve(async (req) => {
     const htmlBody = `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;">
         <h2 style="color:#1a1a1a;margin-bottom:4px;">💳 New Pending Payment</h2>
-        <p style="color:#666;margin-top:0;">A new billing payment is awaiting your approval on Bartendaz Pro.</p>
+        <p style="color:#666;margin-top:0;">A new billing payment is awaiting your approval on P.O.S. Pro.</p>
         <table style="width:100%;border-collapse:collapse;margin:24px 0;background:#f9f9f9;border-radius:8px;overflow:hidden;">
           <tr>
             <td style="padding:12px 16px;font-weight:bold;color:#555;width:40%;">Owner</td>
@@ -88,10 +88,10 @@ serve(async (req) => {
           </tr>
         </table>
         <p style="color:#666;font-size:14px;">
-          Log in to Bartendaz Pro admin → <strong>Billing Management → Pending</strong> to approve or reject.
+          Log in to P.O.S. Pro admin → <strong>Billing Management → Pending</strong> to approve or reject.
         </p>
         <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-        <p style="color:#aaa;font-size:12px;">Bartendaz Pro · Automated notification</p>
+        <p style="color:#aaa;font-size:12px;">P.O.S. Pro · Automated notification</p>
       </div>
     `;
 
@@ -102,7 +102,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "Bartendaz Pro <onboarding@resend.dev>",
+        from: "P.O.S. Pro <onboarding@resend.dev>",
         to: [ADMIN_EMAIL],
         subject: `💳 New Pending Payment — ${ownerName} ($${amount} TT)`,
         html: htmlBody,

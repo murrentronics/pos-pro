@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.bartendaz.pro",
-  appName: "Bartendaz Pro",
+  appId: "com.pospro.app",
+  appName: "P.O.S. Pro",
   webDir: "dist/client",
   plugins: {
     SplashScreen: {
@@ -18,7 +18,7 @@ const config: CapacitorConfig = {
     FileOpener: {},
     LocalNotifications: {
       smallIcon: "ic_stat_icon_config_sample",
-      iconColor: "#f97316",
+      iconColor: "#00b4ff",
       sound: "default",
     },
   },

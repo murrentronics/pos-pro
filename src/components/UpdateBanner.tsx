@@ -22,7 +22,7 @@ interface Props {
 export function UpdateBanner({ update, onDismiss }: Props) {
   const [downloading, setDownloading] = useState(false);
 
-  const DOWNLOAD_PAGE = "https://bartendaz-pro.pages.dev/download.html";
+  const DOWNLOAD_PAGE = "https://pos-pro.pages.dev/download.html";
 
   const handleUpdate = async () => {
     setDownloading(true);
@@ -32,7 +32,7 @@ export function UpdateBanner({ update, onDismiss }: Props) {
         await Browser.open({
           url: DOWNLOAD_PAGE,
           presentationStyle: "fullscreen",
-          toolbarColor: "#0a0a02",
+          toolbarColor: "#000d1a",
         });
       } else {
         window.open(DOWNLOAD_PAGE, "_blank");

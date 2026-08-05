@@ -1,20 +1,20 @@
 # Cloudflare Pages Setup Guide
 
 ## Your Deployment URL
-https://bartendaz-admin.pages.dev
+https://pospro-web.pages.dev
 
 ## Step 1: Set Environment Variables in Cloudflare Pages
 
 Go to your Cloudflare Pages dashboard:
 1. Go to https://dash.cloudflare.com
 2. Click on **Pages** in the left sidebar
-3. Click on your **bartendaz-admin** project
+3. Click on your **pospro-web** project
 4. Go to **Settings** → **Environment variables**
 5. Add these variables for **Production**:
 
 ```
-VITE_SUPABASE_URL = https://vavfsgbrfpvolskscolf.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlkZW1vdWJueWFva3VtdW5oa3psIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzODMwNjgsImV4cCI6MjA5Mzk1OTA2OH0.2lNyBC5o_Z630TJ8FeIC-PpstfFUoVhPaZwjjpqZvFc
+VITE_SUPABASE_URL = https://wpuqdwrndjswjzieoinx.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwdXFkd3JuZGpzd2p6aWVvaW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5MzgzMzYsImV4cCI6MjEwMTUxNDMzNn0.d-uguw1p2gUgqjxf_WhZSvXwQD6AbB-A2pIIZah7nFc
 ```
 
 6. Click **Save**
@@ -25,13 +25,13 @@ VITE_SUPABASE_PUBLISHABLE_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ
 
 Go to your Supabase dashboard:
 1. Go to https://supabase.com/dashboard
-2. Select your project: **vavfsgbrfpvolskscolf**
+2. Select your project: **wpuqdwrndjswjzieoinx**
 3. Go to **Authentication** → **URL Configuration**
 4. Add these URLs to **Redirect URLs**:
-   - `https://bartendaz-admin.pages.dev`
-   - `https://bartendaz-admin.pages.dev/login`
-   - `https://bartendaz-admin.pages.dev/*`
-5. Add to **Site URL**: `https://bartendaz-admin.pages.dev`
+   - `https://pospro-web.pages.dev`
+   - `https://pospro-web.pages.dev/login`
+   - `https://pospro-web.pages.dev/*`
+5. Add to **Site URL**: `https://pospro-web.pages.dev`
 6. Click **Save**
 
 ## Step 3: Build Settings (if needed)
@@ -45,7 +45,7 @@ Make sure your Cloudflare Pages build settings are:
 ## Step 4: Test the Deployment
 
 After redeploying:
-1. Visit https://bartendaz-admin.pages.dev
+1. Visit https://pospro-web.pages.dev
 2. Try to login with your admin credentials
 3. Check browser console (F12) for any errors
 
@@ -68,5 +68,5 @@ After redeploying:
 To redeploy from your local machine:
 ```bash
 npm run build
-npx wrangler pages deploy dist/client --project-name=bartendaz-admin
+npx wrangler pages deploy dist/client --project-name=pospro-web
 ```

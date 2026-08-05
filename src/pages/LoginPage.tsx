@@ -26,13 +26,10 @@ export default function LoginPage() {
     if (forgotOpen) return;
     if (!loading && session && profile) {
       const isManager = profile.role === "manager" || (profile as any)?.job_title === "manager";
-      const isMachinesOnly = (profile as any)?.is_machines_account || profile.plan_type === "machines_only";
       const dest = profile.role === "admin"
         ? "/admin"
         : isManager
         ? "/products"
-        : isMachinesOnly
-        ? "/machines"
         : "/register";
       nav(dest, { replace: true });
     }
@@ -41,7 +38,7 @@ export default function LoginPage() {
   return (
     <div
       className="min-h-screen flex items-center justify-center px-3 py-8"
-      style={{ background: "radial-gradient(circle at 20% 0%, oklch(0.3 0.05 60) 0%, oklch(0.15 0.02 60) 60%)" }}
+      style={{ background: "radial-gradient(circle at 20% 0%, oklch(0.22 0.08 240) 0%, oklch(0.08 0.04 240) 60%)" }}
     >
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
@@ -51,7 +48,7 @@ export default function LoginPage() {
           >
             <Wine className="h-8 w-8 text-primary-foreground" />
           </div>
-          <h1 className="text-4xl font-black tracking-tight">Bartendaz Pro</h1>
+          <h1 className="text-4xl font-black tracking-tight">P.O.S. Pro</h1>
           <p className="text-muted-foreground mt-1">{t("bar_pos_wallet", "Bar POS & Wallet")}</p>
         </div>
 
@@ -455,11 +452,11 @@ function TermsConditionsContent() {
       <p style={h}>4. Data Ownership</p>
       <p style={p}>You retain full ownership of your business data. We process it only to deliver the service.</p>
       <p style={h}>5. Limitation of Liability</p>
-      <p style={p}>Bartendaz Pro is not liable for indirect, incidental, or consequential damages arising from your use of the platform.</p>
+      <p style={p}>P.O.S. Pro is not liable for indirect, incidental, or consequential damages arising from your use of the platform.</p>
       <p style={h}>6. Governing Law</p>
       <p style={p}>These Terms are governed by the laws of Trinidad and Tobago.</p>
       <p style={h}>7. Contact</p>
-      <p style={p}>Questions? Email <span style={{ color: "#F0A030" }}>support@bartendazpro.com</span></p>
+      <p style={p}>Questions? Email <span style={{ color: "#00b4ff" }}>support@pospro.app</span></p>
     </div>
   );
 }
@@ -470,7 +467,7 @@ function TermsOfUseContent() {
   const li: React.CSSProperties = { fontSize: "0.82rem", color: "#c8b090", lineHeight: 1.7, marginBottom: 3 };
   return (
     <div style={{ color: "#e8d5b0" }}>
-      <p style={{ ...p, marginBottom: 16 }}>Last updated: August 2026. These Terms govern your day-to-day use of Bartendaz Pro.</p>
+      <p style={{ ...p, marginBottom: 16 }}>Last updated: August 2026. These Terms govern your day-to-day use of P.O.S. Pro.</p>
       <p style={h}>1. Acceptable Use</p>
       <ul style={{ paddingLeft: 18, margin: "0 0 10px" }}>
         <li style={li}>Use the app only for lawful purposes consistent with all applicable laws.</li>
@@ -487,11 +484,11 @@ function TermsOfUseContent() {
       <p style={h}>3. Content You Submit</p>
       <p style={p}>You are solely responsible for all product images, names, prices, and customer data you upload. You confirm you have rights to all submitted content.</p>
       <p style={h}>4. Intellectual Property</p>
-      <p style={p}>All software, design, graphics, and trademarks belong to Bartendaz Pro. These Terms grant only a limited license to use the platform as described.</p>
+      <p style={p}>All software, design, graphics, and trademarks belong to P.O.S. Pro. These Terms grant only a limited license to use the platform as described.</p>
       <p style={h}>5. Disclaimer of Warranties</p>
-      <p style={p}>Bartendaz Pro is provided "as is" without warranties of any kind. We do not guarantee the app will be error-free or uninterrupted.</p>
+      <p style={p}>P.O.S. Pro is provided "as is" without warranties of any kind. We do not guarantee the app will be error-free or uninterrupted.</p>
       <p style={h}>6. Contact</p>
-      <p style={p}>Violations or questions? Email <span style={{ color: "#F0A030" }}>support@bartendazpro.com</span></p>
+      <p style={p}>Violations or questions? Email <span style={{ color: "#00b4ff" }}>support@pospro.app</span></p>
     </div>
   );
 }

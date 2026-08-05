@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.bartendaz.pro"
+    namespace = "com.pospro.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.bartendaz.pro"
+        applicationId "com.pospro.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 834
@@ -18,7 +18,7 @@ android {
     }
     signingConfigs {
         release {
-            storeFile file("bartendaz.jks")
+            storeFile file("pospro.jks")
             storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
             keyAlias System.getenv("KEY_ALIAS") ?: ""
             keyPassword System.getenv("KEY_PASSWORD") ?: ""

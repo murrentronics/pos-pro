@@ -15,8 +15,8 @@
 import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 
-const GITHUB_OWNER = "murrentronics";   // your GitHub username
-const GITHUB_REPO  = "bartap-pro";      // your GitHub repo name
+const GITHUB_OWNER = "murrentronics";
+const GITHUB_REPO  = "pos-pro";
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
 
 // Current version is injected at build time via vite.config
@@ -75,7 +75,7 @@ export function useAppUpdate() {
         if (!isNewer(CURRENT_VERSION, latestVersion)) return;
 
         // Find the APK asset — looks for any .apk file in the release
-        const apkAsset = data.assets.find((a) => a.name.endsWith(".apk"));
+        const apkAsset = data.assets.find((a) => a.name === "pos-pro.apk") ?? data.assets.find((a) => a.name.endsWith(".apk"));
         if (!apkAsset) return;
 
         setUpdate({

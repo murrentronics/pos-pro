@@ -14,8 +14,6 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppStockCheckRouteImport } from './routes/_app/stock-check'
 import { Route as AppManagerRouteImport } from './routes/_app/manager'
-import { Route as AppMachinesRouteImport } from './routes/_app/machines'
-import { Route as AppFactoryResetRouteImport } from './routes/_app/factory-reset'
 import { Route as AppCreditRouteImport } from './routes/_app/credit'
 
 const _rootCapacitorRoute = _rootCapacitorRouteImport.update({
@@ -42,16 +40,6 @@ const AppManagerRoute = AppManagerRouteImport.update({
   path: '/manager',
   getParentRoute: () => AppRoute,
 } as any)
-const AppMachinesRoute = AppMachinesRouteImport.update({
-  id: '/machines',
-  path: '/machines',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppFactoryResetRoute = AppFactoryResetRouteImport.update({
-  id: '/factory-reset',
-  path: '/factory-reset',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppCreditRoute = AppCreditRouteImport.update({
   id: '/credit',
   path: '/credit',
@@ -63,8 +51,6 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/capacitor': typeof _rootCapacitorRoute
   '/credit': typeof AppCreditRoute
-  '/factory-reset': typeof AppFactoryResetRoute
-  '/machines': typeof AppMachinesRoute
   '/manager': typeof AppManagerRoute
   '/stock-check': typeof AppStockCheckRoute
 }
@@ -73,8 +59,6 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/capacitor': typeof _rootCapacitorRoute
   '/credit': typeof AppCreditRoute
-  '/factory-reset': typeof AppFactoryResetRoute
-  '/machines': typeof AppMachinesRoute
   '/manager': typeof AppManagerRoute
   '/stock-check': typeof AppStockCheckRoute
 }
@@ -84,8 +68,6 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/__root/capacitor': typeof _rootCapacitorRoute
   '/_app/credit': typeof AppCreditRoute
-  '/_app/factory-reset': typeof AppFactoryResetRoute
-  '/_app/machines': typeof AppMachinesRoute
   '/_app/manager': typeof AppManagerRoute
   '/_app/stock-check': typeof AppStockCheckRoute
 }
@@ -96,28 +78,16 @@ export interface FileRouteTypes {
     | '/login'
     | '/capacitor'
     | '/credit'
-    | '/factory-reset'
-    | '/machines'
     | '/manager'
     | '/stock-check'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/login'
-    | '/capacitor'
-    | '/credit'
-    | '/factory-reset'
-    | '/machines'
-    | '/manager'
-    | '/stock-check'
+  to: '/' | '/login' | '/capacitor' | '/credit' | '/manager' | '/stock-check'
   id:
     | '__root__'
     | '/_app'
     | '/login'
     | '/__root/capacitor'
     | '/_app/credit'
-    | '/_app/factory-reset'
-    | '/_app/machines'
     | '/_app/manager'
     | '/_app/stock-check'
   fileRoutesById: FileRoutesById
@@ -165,20 +135,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppManagerRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/machines': {
-      id: '/_app/machines'
-      path: '/machines'
-      fullPath: '/machines'
-      preLoaderRoute: typeof AppMachinesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/factory-reset': {
-      id: '/_app/factory-reset'
-      path: '/factory-reset'
-      fullPath: '/factory-reset'
-      preLoaderRoute: typeof AppFactoryResetRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/credit': {
       id: '/_app/credit'
       path: '/credit'
@@ -191,16 +147,12 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppCreditRoute: typeof AppCreditRoute
-  AppFactoryResetRoute: typeof AppFactoryResetRoute
-  AppMachinesRoute: typeof AppMachinesRoute
   AppManagerRoute: typeof AppManagerRoute
   AppStockCheckRoute: typeof AppStockCheckRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppCreditRoute: AppCreditRoute,
-  AppFactoryResetRoute: AppFactoryResetRoute,
-  AppMachinesRoute: AppMachinesRoute,
   AppManagerRoute: AppManagerRoute,
   AppStockCheckRoute: AppStockCheckRoute,
 }

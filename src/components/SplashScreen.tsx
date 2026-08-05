@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-// The logo SVG inline — amber/orange gradient B on dark background
+// P.O.S. Pro logo — futuristic digital blue "P" on dark circuit background
 function LogoMark({ size = 160 }: { size?: number }) {
   return (
     <svg
@@ -12,34 +12,72 @@ function LogoMark({ size = 160 }: { size?: number }) {
     >
       <defs>
         <linearGradient id="sp-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#F0A030" />
-          <stop offset="100%" stopColor="#C0441A" />
+          <stop offset="0%" stopColor="#00d4ff" />
+          <stop offset="100%" stopColor="#0047ab" />
+        </linearGradient>
+        <linearGradient id="sp-grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#00b4ff" stopOpacity="0.6" />
+          <stop offset="100%" stopColor="#0047ab" stopOpacity="0.1" />
         </linearGradient>
         <radialGradient id="sp-bg" cx="40%" cy="35%">
-          <stop offset="0%" stopColor="#2E1A08" />
-          <stop offset="100%" stopColor="#0F0A04" />
+          <stop offset="0%" stopColor="#061c36" />
+          <stop offset="100%" stopColor="#020810" />
         </radialGradient>
+        <radialGradient id="sp-glow" cx="50%" cy="50%">
+          <stop offset="0%" stopColor="#00b4ff" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="#00b4ff" stopOpacity="0" />
+        </radialGradient>
+        <filter id="sp-blur">
+          <feGaussianBlur stdDeviation="6" />
+        </filter>
       </defs>
+
+      {/* Background circle */}
       <circle cx="256" cy="256" r="256" fill="url(#sp-bg)" />
-      <circle cx="256" cy="256" r="240" fill="none" stroke="#F0A030" strokeWidth="2" opacity="0.25" />
+
+      {/* Outer glow ring */}
+      <circle cx="256" cy="256" r="240" fill="none" stroke="url(#sp-grad)" strokeWidth="2" opacity="0.35" />
+      <circle cx="256" cy="256" r="228" fill="none" stroke="#00b4ff" strokeWidth="0.5" opacity="0.15" />
+
+      {/* Circuit trace lines — horizontal */}
+      <line x1="56" y1="200" x2="140" y2="200" stroke="#00b4ff" strokeWidth="1.5" opacity="0.18" />
+      <line x1="56" y1="200" x2="56" y2="260" stroke="#00b4ff" strokeWidth="1.5" opacity="0.18" />
+      <circle cx="56" cy="260" r="3" fill="#00b4ff" opacity="0.3" />
+      <line x1="372" y1="312" x2="456" y2="312" stroke="#00b4ff" strokeWidth="1.5" opacity="0.18" />
+      <line x1="456" y1="312" x2="456" y2="252" stroke="#00b4ff" strokeWidth="1.5" opacity="0.18" />
+      <circle cx="456" cy="252" r="3" fill="#00b4ff" opacity="0.3" />
+      <line x1="120" y1="380" x2="120" y2="430" stroke="#00b4ff" strokeWidth="1.5" opacity="0.12" />
+      <circle cx="120" cy="430" r="3" fill="#00b4ff" opacity="0.2" />
+      <line x1="392" y1="130" x2="392" y2="80" stroke="#00b4ff" strokeWidth="1.5" opacity="0.12" />
+      <circle cx="392" cy="80" r="3" fill="#00b4ff" opacity="0.2" />
+
+      {/* Inner glow behind P */}
+      <circle cx="256" cy="230" r="130" fill="url(#sp-glow)" filter="url(#sp-blur)" />
+
+      {/* The P letterform — bold, geometric, with open bowl */}
+      {/* Vertical stem */}
+      <rect x="148" y="110" width="52" height="292" rx="8" fill="url(#sp-grad)" />
+      {/* Bowl top horizontal */}
+      <rect x="148" y="110" width="158" height="52" rx="10" fill="url(#sp-grad)" />
+      {/* Bowl bottom horizontal */}
+      <rect x="148" y="228" width="148" height="48" rx="10" fill="url(#sp-grad)" />
+      {/* Bowl right vertical */}
+      <rect x="258" y="110" width="52" height="166" rx="10" fill="url(#sp-grad)" />
+
+      {/* PRO badge pill */}
+      <rect x="182" y="430" width="148" height="44" rx="14" fill="url(#sp-grad)" />
       <text
-        x="256" y="340"
-        fontFamily="Georgia, serif"
-        fontSize="310"
+        x="256" y="460"
+        fontFamily="Arial, sans-serif"
+        fontSize="22"
         fontWeight="900"
         textAnchor="middle"
-        fill="url(#sp-grad)"
-      >B</text>
-      <rect x="298" y="358" width="100" height="36" rx="12" fill="url(#sp-grad)" />
-      <text
-        x="348" y="382"
-        fontFamily="Arial, sans-serif"
-        fontSize="18"
-        fontWeight="800"
-        textAnchor="middle"
-        fill="#1A0A02"
-        letterSpacing="2"
+        fill="#000d1a"
+        letterSpacing="4"
       >PRO</text>
+
+      {/* Scan-line shimmer overlay */}
+      <rect x="0" y="0" width="512" height="512" fill="url(#sp-grad2)" rx="256" opacity="0.08" />
     </svg>
   );
 }
@@ -68,7 +106,7 @@ function ArchedText({ visible }: { visible: boolean }) {
         fontFamily="Georgia, serif"
         fontSize="22"
         fontWeight="700"
-        fill="#F0A030"
+        fill="#00b4ff"
         letterSpacing="3"
       >
         <textPath href="#arc" startOffset="50%" textAnchor="middle">
@@ -81,13 +119,14 @@ function ArchedText({ visible }: { visible: boolean }) {
 
 interface SplashScreenProps {
   onDone: () => void;
+  businessName?: string;
 }
 
-export function SplashScreen({ onDone }: SplashScreenProps) {
+export function SplashScreen({ onDone, businessName }: SplashScreenProps) {
   // Animation phases:
   // 0 → logo rolls in (0–0.8s)
   // 1 → "Welcome to" arched text fades in (0.8–1.4s)
-  // 2 → "Bartendaz Pro" text slides up (1.4–2.0s)
+  // 2 → "P.O.S. Pro" text slides up (1.4–2.0s)
   // 3 → loading bar fills 0→100% (2.0–4.5s)
   // 4 → fade out (4.5–5.0s)
   // done → unmount
@@ -156,7 +195,7 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
         </div>
       </div>
 
-      {/* "Bartendaz Pro" text */}
+      {/* "P.O.S. Pro" text + optional business name subtitle */}
       <div
         style={{
           transform: phase >= 2 ? "translateY(0)" : "translateY(20px)",
@@ -172,26 +211,28 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
             fontSize: "28px",
             fontWeight: "900",
             letterSpacing: "3px",
-            background: "linear-gradient(135deg, #F0A030 0%, #C0441A 100%)",
+            background: "linear-gradient(135deg, #00b4ff 0%, #0047ab 100%)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
             backgroundClip: "text",
           }}
         >
-          BARTENDAZ
+          P.O.S. Pro
         </div>
-        <div
-          style={{
-            fontFamily: "Arial, sans-serif",
-            fontSize: "13px",
-            fontWeight: "700",
-            letterSpacing: "8px",
-            color: "#888",
-            marginTop: "2px",
-          }}
-        >
-          PRO
-        </div>
+        {businessName && (
+          <div
+            style={{
+              fontFamily: "Arial, sans-serif",
+              fontSize: "12px",
+              fontWeight: "600",
+              letterSpacing: "1px",
+              color: "#666",
+              marginTop: "4px",
+            }}
+          >
+            {businessName}
+          </div>
+        )}
       </div>
 
       {/* Loading bar */}
@@ -217,7 +258,7 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
             style={{
               height: "100%",
               width: `${progress}%`,
-              background: "linear-gradient(90deg, #F0A030, #C0441A)",
+              background: "linear-gradient(90deg, #00b4ff, #0047ab)",
               borderRadius: "2px",
               transition: "width 0.05s linear",
             }}

@@ -9,7 +9,7 @@ import { usePushNotifications } from "@/lib/usePushNotifications";
 import { useTranslation } from "@/lib/i18n";
 import { useOffline } from "@/lib/OfflineProvider";
 import { OfflinePageGuard } from "@/components/OfflinePageGuard";
-import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, UserMinus, Menu, X, CreditCard, Building2, DollarSign, UserCircle, Receipt, Gamepad2, RotateCcw, Globe, Tag, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck } from "lucide-react";
+import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, UserMinus, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, Tag, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const DEMO_EMAILS = ["isabel@gmail.com", "renard.sankersingh@gmail.com"];
@@ -25,6 +25,7 @@ export default function AppLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const yt = useYouTube();
+  const [ownerEmail, setOwnerEmail] = useState("");
 
   useEffect(() => {
     if (!loading && !session) nav("/login", { replace: true });
@@ -53,19 +54,12 @@ export default function AppLayout() {
     if (!loading && profile && profile.role === "owner" && profile.status === "pending" && loc.pathname !== "/billing" && !DEMO_EMAILS.includes(ownerEmail)) {
       nav("/billing", { replace: true });
     }
-    // Approved owner on /register or /machines → redirect to correct landing page based on plan
-    if (!loading && profile?.role === "owner" && profile.status === "approved") {
-      if (profile.plan_type === "machines_only" && loc.pathname === "/register") {
-        nav("/machines", { replace: true });
-      }
-      // All plan types can freely visit /billing
-    }
     // Multi-bar owner or chain owner with no bar selected → force them to pick a bar first
     // Allow billing page so they can manage subscriptions
     if (!loading && hasMultipleBars && !activeBarId && loc.pathname !== "/switch-bar" && loc.pathname !== "/billing") {
       nav("/switch-bar", { replace: true });
     }
-  }, [loading, profile, loc.pathname, nav, isChainOwner, activeBarId]);
+  }, [loading, profile, loc.pathname, nav, isChainOwner, activeBarId, ownerEmail]);
 
   // Close menu on outside click
   useEffect(() => {
@@ -109,35 +103,6 @@ export default function AppLayout() {
   // Register FCM push token for the owner's device — must be before any early returns (Rules of Hooks)
   usePushNotifications(profile?.role === "owner" ? profile.id : null);
 
-  // ── In-app payout alert modal ─────────────────────────────────────────────
-  const [payoutAlert, setPayoutAlert] = useState<{ title: string; body: string; machineName: string; barId?: string; navigate?: (to: string) => void } | null>(null);
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const { title, body, machineName, barId, navigate: navFn } = (e as CustomEvent).detail;
-      setPayoutAlert({ title, body, machineName, barId, navigate: navFn });
-      // Play alert sound using Web Audio API
-      try {
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        // Three ascending beeps
-        [0, 0.3, 0.6].forEach((delay) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.frequency.value = 880 + delay * 400;
-          osc.type = "sine";
-          gain.gain.setValueAtTime(0.6, ctx.currentTime + delay);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.25);
-          osc.start(ctx.currentTime + delay);
-          osc.stop(ctx.currentTime + delay + 0.3);
-        });
-      } catch { /* audio not available */ }
-    };
-    window.addEventListener("payoutAlert", handler);
-    return () => window.removeEventListener("payoutAlert", handler);
-  }, []);
-
   // ── Deep-link navigation from push notification tap (background / killed) ─
   useEffect(() => {
     const handler = (e: Event) => {
@@ -148,67 +113,13 @@ export default function AppLayout() {
     return () => window.removeEventListener("pushNotificationNavigate", handler);
   }, [nav]);
 
-  // Load owner plan to decide whether to show Machines in nav — must be before early returns (Rules of Hooks)
-  const [ownerHasMachines, setOwnerHasMachines] = useState(false);
-  const [ownerHasBar, setOwnerHasBar] = useState(true); // false only for machines_only without bar_addon
-  const [isMachinesOnlyUser, setIsMachinesOnlyUser] = useState(false);
-  const [ownerEmail, setOwnerEmail] = useState("");
   useEffect(() => {
     const load = async () => {
-      // Use getSession (reads localStorage, no network) to avoid blocking offline startup
       const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user ?? null;
-      setOwnerEmail(user?.email ?? "");
-      if (!profile?.id) return;
-      const ownerId = isChainOwner && activeBarId
-        ? activeBarId
-        : (profile.role === "cashier" || profile.role === "manager" || profile.job_title === "manager") ? profile.parent_id : profile.id;
-      if (!ownerId) return;
-      const isMasterAccount = user?.email === "renard.sankersingh@gmail.com";
-
-      // Seed from the profile already in memory so Machines shows immediately,
-      // then overwrite once the Supabase fetch resolves.
-      const seedPlan = profile.plan_type ?? "basic";
-      const seedAddon = profile.machines_addon_active ?? false;
-      const seedMachinesOnly = seedPlan === "machines_only" || seedPlan === "machines_only_20";
-      setIsMachinesOnlyUser(seedMachinesOnly);
-      setOwnerHasMachines(seedPlan === "premium" || seedPlan === "premium_20" || seedPlan === "chain" || seedAddon || seedMachinesOnly || isMasterAccount);
-      setOwnerHasBar(!seedMachinesOnly || isMasterAccount);
-
-      // Then fetch the definitive plan from the owner profile row
-      const { data } = await (supabase as any).from("profiles")
-        .select("plan_type, machines_addon_active").eq("id", ownerId).single();
-      if (!data) return; // offline — keep the seeded values above
-      const planType = data.plan_type ?? "basic";
-      const addonActive = data.machines_addon_active ?? false;
-      const machinesOnly = planType === "machines_only" || planType === "machines_only_20";
-      setIsMachinesOnlyUser(machinesOnly);
-      setOwnerHasMachines(planType === "premium" || planType === "premium_20" || planType === "chain" || addonActive || machinesOnly || isMasterAccount);
-      setOwnerHasBar(!machinesOnly || isMasterAccount);
+      setOwnerEmail(session?.user?.email ?? "");
     };
     load();
-  }, [profile?.id, profile?.status, profile?.plan_type, profile?.machines_addon_active, isChainOwner, activeBarId]);
-
-  // Realtime: re-check machines status when the active bar's profile updates
-  // (e.g. after enabling machines from within the machines page)
-  useEffect(() => {
-    if (!isChainOwner || !activeBarId) return;
-    const ch = supabase
-      .channel(`applayout-bar-profile-${activeBarId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${activeBarId}` },
-        async () => {
-          const { data } = await (supabase as any)
-            .from("profiles").select("machines_addon_active").eq("id", activeBarId).single();
-          if (data) {
-            setOwnerHasMachines((prev) => prev || !!data.machines_addon_active);
-          }
-        }
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [isChainOwner, activeBarId]);
+  }, [profile?.id]);
 
   if (loading || !session || !profile) {
     return (
@@ -233,7 +144,7 @@ export default function AppLayout() {
       <FullScreenStatus
         icon={UserMinus}
         title="Account expelled"
-        message="Your account has been expelled. You no longer have access to Bartendaz Pro."
+        message="Your account has been expelled. You no longer have access to P.O.S. Pro."
         onSignOut={() => { signOut(); nav("/login"); }}
       />
     );
@@ -259,7 +170,7 @@ export default function AppLayout() {
           style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
         >
           <div className="max-w-2xl lg:max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
-            <span className="font-black tracking-tight text-sm">Bartendaz Pro</span>
+            <span className="font-black tracking-tight text-sm">P.O.S. Pro</span>
             <div className="flex items-center gap-2" ref={menuRef}>
               <span className="text-xs font-semibold text-muted-foreground truncate max-w-[100px]">{profile.username}</span>
               <button
@@ -308,33 +219,24 @@ export default function AppLayout() {
         { to: "/admin",          label: "Panel",   icon: Users },
         { to: "/admin/banking",  label: "Banking", icon: Building2 },
       ]
-    : isMachinesOnlyUser ? [
-        // Machines-only plan: Machines first, then Cashiers, Billing, Profile only
-        { to: "/machines", label: t("machines", "Machines"), icon: Gamepad2 },
-        ...(isOwner ? [{ to: "/cashiers", label: t("cashiers", "Staff"), icon: Users }] : []),
-        ...(isOwner ? [{ to: "/billing",  label: t("billing", "Billing"),   icon: CreditCard }] : []),
-        ...(isOwner ? [{ to: "/profile",  label: t("profile", "Profile"),   icon: UserCircle }] : []),
-      ]
     : isManager ? [
-        // Manager: Items first, Stock Check, Customers, Expenses, Machines — no Bar, no Wallet
-        ...(ownerHasBar ? [{ to: "/products",    label: t("products_title", "Items"),       icon: Package      }] : []),
-        ...(ownerHasBar ? [{ to: "/stock-check", label: t("stock_check", "Stock Check"),    icon: ClipboardList }] : []),
-        ...(ownerHasBar ? [{ to: "/credit",      label: t("customers_title", "Customers"),  icon: Receipt      }] : []),
-        { to: "/manager", label: t("manage", "Manage"), icon: TrendingDown },
-        ...(ownerHasMachines ? [{ to: "/machines", label: t("machines", "Machines"), icon: Gamepad2 }] : []),
+        // Manager: Items, Stock Check, Customers, Manager dashboard
+        { to: "/products",    label: t("products_title", "Items"),      icon: Package      },
+        { to: "/stock-check", label: t("stock_check", "Stock Check"),   icon: ClipboardList },
+        { to: "/credit",      label: t("customers_title", "Customers"), icon: Receipt      },
+        { to: "/manager",     label: t("manage", "Manage"),             icon: TrendingDown },
       ]
     : [
-        ...(ownerHasBar ? [{ to: "/register", label: t("bar", "Bar"), icon: Wine }] : []),
-        ...(ownerHasBar ? [{ to: "/credit",   label: t("customers_title", "Customers"), icon: Receipt }] : []),
-        ...(ownerHasMachines ? [{ to: "/machines", label: t("machines", "Machines"), icon: Gamepad2 }] : []),
-        ...(isOwner && ownerHasBar ? [{ to: "/products",    label: t("products_title", "Items"),       icon: Package      }] : []),
-        ...(isOwner && ownerHasBar ? [{ to: "/stock-check", label: t("stock_check", "Stock Check"),    icon: ClipboardList }] : []),
-        ...(isOwner && ownerHasBar ? [{ to: "/specials",    label: t("specials", "Specials"),           icon: Tag          }] : []),
-        ...(isOwner ? [{ to: "/cashiers", label: t("cashiers", "Staff"), icon: Users }] : []),
-        { to: "/wallet",   label: t("wallet", "Wallet"),     icon: Wallet },
-        ...(isOwner ? [{ to: "/summary",  label: t("summary", "Summary"),       icon: BarChart3 }] : []),
-        ...(isOwner ? [{ to: "/billing",  label: t("billing", "Billing"), icon: CreditCard }] : []),
-        ...(isOwner ? [{ to: "/profile",  label: t("profile", "Profile"), icon: UserCircle }] : []),
+        { to: "/register",  label: t("bar", "Bar"),                    icon: Wine       },
+        { to: "/credit",    label: t("customers_title", "Customers"),  icon: Receipt    },
+        ...(isOwner ? [{ to: "/products",    label: t("products_title", "Items"),    icon: Package      }] : []),
+        ...(isOwner ? [{ to: "/stock-check", label: t("stock_check", "Stock Check"), icon: ClipboardList }] : []),
+        ...(isOwner ? [{ to: "/specials",    label: t("specials", "Specials"),        icon: Tag          }] : []),
+        ...(isOwner ? [{ to: "/cashiers",    label: t("cashiers", "Staff"),           icon: Users        }] : []),
+        { to: "/wallet",    label: t("wallet", "Wallet"),               icon: Wallet     },
+        ...(isOwner ? [{ to: "/summary",  label: t("summary", "Summary"),   icon: BarChart3  }] : []),
+        ...(isOwner ? [{ to: "/billing",  label: t("billing", "Billing"),   icon: CreditCard }] : []),
+        ...(isOwner ? [{ to: "/profile",  label: t("profile", "Profile"),   icon: UserCircle }] : []),
       ];
 
   return (
@@ -347,18 +249,23 @@ export default function AppLayout() {
 
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <span className="font-black tracking-tight text-sm">Bartendaz Pro</span>
+            <div className="flex flex-col leading-tight">
+              <span className="font-black tracking-tight text-sm">P.O.S. Pro</span>
+              {profile.username && (
+                <span className="text-[10px] font-medium text-muted-foreground leading-tight truncate max-w-[140px]">{profile.username}</span>
+              )}
+            </div>
           </div>
 
-          {/* Music / Machines-or-Bar toggle — owners/cashiers only (not managers) */}
+          {/* Music / Bar toggle — owners/cashiers only (not managers) */}
           {hasMusic && !isManager && (
             <Link
-              to={isOnMusic ? (isMachinesOnlyUser ? "/machines" : "/register") : "/music"}
+              to={isOnMusic ? "/register" : "/music"}
               className="h-10 px-4 rounded-lg flex items-center justify-center font-black text-sm transition active:scale-95 text-primary-foreground"
               style={{ background: "var(--gradient-hero)" }}
-              title={isOnMusic ? (isMachinesOnlyUser ? "Back to Machines" : "Back to Bar") : "Open Music Player"}
+              title={isOnMusic ? "Back to Bar" : "Open Music Player"}
             >
-            {isOnMusic ? (isMachinesOnlyUser ? t("machines", "Machines") : t("bar", "Bar")) : t("music", "Music")}
+              {isOnMusic ? t("bar", "Bar") : t("music", "Music")}
             </Link>
           )}
 
@@ -398,7 +305,7 @@ export default function AppLayout() {
                   return (
                     <button key={it.to} onClick={() => { setMenuOpen(false); nav(it.to); }}
                       className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 px-2 active:scale-95 transition-transform select-none"
-                      style={{ background: active ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: active ? "var(--primary)" : "var(--border)", boxShadow: active ? "0 6px 18px rgba(251,146,60,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
+                      style={{ background: active ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: active ? "var(--primary)" : "var(--border)", boxShadow: active ? "0 6px 18px rgba(0,180,255,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
                       <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0"
                         style={{ background: active ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.06)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
                         <Icon className={`h-6 w-6 ${active ? "text-white" : "text-primary"}`} />
@@ -409,7 +316,7 @@ export default function AppLayout() {
                 })}
                 <button onClick={() => { setMenuOpen(false); nav("/language"); }}
                   className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 px-2 active:scale-95 transition-transform select-none"
-                  style={{ background: loc.pathname === "/language" ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: loc.pathname === "/language" ? "var(--primary)" : "var(--border)", boxShadow: loc.pathname === "/language" ? "0 6px 18px rgba(251,146,60,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
+                  style={{ background: loc.pathname === "/language" ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: loc.pathname === "/language" ? "var(--primary)" : "var(--border)", boxShadow: loc.pathname === "/language" ? "0 6px 18px rgba(0,180,255,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
                   <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0"
                     style={{ background: loc.pathname === "/language" ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.06)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
                     <Globe className={`h-6 w-6 ${loc.pathname === "/language" ? "text-white" : "text-primary"}`} />
@@ -453,7 +360,7 @@ export default function AppLayout() {
               <div className="p-4 space-y-3">
                 <button onClick={() => { setMenuOpen(false); nav("/billing"); }}
                   className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 px-2 w-full active:scale-95 transition-transform select-none"
-                  style={{ background: "var(--gradient-card)", borderColor: "var(--primary)", boxShadow: "0 6px 18px rgba(251,146,60,0.35)" }}>
+                  style={{ background: "var(--gradient-card)", borderColor: "var(--primary)", boxShadow: "0 6px 18px rgba(0,180,255,0.35)" }}>
                   <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0"
                     style={{ background: "rgba(255,255,255,0.06)" }}>
                     <CreditCard className="h-6 w-6 text-primary" />
@@ -479,7 +386,7 @@ export default function AppLayout() {
                   return (
                     <button key={it.to} onClick={() => { setMenuOpen(false); nav(it.to); }}
                       className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 px-2 active:scale-95 transition-transform select-none"
-                      style={{ background: active ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: active ? "var(--primary)" : "var(--border)", boxShadow: active ? "0 6px 18px rgba(251,146,60,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
+                      style={{ background: active ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: active ? "var(--primary)" : "var(--border)", boxShadow: active ? "0 6px 18px rgba(0,180,255,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
                       <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0"
                         style={{ background: active ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.06)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
                         <Icon className={`h-6 w-6 ${active ? "text-white" : "text-primary"}`} />
@@ -488,10 +395,10 @@ export default function AppLayout() {
                     </button>
                   );
                 })}
-                {!isAdmin && !isMachinesOnlyUser && (
+                {!isAdmin && (
                 <button onClick={() => { setMenuOpen(false); nav("/language"); }}
                   className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 px-2 active:scale-95 transition-transform select-none"
-                  style={{ background: loc.pathname === "/language" ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: loc.pathname === "/language" ? "var(--primary)" : "var(--border)", boxShadow: loc.pathname === "/language" ? "0 6px 18px rgba(251,146,60,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
+                  style={{ background: loc.pathname === "/language" ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: loc.pathname === "/language" ? "var(--primary)" : "var(--border)", boxShadow: loc.pathname === "/language" ? "0 6px 18px rgba(0,180,255,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
                   <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0"
                     style={{ background: loc.pathname === "/language" ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.06)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
                     <Globe className={`h-6 w-6 ${loc.pathname === "/language" ? "text-white" : "text-primary"}`} />
@@ -502,31 +409,20 @@ export default function AppLayout() {
                 {hasMultipleBars && (
                   <button onClick={() => { setMenuOpen(false); nav("/switch-bar"); }}
                     className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 px-2 active:scale-95 transition-transform select-none"
-                    style={{ background: loc.pathname === "/switch-bar" ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: loc.pathname === "/switch-bar" ? "var(--primary)" : "var(--border)", boxShadow: loc.pathname === "/switch-bar" ? "0 6px 18px rgba(251,146,60,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
+                    style={{ background: loc.pathname === "/switch-bar" ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: loc.pathname === "/switch-bar" ? "var(--primary)" : "var(--border)", boxShadow: loc.pathname === "/switch-bar" ? "0 6px 18px rgba(0,180,255,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
                     <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0"
                       style={{ background: loc.pathname === "/switch-bar" ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.06)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
                       <GitBranch className={`h-6 w-6 ${loc.pathname === "/switch-bar" ? "text-white" : "text-primary"}`} />
                     </div>
                     <span className={`text-xs font-black text-center leading-tight ${loc.pathname === "/switch-bar" ? "text-white" : "text-foreground"}`}>
-                      {isMachinesOnlyUser ? t("switch_account", "Switch Account") : t("switch_bar", "Switch Bar")}
+                      {t("switch_bar", "Switch Bar")}
                     </span>
-                  </button>
-                )}
-                {isOwner && (
-                  <button onClick={() => { setMenuOpen(false); nav("/factory-reset"); }}
-                    className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 px-2 active:scale-95 transition-transform select-none"
-                    style={{ background: loc.pathname === "/factory-reset" ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: loc.pathname === "/factory-reset" ? "var(--primary)" : "var(--border)", boxShadow: "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
-                    <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0"
-                      style={{ background: "rgba(255,255,255,0.06)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
-                      <RotateCcw className="h-6 w-6 text-primary" />
-                    </div>
-                    <span className="text-xs font-black text-center leading-tight text-foreground">{t("factory_reset", "Factory Reset")}</span>
                   </button>
                 )}
                 {(isOwner || isManager) && (
                   <button onClick={() => { setMenuOpen(false); nav("/privacy"); }}
                     className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 px-2 active:scale-95 transition-transform select-none"
-                    style={{ background: loc.pathname === "/privacy" ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: loc.pathname === "/privacy" ? "var(--primary)" : "var(--border)", boxShadow: loc.pathname === "/privacy" ? "0 6px 18px rgba(251,146,60,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
+                    style={{ background: loc.pathname === "/privacy" ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: loc.pathname === "/privacy" ? "var(--primary)" : "var(--border)", boxShadow: loc.pathname === "/privacy" ? "0 6px 18px rgba(0,180,255,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
                     <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0"
                       style={{ background: loc.pathname === "/privacy" ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.06)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
                       <ShieldCheck className={`h-6 w-6 ${loc.pathname === "/privacy" ? "text-white" : "text-primary"}`} />
@@ -537,7 +433,7 @@ export default function AppLayout() {
                 {(isOwner || isManager) && (
                   <button onClick={() => { setMenuOpen(false); nav("/manual"); }}
                     className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 px-2 active:scale-95 transition-transform select-none"
-                    style={{ background: loc.pathname === "/manual" ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: loc.pathname === "/manual" ? "var(--primary)" : "var(--border)", boxShadow: loc.pathname === "/manual" ? "0 6px 18px rgba(251,146,60,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
+                    style={{ background: loc.pathname === "/manual" ? "var(--gradient-hero)" : "var(--gradient-card)", borderColor: loc.pathname === "/manual" ? "var(--primary)" : "var(--border)", boxShadow: loc.pathname === "/manual" ? "0 6px 18px rgba(0,180,255,0.35)" : "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
                     <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0"
                       style={{ background: loc.pathname === "/manual" ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.06)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
                       <BookOpen className={`h-6 w-6 ${loc.pathname === "/manual" ? "text-white" : "text-primary"}`} />
@@ -618,56 +514,6 @@ export default function AppLayout() {
         </div>
       )}
 
-      {/* ── In-app payout alert modal ── */}
-      {payoutAlert && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm"
-          onClick={() => setPayoutAlert(null)}>
-          <div
-            className="w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl border-2 border-amber-500/60"
-            style={{ background: "oklch(0.15 0.04 45)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Orange flash header */}
-            <div className="px-6 pt-6 pb-4 text-center"
-              style={{ background: "linear-gradient(135deg, #c0441a, #f0a030)" }}>
-              <div className="text-5xl mb-2">⚠️</div>
-              <h2 className="font-black text-white text-xl leading-tight">Payout Alert</h2>
-              <p className="text-white/90 font-bold text-base mt-1">{payoutAlert.machineName}</p>
-            </div>
-
-            {/* Body */}
-            <div className="px-6 py-5 text-center space-y-5">
-              <p className="text-amber-200 font-semibold text-sm leading-relaxed">
-                {payoutAlert.body}
-              </p>
-              <div className="flex flex-col gap-2">
-                {/* Go to machine history tab */}
-                <button
-                  onClick={() => {
-                    setPayoutAlert(null);
-                    localStorage.setItem("payout_alert_open_machine", payoutAlert.machineName);
-                    localStorage.setItem("payout_alert_open_tab", "history");
-                    if (payoutAlert.barId) localStorage.setItem("payout_alert_open_bar", payoutAlert.barId);
-                    nav("/machines");
-                  }}
-                  className="w-full h-12 rounded-2xl font-black text-sm text-white active:scale-95 transition"
-                  style={{ background: "linear-gradient(135deg, #c0441a, #f0a030)" }}
-                >
-                  View History →
-                </button>
-                <button
-                  onClick={() => setPayoutAlert(null)}
-                  className="w-full h-11 rounded-2xl font-black text-sm border border-white/20 text-white/60 active:scale-95 transition"
-                  style={{ background: "rgba(255,255,255,0.06)" }}
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
@@ -683,7 +529,7 @@ function FullScreenStatus({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-6"
-      style={{ background: "radial-gradient(circle at 50% 0%, oklch(0.25 0.05 30) 0%, oklch(0.12 0.02 30) 70%)" }}>
+      style={{ background: "radial-gradient(circle at 50% 0%, oklch(0.20 0.08 240) 0%, oklch(0.08 0.04 240) 70%)" }}>
       <div className="max-w-md text-center space-y-6">
         <div className="inline-flex h-20 w-20 items-center justify-center rounded-full bg-destructive/20 border border-destructive/40">
           <Icon className="h-10 w-10 text-destructive" />

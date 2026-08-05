@@ -429,7 +429,7 @@ export default function RegisterPage() {
   // Initialize cart from localStorage on mount
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
-      const saved = localStorage.getItem(`bartap-cart-${ownerId}`);
+      const saved = localStorage.getItem(`pospro-cart-${ownerId}`);
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -442,7 +442,7 @@ export default function RegisterPage() {
   // Persist cart to localStorage whenever it changes
   useEffect(() => {
     if (ownerId) {
-      localStorage.setItem(`bartap-cart-${ownerId}`, JSON.stringify(cart));
+      localStorage.setItem(`pospro-cart-${ownerId}`, JSON.stringify(cart));
     }
   }, [cart, ownerId]);
 

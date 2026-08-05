@@ -21,8 +21,6 @@ import AdminBillingManagementPage from "@/pages/AdminBillingManagementPage";
 import ProfilePage from "@/pages/ProfilePage";
 import MusicPage from "@/pages/MusicPage";
 import CreditPage from "@/pages/CreditPage";
-import MachinesPage from "@/pages/MachinesPage";
-import FactoryResetPage from "@/pages/FactoryResetPage";
 import LanguagePage from "@/pages/LanguagePage";
 import SpecialsPage from "@/pages/SpecialsPage";
 import SwitchBarPage from "@/pages/SwitchBarPage";
@@ -99,8 +97,6 @@ function AppWithUpdateCheck() {
             <Route path="profile" element={<ProfilePage />} />
             <Route path="music" element={<MusicPage />} />
             <Route path="credit" element={<CreditPage />} />
-            <Route path="machines" element={<MachinesPage />} />
-            <Route path="factory-reset" element={<FactoryResetPage />} />
             <Route path="language" element={<LanguagePage />} />
             <Route path="specials" element={<SpecialsPage />} />
             <Route path="switch-bar" element={<SwitchBarPage />} />
@@ -131,6 +127,25 @@ function AppWithUpdateCheck() {
 
 export default function App() {
   const [splashDone, setSplashDone] = useState(false);
+  // Read cached business name for the splash screen (profile may not be loaded yet)
+  const [splashBusinessName, setSplashBusinessName] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    // Try to read the owner's username from the Supabase auth session stored in localStorage
+    // so the splash screen can show the business name immediately, even before the profile loads
+    try {
+      const keys = Object.keys(localStorage);
+      const sessionKey = keys.find((k) => k.startsWith("sb-") && k.endsWith("-auth-token"));
+      if (sessionKey) {
+        const raw = localStorage.getItem(sessionKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const username = parsed?.user?.user_metadata?.username ?? parsed?.user?.email ?? undefined;
+          if (username) setSplashBusinessName(username);
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   // Register service worker for PWA/Android install support + offline caching
   useEffect(() => {
@@ -162,7 +177,7 @@ export default function App() {
     <AuthProvider>
       <I18nProvider>
         <OfflineProvider>
-          {!splashDone && <SplashScreen onDone={() => setSplashDone(true)} />}
+          {!splashDone && <SplashScreen onDone={() => setSplashDone(true)} businessName={splashBusinessName} />}
           <ChainProvider>
             <MusicPlayerProvider>
               <YouTubeProvider>

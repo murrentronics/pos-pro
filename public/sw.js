@@ -1,4 +1,4 @@
-// Bartendaz Pro — Service Worker (offline-first, v4)
+// P.O.S. Pro — Service Worker (offline-first, v4)
 //
 // Cache strategy by request type:
 //
@@ -12,11 +12,11 @@
 //  └─────────────────────────────────────────────────┴──────────────────────────────────┘
 
 const VERSION      = "v4";
-const SHELL_CACHE  = `bartendaz-shell-${VERSION}`;
-const ASSET_CACHE  = `bartendaz-assets-${VERSION}`;
-const IMAGE_CACHE  = `bartendaz-images-${VERSION}`;
+const SHELL_CACHE  = `pospro-shell-${VERSION}`;
+const ASSET_CACHE  = `pospro-assets-${VERSION}`;
+const IMAGE_CACHE  = `pospro-images-${VERSION}`;
 
-const SUPABASE_PROJECT      = "vavfsgbrfpvolskscolf";
+const SUPABASE_PROJECT      = "wpuqdwrndjswjzieoinx";
 const SUPABASE_STORAGE_PATH = `/storage/v1/object/public/`;
 
 // ── Shell files to precache on install ───────────────────────────────────────

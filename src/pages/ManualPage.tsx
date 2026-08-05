@@ -6,10 +6,10 @@ export default function ManualPage() {
       className="pb-24"
       style={{
         fontFamily: "Arial, sans-serif",
-        color: "#e8d5b0",
-        background: "#0a0600",
+        color: "#e8f4ff",
+        background: "#020810",
         minHeight: "100vh",
-        margin: "0 -12px", // bleed to edges under app layout padding
+        margin: "0 -12px",
       }}
     >
       {/* Header */}
@@ -18,26 +18,26 @@ export default function ManualPage() {
           position: "sticky",
           top: 0,
           zIndex: 20,
-          background: "#0f0a04",
-          borderBottom: "1px solid rgba(240,160,48,0.15)",
+          background: "#040c18",
+          borderBottom: "1px solid rgba(0,180,255,0.15)",
           padding: "16px 20px",
           display: "flex",
           alignItems: "center",
           gap: 10,
         }}
       >
-        <BookOpen style={{ width: 20, height: 20, color: "#F0A030" }} />
+        <BookOpen style={{ width: 20, height: 20, color: "#00b4ff" }} />
         <span
           style={{
             fontSize: "1.1rem",
             fontWeight: 900,
-            background: "linear-gradient(135deg, #F0A030, #C0441A)",
+            background: "linear-gradient(135deg, #00b4ff, #0047ab)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
             backgroundClip: "text",
           }}
         >
-          📖 Bartendaz Pro — User Manual
+          📖 P.O.S. Pro — User Manual
         </span>
       </div>
 
@@ -46,10 +46,10 @@ export default function ManualPage() {
         {/* Cover */}
         <div style={{ textAlign: "center", padding: "40px 0 36px", borderBottom: "1px solid rgba(240,160,48,0.12)" }}>
           <div style={{ fontSize: "3.5rem", marginBottom: 12 }}>🍺</div>
-          <h2 style={{ fontSize: "1.8rem", fontWeight: 900, background: "linear-gradient(135deg,#F0A030,#C0441A)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", margin: "0 0 12px" }}>
-            Bartendaz Pro
+          <h2 style={{ fontSize: "1.8rem", fontWeight: 900, background: "linear-gradient(135deg,#00b4ff,#0047ab)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", margin: "0 0 12px" }}>
+            P.O.S. Pro
           </h2>
-          <p style={{ fontSize: "0.9rem", color: "#a08060", maxWidth: 480, margin: "0 auto", lineHeight: 1.6 }}>
+          <p style={{ fontSize: "0.9rem", color: "#5b8db8", maxWidth: 480, margin: "0 auto", lineHeight: 1.6 }}>
             The complete guide to running your bar — from opening the session to closing the night, every feature explained step by step.
           </p>
         </div>
@@ -100,7 +100,7 @@ export default function ManualPage() {
               { title: "📋 Manager", items: ["Record bar expenses","View items and customers","Access machines tracker","No billing or staff management"] },
             ],
             steps: [
-              ["Go to the app URL","Open Bartendaz Pro in your browser or via the installed APK."],
+              ["Go to the app URL","Open P.O.S. Pro in your browser or via the installed APK."],
               ["Enter your username and password","Owners register an account first. Cashiers and managers are created by the owner inside the app."],
               ["You'll land on your role's home screen","Owners and cashiers go to the Bar register. Managers go to Items."],
             ],
@@ -252,7 +252,7 @@ export default function ManualPage() {
           },
           {
             id: "m-offline", icon: "📡", title: "Offline Mode & Sync", section: "Section 18",
-            intro: "Bartendaz Pro requires an internet connection for all real-time features.",
+            intro: "P.O.S. Pro requires an internet connection for all real-time features.",
             warning: "No offline mode for the web version. Sales, wallets, and reports all require an active connection. Use a stable Wi-Fi or mobile data connection at your bar.",
             tip: "Install the app as a PWA (Add to Home Screen in your browser) for a native-app feel and faster load times.",
           },
