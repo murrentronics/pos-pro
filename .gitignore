@@ -32,3 +32,7 @@ dist-ssr
 
 # Keystore export (never commit this)
 keystore-base64.txt
+
+# Android signing keystores — never commit
+*.jks
+*.b64

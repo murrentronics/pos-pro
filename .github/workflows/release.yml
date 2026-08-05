@@ -80,9 +80,18 @@ jobs:
       - name: Fix gradle.properties for CI
         run: sed -i '/org.gradle.java.home/d' android/gradle.properties
 
-      # ── 10. Decode keystore ────────────────────────────────────────────────
-      - name: Decode keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/pospro.jks
+      # ── 10. Generate keystore from secrets ────────────────────────────────
+      - name: Generate keystore
+        run: |
+          keytool -genkey -v \
+            -keystore android/app/pospro.jks \
+            -alias pospro \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+            -keypass "${{ secrets.KEY_PASSWORD }}" \
+            -dname "CN=POS Pro, OU=Dev, O=POS Pro, L=Port of Spain, ST=Trinidad, C=TT"
 
       # ── 11. Make gradlew executable ───────────────────────────────────────
       - name: Make gradlew executable
