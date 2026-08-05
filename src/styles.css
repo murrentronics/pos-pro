@@ -1,0 +1,200 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --gradient-hero: var(--gradient-hero);
+  --gradient-card: var(--gradient-card);
+  --shadow-elegant: var(--shadow-elegant);
+  --shadow-glow: var(--shadow-glow);
+}
+
+:root {
+  --radius: 0.875rem;
+  /* Deep amber/charcoal bar theme */
+  /* Hex fallbacks are listed first so browsers that don't support oklch() still render correctly */
+  --background: #2a2318;
+  --background: oklch(0.18 0.02 60);
+  --foreground: #f7f4ef;
+  --foreground: oklch(0.97 0.02 80);
+  --card: #332c20;
+  --card: oklch(0.23 0.025 60);
+  --card-foreground: #f7f4ef;
+  --card-foreground: oklch(0.97 0.02 80);
+  --popover: #2f2820;
+  --popover: oklch(0.21 0.025 60);
+  --popover-foreground: #f7f4ef;
+  --popover-foreground: oklch(0.97 0.02 80);
+  --primary: #d4a043;
+  --primary: oklch(0.78 0.17 65);
+  --primary-foreground: #1e1a13;
+  --primary-foreground: oklch(0.18 0.03 60);
+  --secondary: #3d3426;
+  --secondary: oklch(0.3 0.03 60);
+  --secondary-foreground: #f7f4ef;
+  --secondary-foreground: oklch(0.97 0.02 80);
+  --muted: #38301f;
+  --muted: oklch(0.27 0.02 60);
+  --muted-foreground: #a89070;
+  --muted-foreground: oklch(0.7 0.03 70);
+  --accent: #b84a1e;
+  --accent: oklch(0.65 0.2 30);
+  --accent-foreground: #faf9f7;
+  --accent-foreground: oklch(0.98 0.01 80);
+  --destructive: #c0391a;
+  --destructive: oklch(0.6 0.22 27);
+  --destructive-foreground: #faf9f7;
+  --destructive-foreground: oklch(0.98 0.01 80);
+  --success: #3a9e5a;
+  --success: oklch(0.7 0.18 150);
+  --success-foreground: #0d2918;
+  --success-foreground: oklch(0.15 0.03 150);
+  --border: #3d3426;
+  --border: oklch(0.3 0.02 60);
+  --input: #38301f;
+  --input: oklch(0.27 0.02 60);
+  --ring: #d4a043;
+  --ring: oklch(0.78 0.17 65);
+
+  --gradient-hero: linear-gradient(135deg, #d4a043 0%, #b84a1e 100%);
+  --gradient-hero: linear-gradient(135deg, oklch(0.78 0.17 65) 0%, oklch(0.65 0.2 30) 100%);
+  --gradient-card: linear-gradient(160deg, #352e1e 0%, #2f2820 100%);
+  --gradient-card: linear-gradient(160deg, oklch(0.26 0.03 60) 0%, oklch(0.21 0.025 60) 100%);
+  --shadow-elegant: 0 12px 40px -12px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 30px rgba(212, 160, 67, 0.35);
+  --shadow-glow: 0 0 30px oklch(0.78 0.17 65 / 0.35);
+}
+
+.dark { color-scheme: dark; }
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body { background-color: var(--color-background); color: var(--color-foreground); }
+  body {
+    font-family: ui-rounded, "SF Pro Rounded", "Inter", system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+}
+
+/* ── Mobile responsiveness ─────────────────────────────────── */
+
+/* Prevent horizontal overflow on all screens */
+html {
+  overflow: hidden;
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  overflow: hidden;
+  height: 100%;
+  position: fixed;
+  width: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Hide scrollbars visually but keep scroll working */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Prevent inputs from zooming on iOS (font-size >= 16px) */
+input, select, textarea {
+  font-size: max(16px, 1em);
+  touch-action: manipulation; /* eliminate 300ms tap delay on Android */
+}
+
+/* ── Global input visibility fix ──────────────────────────────
+   Dark theme makes inputs nearly invisible. Force a light
+   background + dark text + bright border on all text inputs.
+──────────────────────────────────────────────────────────────── */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="submit"]):not([type="button"]):not([type="reset"]),
+select,
+textarea {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+  border: 1.5px solid #d1a84b !important; /* amber accent border */
+  border-radius: var(--radius-md, 0.5rem);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="submit"]):not([type="button"]):not([type="reset"]):focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: #f5c842 !important;
+  box-shadow: 0 0 0 2px oklch(0.78 0.17 65 / 0.35) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #888888 !important;
+}
+
+/* ── Android PWA / Safe Area (notch + nav bar) ─────────────────────────────── */
+
+/*
+  When installed as a PWA with display:standalone and viewport-fit=cover:
+  - env(safe-area-inset-top)    = height of status bar / notch
+  - env(safe-area-inset-bottom) = height of Android gesture nav bar
+  These are 0 in a normal browser tab.
+*/
+
+/* Push the app header down below the device status bar / notch */
+header {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Ensure the bottom of the page clears the Android gesture nav bar */
+body {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Utility class used on fixed bottom elements (keyboard, cash button, etc.) */
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.5rem);
+}
+
+/* Fixed bottom bars (on-screen keyboard, cash button) must also clear the nav bar */
+.fixed.bottom-0,
+[class*="fixed"][class*="inset-x-0"][class*="bottom-0"] {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Left/right safe areas for landscape notch devices */
+.safe-x {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
