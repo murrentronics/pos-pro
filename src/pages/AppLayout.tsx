@@ -435,47 +435,6 @@ export default function AppLayout() {
         </OfflinePageGuard>
       </main>
 
-      {/* ── Persistent YouTube iframe ─────────────────────────────────────────
-          Mounted once, never destroyed. Sits fixed below the header.
-          On /music: fully visible, fills screen below header.
-          On other pages: visibility:hidden — invisible but audio keeps playing.
-          Header is z-50 so it always shows on top.                          */}
-      {hasMusic && yt.videoId && (
-        <div
-          style={{
-            position: "fixed",
-            top: "calc(56px + var(--offline-banner-h, 0px) + env(safe-area-inset-top, 0px))",
-            bottom: 0,
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: "100%",
-            maxWidth: "896px",
-            zIndex: 35,
-            background: "#000",
-            visibility: yt.ytFullscreen ? "visible" : "hidden",
-            pointerEvents: yt.ytFullscreen ? "auto" : "none",
-          }}
-        >
-          <iframe
-            id="yt-iframe"
-            src={
-              yt.isPlaylist
-                ? `https://www.youtube-nocookie.com/embed/videoseries?list=${yt.videoId}&autoplay=1&rel=0&modestbranding=1&playsinline=1&iv_load_policy=3&enablejsapi=1`
-                : `https://www.youtube-nocookie.com/embed/${yt.videoId}?autoplay=1&rel=0&modestbranding=1&playsinline=1&iv_load_policy=3&enablejsapi=1`
-            }
-            allow="autoplay; fullscreen; encrypted-media"
-            allowFullScreen
-            style={{ width: "100%", height: "100%", border: "none" }}
-            title="YouTube Player"
-            onLoad={(e) => {
-              const iframe = e.currentTarget as HTMLIFrameElement;
-              iframe.contentWindow?.postMessage(
-                JSON.stringify({ event: "listening" }), "*"
-              );
-            }}
-          />
-        </div>
-      )}
 
     </div>
   );
