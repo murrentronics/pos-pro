@@ -386,7 +386,7 @@
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Download APK  v1.0.4
       </a>
-      <span class="dl-note" id="dlNote">Android 7.0+  •  v1.1.7  •  No Play Store required</span>
+      <span class="dl-note" id="dlNote">Android 7.0+  •  v1.1.8  •  No Play Store required</span>
       <span id="releaseDate" style="display:none;font-size:0.75rem;color:var(--muted);margin-top:2px;"></span>
     </div>
   </section>
@@ -520,16 +520,23 @@
       }
     }
 
-    // ── Fetch version.json and update download buttons ─────────────────────
+    // ── Fetch latest release from GitHub and update download buttons ──────
     (async function loadVersion() {
       try {
-        const res = await fetch('/version.json?t=' + Date.now(), { cache: 'no-store' });
+        const res = await fetch('https://api.github.com/repos/murrentronics/pos-pro/releases/latest', {
+          headers: { Accept: 'application/vnd.github+json' }
+        });
         if (!res.ok) return;
         const data = await res.json();
-        const v = data.version;
-        if (!v) return;
+        const tag = data.tag_name || '';
+        if (!tag) return;
+        const v = tag.replace(/^v/, '');
 
-        const apkUrl = data.apkUrl || 'https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk';
+        // Find APK asset URL
+        const apkAsset = (data.assets || []).find(function(a) { return a.name.endsWith('.apk'); });
+        const apkUrl = apkAsset
+          ? apkAsset.browser_download_url
+          : 'https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk';
 
         // Update all download buttons with version + correct URL
         document.querySelectorAll('.btn-download').forEach(function(btn) {
@@ -543,19 +550,19 @@
         // Update the sub-note
         const note = document.getElementById('dlNote');
         if (note) {
-          note.textContent = 'Android 7.0+  •  v1.1.7  •  No Play Store required';
+          note.textContent = 'Android 7.0+  •  v1.1.8  •  No Play Store required';
         }
 
         // Show release date if available
-        if (data.releaseDate) {
+        if (data.published_at) {
           const dateEl = document.getElementById('releaseDate');
           if (dateEl) {
-            const d = new Date(data.releaseDate);
+            const d = new Date(data.published_at);
             dateEl.textContent = 'Released ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
             dateEl.style.display = 'block';
           }
         }
-      } catch(e) { /* offline or not deployed yet — buttons stay as-is */ }
+      } catch(e) { /* offline or API unavailable — buttons stay as-is */ }
     })();
   </script>
 </body>
