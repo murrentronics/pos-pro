@@ -52,13 +52,11 @@ jobs:
           echo "TAG=v$VERSION" >> $GITHUB_OUTPUT
 
       # ── 8. Copy web assets directly into Android assets folder ────────────
-      #    (avoids cap sync which requires Android SDK on the runner)
       - name: Copy web assets to Android
         run: |
           mkdir -p android/app/src/main/assets/public
           rm -rf android/app/src/main/assets/public/*
           cp -r dist/client/. android/app/src/main/assets/public/
-          # Write capacitor.config.json (gitignored, must be generated)
           node -e "
             const fs = require('fs');
             const cfg = {
@@ -74,24 +72,30 @@ jobs:
             fs.writeFileSync('android/app/src/main/assets/capacitor.config.json', JSON.stringify(cfg, null, 2));
             console.log('capacitor.config.json written');
           "
-          # capacitor.plugins.json is committed in the repo — already copied above, do not overwrite
 
-      # ── 9. Fix gradle.properties for CI (remove local Android Studio path) ─
+      # ── 9. Fix gradle.properties for CI ───────────────────────────────────
       - name: Fix gradle.properties for CI
         run: sed -i '/org.gradle.java.home/d' android/gradle.properties
 
-      # ── 10. Generate keystore from secrets ────────────────────────────────
-      - name: Generate keystore
+      # ── 10. Decode keystore from secret ───────────────────────────────────
+      - name: Decode or generate keystore
         run: |
-          keytool -genkey -v \
-            -keystore android/app/pospro.jks \
-            -alias pospro \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
-            -keypass "${{ secrets.KEY_PASSWORD }}" \
-            -dname "CN=POS Pro, OU=Dev, O=POS Pro, L=Port of Spain, ST=Trinidad, C=TT"
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/pospro.jks
+            echo "✅ Keystore decoded from secret"
+          else
+            keytool -genkey -v \
+              -keystore android/app/pospro.jks \
+              -alias pospro \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+              -keypass "${{ secrets.KEY_PASSWORD }}" \
+              -dname "CN=POS Pro, OU=Dev, O=POS Pro, L=Port of Spain, ST=Trinidad, C=TT"
+            echo "⚠️  Generated new keystore — copy this base64 and save as KEYSTORE_BASE64 secret:"
+            base64 -w 0 android/app/pospro.jks
+          fi
 
       # ── 11. Make gradlew executable ───────────────────────────────────────
       - name: Make gradlew executable
@@ -107,7 +111,7 @@ jobs:
             "platforms;android-36" \
             "build-tools;34.0.0"
 
-      # ── 14. Build release APK ─────────────────────────────────────────────
+      # ── 12. Build release APK ─────────────────────────────────────────────
       - name: Build release APK
         run: ./gradlew assembleRelease --no-daemon
         working-directory: android
@@ -117,14 +121,14 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
-      # ── 15. Find and rename APK ───────────────────────────────────────────
+      # ── 13. Find and rename APK ───────────────────────────────────────────
       - name: Rename APK
         run: |
           APK=$(find android/app/build/outputs/apk/release/ -name "*.apk" | head -1)
           echo "Found APK: $APK"
           mv "$APK" android/app/build/outputs/apk/release/pos-pro.apk
 
-      # ── 16. Create / update GitHub Release ───────────────────────────────
+      # ── 14. Create / update GitHub Release ───────────────────────────────
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -138,7 +142,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 17. Build web bundle for Safari/browser (iPhone support) ──────────
+      # ── 15. Build web bundle for browser (iPhone / PWA support) ──────────
       - name: Build web bundle
         run: npx cross-env NODE_OPTIONS="--max-old-space-size=4096" vite build --config vite.web.config.ts
 
@@ -150,7 +154,7 @@ jobs:
       - name: Fix web index filename
         run: mv dist/web/index.web.html dist/web/index.html
 
-      # ── 18. Deploy web build to Cloudflare Pages ──────────────────────────
+      # ── 16. Deploy web build to Cloudflare Pages ──────────────────────────
       - name: Deploy to Cloudflare Pages (pospro-web)
         uses: cloudflare/wrangler-action@v3
         with:
@@ -158,30 +162,6 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '3.90.0'
           command: pages deploy dist/web --project-name=pospro-web --commit-dirty=true
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-      # ── 19. Deploy download page to Cloudflare Pages (pos-pro) ────────────
-      - name: Prepare download page for deploy
-        run: |
-          mkdir -p dist/download
-          cp public/download.html dist/download/index.html
-          cp public/version.json  dist/download/version.json
-          # Copy assets needed by the download page
-          cp -r public/assets dist/download/assets 2>/dev/null || true
-          cp public/logo.svg dist/download/logo.svg 2>/dev/null || true
-          # No catch-all _redirects — version.json must be served as a real file.
-          # Only add a specific 404 fallback so direct links still work.
-          printf '/version.json /version.json 200\n' > dist/download/_redirects
-
-      - name: Deploy to Cloudflare Pages (pos-pro download)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '3.90.0'
-          command: pages deploy dist/download --project-name=pos-pro --commit-dirty=true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

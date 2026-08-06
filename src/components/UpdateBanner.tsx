@@ -2,7 +2,7 @@
  * UpdateBanner
  *
  * Shows a full-screen modal when a new APK version is available on GitHub.
- * Tapping "Update Now" opens the APK download URL via the Capacitor Browser
+ * Tapping "Update Now" opens the download page via the Capacitor Browser
  * plugin (falls back to window.open).
  *
  * The user can dismiss it and continue using the current version.

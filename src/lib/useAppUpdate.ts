@@ -1,87 +1,101 @@
 /**
  * useAppUpdate
  *
- * Fetches /version.json from the download page and compares it to the
- * version baked into the current APK bundle (VITE_APP_VERSION).
+ * Checks GitHub Releases for a newer APK version on app open.
+ * Compares the latest release tag (e.g. "v1.2.0") against the
+ * VITE_APP_VERSION env variable baked in at build time.
  *
- * If the remote version is newer, returns an UpdateInfo object that
- * triggers the UpdateBanner modal in App.tsx.
+ * Convention for GitHub releases:
+ *   - Tag name:  v1.2.0  (semver, must start with "v")
+ *   - Asset:     pos-pro.apk  (the APK file attached to the release)
+ *
+ * No auth token needed — the GitHub Releases API is public.
  */
 
 import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 
-export interface UpdateInfo {
-  latestVersion: string;
-  apkUrl: string;
-  downloadPage: string;
-  releaseNotes?: string;
-  releaseDate?: string;
+const GITHUB_OWNER = "murrentronics";
+const GITHUB_REPO  = "pos-pro";
+const RELEASES_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
+
+// Current version is injected at build time via vite.config
+// Falls back to "1.0.0" so web never shows the banner
+const CURRENT_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? "1.0.0";
+
+export type UpdateInfo = {
+  latestVersion: string;   // e.g. "1.2.0"
+  apkUrl: string;          // direct download URL for the APK asset
+  releaseNotes: string;    // GitHub release body (changelog)
+};
+
+/** Parse "v1.2.0" → [1, 2, 0] */
+function parseSemver(tag: string): number[] {
+  return tag.replace(/^v/, "").split(".").map(Number);
 }
 
-interface VersionJson {
-  version: string;
-  apkUrl: string;
-  downloadPage: string;
-  releaseNotes?: string;
-  releaseDate?: string;
-}
-
-const VERSION_URL = "https://raw.githubusercontent.com/murrentronics/pos-pro/main/public/version.json";
-const CURRENT_VERSION: string = import.meta.env.VITE_APP_VERSION ?? "0.0.0";
-
-/** Returns true when remote > local using semver integer comparison */
-function isNewer(remote: string, local: string): boolean {
-  const parse = (v: string) =>
-    v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
-  const [rMaj, rMin, rPat] = parse(remote);
-  const [lMaj, lMin, lPat] = parse(local);
-  if (rMaj !== lMaj) return rMaj > lMaj;
-  if (rMin !== lMin) return rMin > lMin;
-  return rPat > lPat;
+/** Returns true if `latest` is strictly newer than `current` */
+function isNewer(current: string, latest: string): boolean {
+  const c = parseSemver(current);
+  const l = parseSemver(latest);
+  for (let i = 0; i < 3; i++) {
+    const cv = c[i] ?? 0;
+    const lv = l[i] ?? 0;
+    if (lv > cv) return true;
+    if (lv < cv) return false;
+  }
+  return false;
 }
 
 export function useAppUpdate() {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    // Only check for updates inside the native Android APK.
-    // Skip on web — there is nothing to update there.
+    // Only check on native Android — not on web
     if (!Capacitor.isNativePlatform()) return;
-
-    // Don't check if the version wasn't baked in (dev mode)
-    if (!CURRENT_VERSION || CURRENT_VERSION === "0.0.0" || CURRENT_VERSION === "web") return;
 
     const check = async () => {
       try {
-        const res = await fetch(`${VERSION_URL}?t=${Date.now()}`, {
-          cache: "no-store",
+        const res = await fetch(RELEASES_API, {
+          headers: { Accept: "application/vnd.github+json" },
           signal: AbortSignal.timeout(8000),
         });
         if (!res.ok) return;
-        const data: VersionJson = await res.json();
-        if (!data?.version) return;
 
-        if (isNewer(data.version, CURRENT_VERSION)) {
-          setUpdate({
-            latestVersion: data.version,
-            apkUrl: data.apkUrl,
-            downloadPage: data.downloadPage,
-            releaseNotes: data.releaseNotes,
-            releaseDate: data.releaseDate,
-          });
-        }
+        const data = await res.json() as {
+          tag_name: string;
+          body: string;
+          assets: { name: string; browser_download_url: string }[];
+        };
+
+        const latestTag = data.tag_name ?? "";
+        const latestVersion = latestTag.replace(/^v/, "");
+
+        if (!isNewer(CURRENT_VERSION, latestVersion)) return;
+
+        // Find the APK asset
+        const apkAsset = data.assets.find((a) => a.name.endsWith(".apk"));
+        if (!apkAsset) return;
+
+        setUpdate({
+          latestVersion,
+          apkUrl: apkAsset.browser_download_url,
+          releaseNotes: data.body ?? "",
+        });
       } catch {
-        // Offline or network error — silently ignore, try again next session
+        // Silently ignore — network errors, timeouts, etc.
       }
     };
 
-    // Check after a short delay so the app finishes loading first
-    const t = setTimeout(check, 4000);
-    return () => clearTimeout(t);
+    // Check on mount (app open), then every 4 hours while app is running
+    check();
+    const interval = setInterval(check, 4 * 60 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
-  const dismiss = () => setUpdate(null);
-
-  return { update, dismiss };
+  return {
+    update: dismissed ? null : update,
+    dismiss: () => setDismissed(true),
+  };
 }
