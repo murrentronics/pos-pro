@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>P.O.S. Pro — Download</title>
+  <meta name="description" content="Fast bar POS for owners and cashiers. Manage products, wallets, and staff from your Android device." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --blue:      #00b4ff;
+      --blue-dark: #0047ab;
+      --bg:        #020810;
+      --card:      #080f1e;
+      --border:    rgba(0,180,255,0.15);
+      --text:      #e8f4ff;
+      --muted:     #5b8db8;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 60px 24px;
+      background: radial-gradient(ellipse at 30% 0%, rgba(0,180,255,0.10) 0%, transparent 60%),
+                  radial-gradient(ellipse at 70% 100%, rgba(0,71,171,0.10) 0%, transparent 60%);
+      text-align: center;
+    }
+    .logo-wrap { margin-bottom: 32px; }
+    .logo-wrap svg { filter: drop-shadow(0 0 28px rgba(0,180,255,0.45)); }
+    h1 {
+      font-size: clamp(2.2rem, 6vw, 3.8rem);
+      font-weight: 900; letter-spacing: -1px; line-height: 1.1;
+      background: linear-gradient(135deg, #00b4ff 0%, #0047ab 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      margin-bottom: 16px;
+    }
+    .tagline {
+      font-size: clamp(1rem, 2.5vw, 1.25rem);
+      color: var(--muted); max-width: 480px; line-height: 1.6; margin-bottom: 48px;
+    }
+    .cta-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 64px; }
+    .btn-download {
+      display: inline-flex; align-items: center; gap: 12px;
+      padding: 18px 36px; border-radius: 16px;
+      font-size: 1.1rem; font-weight: 800; letter-spacing: 0.5px;
+      text-decoration: none; color: #000d1a;
+      background: linear-gradient(135deg, #00b4ff 0%, #0047ab 100%);
+      box-shadow: 0 8px 32px rgba(0,180,255,0.30);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .btn-download:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0,180,255,0.45); }
+    .btn-download:active { transform: translateY(0); }
+    .dl-note { font-size: 0.8rem; color: var(--muted); }
+    .mockup-wrap { position: relative; width: 100%; max-width: 400px; margin: 0 auto 80px; }
+    .mockup-wrap::before {
+      content: ""; position: absolute; inset: -20px; border-radius: 56px;
+      background: radial-gradient(ellipse, rgba(0,180,255,0.10) 0%, transparent 70%); z-index: -1;
+    }
+    .carousel-container { position: relative; width: 100%; overflow: hidden; }
+    .carousel-track {
+      display: flex; gap: 16px; overflow-x: auto; scroll-snap-type: x mandatory;
+      scroll-behavior: smooth; -webkit-overflow-scrolling: touch;
+      scrollbar-width: none; padding: 40px 50px; cursor: grab;
+    }
+    .carousel-track::-webkit-scrollbar { display: none; }
+    .carousel-track:active { cursor: grabbing; }
+    .phone-frame {
+      flex: 0 0 260px; width: 260px; border-radius: 8px; overflow: hidden;
+      aspect-ratio: 9/19; scroll-snap-align: center;
+      transition: all 0.4s cubic-bezier(0.4,0,0.2,1); cursor: pointer; position: relative;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4); opacity: 0.5; transform: scale(0.88);
+    }
+    .phone-frame.center { opacity: 1; transform: scale(1); box-shadow: 0 16px 48px rgba(0,0,0,0.6); z-index: 10; }
+    .phone-screen { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+    .carousel-dots { display: flex; gap: 10px; justify-content: center; margin-top: 24px; }
+    .carousel-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: rgba(0,180,255,0.3); border: none; cursor: pointer; transition: all 0.3s;
+    }
+    .carousel-dot:hover { background: rgba(0,180,255,0.6); transform: scale(1.2); }
+    .carousel-dot.active { background: #00b4ff; width: 32px; border-radius: 5px; }
+    .phone-placeholder {
+      width: 100%; height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px; padding: 24px;
+      background: linear-gradient(160deg, #06121f 0%, #020810 100%);
+    }
+    .phone-placeholder .app-name {
+      font-size: 1rem; font-weight: 900; letter-spacing: 2px;
+      background: linear-gradient(135deg, #00b4ff, #0047ab);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .phone-placeholder .app-sub { font-size: 0.65rem; letter-spacing: 4px; color: var(--muted); }
+    .features { padding: 80px 24px; max-width: 900px; margin: 0 auto; }
+    .section-title { text-align: center; font-size: clamp(1.4rem,4vw,2rem); font-weight: 900; margin-bottom: 48px; color: var(--text); }
+    .section-title span { background: linear-gradient(135deg, #00b4ff, #0047ab); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 20px; }
+    .feature-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 28px 24px; transition: border-color 0.2s, transform 0.2s; }
+    .feature-card:hover { border-color: rgba(0,180,255,0.35); transform: translateY(-3px); }
+    .feature-icon { font-size: 2rem; margin-bottom: 14px; }
+    .feature-card h3 { font-size: 1rem; font-weight: 800; margin-bottom: 8px; color: var(--text); }
+    .feature-card p { font-size: 0.875rem; color: var(--muted); line-height: 1.6; }
+    .install { padding: 80px 24px; max-width: 600px; margin: 0 auto; text-align: center; }
+    .steps { display: flex; flex-direction: column; gap: 16px; margin-top: 40px; text-align: left; }
+    .step { display: flex; align-items: flex-start; gap: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }
+    .step-num { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #00b4ff, #0047ab); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 0.9rem; color: #000d1a; }
+    .step-text h4 { font-size: 0.95rem; font-weight: 700; margin-bottom: 4px; }
+    .step-text p { font-size: 0.825rem; color: var(--muted); line-height: 1.5; }
+    .bottom-cta { padding: 80px 24px; text-align: center; border-top: 1px solid var(--border); }
+    .bottom-cta h2 { font-size: clamp(1.5rem,4vw,2.2rem); font-weight: 900; margin-bottom: 12px; }
+    .bottom-cta p { color: var(--muted); margin-bottom: 32px; font-size: 0.95rem; }
+    .divider { width: 60px; height: 3px; background: linear-gradient(90deg, #00b4ff, #0047ab); border-radius: 2px; margin: 0 auto 48px; }
+    footer { padding: 24px; text-align: center; font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--border); margin-top: 80px; }
+    .pricing { padding: 80px 24px; max-width: 900px; margin: 0 auto; }
+    .pricing-intro { text-align: center; color: var(--muted); margin-bottom: 48px; font-size: 1rem; }
+    .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); gap: 24px; max-width: 700px; margin: 0 auto 32px; }
+    .pricing-card { background: var(--card); border: 2px solid var(--border); border-radius: 24px; padding: 36px 28px; text-align: center; transition: border-color 0.2s, transform 0.2s; position: relative; }
+    .pricing-card:hover { border-color: rgba(0,180,255,0.4); transform: translateY(-4px); }
+    .pricing-card.featured { border-color: rgba(0,180,255,0.5); box-shadow: 0 8px 32px rgba(0,180,255,0.15); }
+    .plan-badge { display: inline-block; padding: 6px 16px; border-radius: 20px; font-size: 0.75rem; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; background: rgba(0,180,255,0.12); color: var(--blue); margin-bottom: 20px; }
+    .plan-badge.popular { background: linear-gradient(135deg, #00b4ff, #0047ab); color: #000d1a; }
+    .plan-price { margin-bottom: 16px; line-height: 1; }
+    .plan-price .currency { font-size: 1.5rem; font-weight: 700; color: var(--blue); vertical-align: top; }
+    .plan-price .amount { font-size: 4rem; font-weight: 900; background: linear-gradient(135deg, #00b4ff, #0047ab); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .plan-price .period { font-size: 1.2rem; font-weight: 600; color: var(--muted); margin-left: 4px; }
+    .plan-desc { color: var(--muted); font-size: 0.9rem; margin-bottom: 28px; }
+    .plan-features { list-style: none; text-align: left; margin: 0 auto; max-width: 240px; }
+    .plan-features li { padding: 10px 0; font-size: 0.9rem; color: var(--text); border-bottom: 1px solid rgba(0,180,255,0.08); }
+    .plan-features li:last-child { border-bottom: none; }
+    .pricing-note { text-align: center; color: var(--muted); font-size: 0.85rem; margin-top: 32px; margin-bottom: 48px; }
+    .support-banner { max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, rgba(0,180,255,0.06) 0%, rgba(0,71,171,0.06) 100%); border: 2px solid rgba(0,180,255,0.20); border-radius: 24px; padding: 32px 28px; text-align: center; }
+    .support-icon { font-size: 3rem; margin-bottom: 16px; }
+    .support-content h3 { font-size: 1.4rem; font-weight: 900; margin-bottom: 8px; background: linear-gradient(135deg, #00b4ff, #0047ab); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .support-content > p { color: var(--muted); font-size: 0.95rem; margin-bottom: 24px; }
+    .contact-buttons { display: flex; gap: 12px; justify-content: center; margin-bottom: 16px; flex-wrap: wrap; }
+    .contact-btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 12px; font-size: 0.95rem; font-weight: 700; text-decoration: none; color: var(--text); background: var(--card); border: 2px solid var(--border); transition: all 0.2s; }
+    .contact-btn:hover { border-color: rgba(0,180,255,0.5); transform: translateY(-2px); }
+    .contact-btn.whatsapp { background: linear-gradient(135deg, #25D366 0%, #128C7E 100%); border-color: #25D366; color: white; }
+    .contact-btn.whatsapp:hover { box-shadow: 0 4px 16px rgba(37,211,102,0.3); }
+    .contact-number { font-size: 1.1rem; font-weight: 700; color: var(--blue); letter-spacing: 0.5px; margin-top: 12px; }
+    .manual-fab {
+      position: fixed; top: 20px; right: 20px; z-index: 1000;
+      display: inline-flex; align-items: center; gap: 8px; padding: 11px 22px;
+      border-radius: 50px; font-size: 0.9rem; font-weight: 800; letter-spacing: 0.5px;
+      border: 2px solid rgba(0,180,255,0.4); color: var(--blue);
+      background: rgba(2,8,16,0.85); backdrop-filter: blur(12px);
+      cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    .manual-fab:hover { background: rgba(0,180,255,0.10); border-color: var(--blue); transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,180,255,0.2); }
+    .manual-overlay { display: none; position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.92); backdrop-filter: blur(4px); overflow-y: auto; }
+    .manual-overlay.open { display: block; }
+    .manual-sheet { max-width: 820px; margin: 32px auto; background: #040c18; border: 1px solid rgba(0,180,255,0.18); border-radius: 28px; overflow: hidden; box-shadow: 0 24px 80px rgba(0,0,0,0.8); }
+    .manual-header { position: sticky; top: 0; z-index: 10; background: #040c18; border-bottom: 1px solid rgba(0,180,255,0.12); padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .manual-header-title { font-size: 1.2rem; font-weight: 900; background: linear-gradient(135deg, #00b4ff, #0047ab); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .manual-header-actions { display: flex; align-items: center; gap: 10px; }
+    .manual-pdf-btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 18px; border-radius: 12px; font-size: 0.85rem; font-weight: 800; border: none; cursor: pointer; color: #000d1a; background: linear-gradient(135deg, #00b4ff, #0047ab); transition: opacity 0.2s, transform 0.15s; }
+    .manual-pdf-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .manual-pdf-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .manual-close-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid rgba(0,180,255,0.3); background: transparent; color: var(--blue); font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+    .manual-close-btn:hover { background: rgba(0,180,255,0.1); }
+    .manual-body { padding: 32px 28px 48px; }
+    .manual-cover { text-align: center; padding: 40px 0 48px; border-bottom: 1px solid rgba(0,180,255,0.10); margin-bottom: 48px; }
+    .manual-cover-logo { font-size: 4rem; margin-bottom: 16px; }
+    .manual-cover h2 { font-size: clamp(1.8rem,5vw,3rem); font-weight: 900; background: linear-gradient(135deg, #00b4ff, #0047ab); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 10px; }
+    .manual-cover p { color: var(--muted); font-size: 1rem; max-width: 520px; margin: 0 auto; line-height: 1.6; }
+    @media (max-width: 600px) { .manual-sheet { margin: 0; border-radius: 0; min-height: 100vh; } .manual-body { padding: 20px 16px 48px; } .manual-header { padding: 16px 18px; } }
+    .manual-toc { background: rgba(0,180,255,0.04); border: 1px solid rgba(0,180,255,0.12); border-radius: 16px; padding: 24px 28px; margin-bottom: 48px; }
+    .manual-toc h3 { font-size: 0.75rem; font-weight: 900; letter-spacing: 0.15em; color: var(--blue); text-transform: uppercase; margin-bottom: 14px; }
+    .manual-toc ol { padding-left: 18px; }
+    .manual-toc li { font-size: 0.9rem; color: rgba(255,255,255,0.7); padding: 4px 0; line-height: 1.5; }
+    .manual-toc li a { color: rgba(0,180,255,0.8); text-decoration: none; }
+    .manual-toc li a:hover { color: var(--blue); text-decoration: underline; }
+    .manual-section { margin-bottom: 56px; }
+    .manual-section-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 2px solid rgba(0,180,255,0.12); }
+    .manual-section-icon { width: 48px; height: 48px; border-radius: 14px; background: rgba(0,180,255,0.08); border: 1px solid rgba(0,180,255,0.20); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; }
+    .manual-section-header h3 { font-size: 1.25rem; font-weight: 900; color: var(--text); }
+    .manual-section-header span { font-size: 0.75rem; font-weight: 700; color: var(--blue); letter-spacing: 0.1em; text-transform: uppercase; display: block; margin-top: 2px; }
+    .manual-steps { display: flex; flex-direction: column; gap: 14px; margin: 20px 0; }
+    .manual-step { display: flex; gap: 14px; align-items: flex-start; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 14px; padding: 16px 18px; }
+    .manual-step-num { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #00b4ff, #0047ab); color: #000d1a; font-size: 0.8rem; font-weight: 900; display: flex; align-items: center; justify-content: center; }
+    .manual-step-body h4 { font-size: 0.9rem; font-weight: 800; color: var(--text); margin-bottom: 4px; }
+    .manual-step-body p { font-size: 0.83rem; color: var(--muted); line-height: 1.55; }
+    .manual-step-body code { background: rgba(0,180,255,0.08); border: 1px solid rgba(0,180,255,0.18); border-radius: 6px; padding: 1px 7px; font-size: 0.8rem; color: var(--blue); font-family: monospace; }
+    .manual-tip { display: flex; gap: 12px; background: rgba(0,180,255,0.05); border-left: 3px solid rgba(0,180,255,0.45); border-radius: 0 12px 12px 0; padding: 14px 16px; margin: 16px 0; }
+    .manual-tip-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+    .manual-tip p { font-size: 0.83rem; color: rgba(255,255,255,0.7); line-height: 1.55; margin: 0; }
+    .manual-tip strong { color: var(--blue); }
+    .manual-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 16px; margin: 20px 0; }
+    .manual-card { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 18px 16px; }
+    .manual-card h4 { font-size: 0.9rem; font-weight: 800; color: var(--text); margin-bottom: 8px; }
+    .manual-card ul { padding-left: 16px; }
+    .manual-card li { font-size: 0.8rem; color: var(--muted); padding: 3px 0; line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+  <!-- MANUAL FAB -->
+  <button class="manual-fab" onclick="document.getElementById('manualOverlay').classList.add('open');document.body.style.overflow='hidden'">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+    Manual
+  </button>
+
+  <!-- MANUAL MODAL -->
+  <div id="manualOverlay" class="manual-overlay" onclick="if(event.target===this){closeManual()}">
+    <div class="manual-sheet" id="manualContent">
+      <div class="manual-header">
+        <div class="manual-header-title">&#128218; P.O.S. Pro &mdash; User Manual</div>
+        <div class="manual-header-actions">
+          <button class="manual-pdf-btn" id="manualPdfBtn" onclick="downloadManualPdf()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download PDF
+          </button>
+          <button class="manual-close-btn" onclick="closeManual()">&#10005;</button>
+        </div>
+      </div>
+      <div class="manual-body" id="manualBody">
+        <div class="manual-cover">
+          <div class="manual-cover-logo">🍺</div>
+          <h2>P.O.S. Pro</h2>
+          <p>The complete guide to running your bar with P.O.S. Pro &mdash; from opening the session to closing the night, every feature explained step by step.</p>
+        </div>
+        <div class="manual-toc">
+          <h3>Table of Contents</h3>
+          <ol>
+            <li><a href="#m-login">Signing In &amp; Account Roles</a></li>
+            <li><a href="#m-session">Opening &amp; Closing the Bar Session</a></li>
+            <li><a href="#m-pos">Bar (POS) &mdash; Taking Orders</a></li>
+            <li><a href="#m-cash">Cash Sales &amp; Change</a></li>
+            <li><a href="#m-credit">Credit Sales (Charge to Tab)</a></li>
+            <li><a href="#m-products">Items (Product Catalog)</a></li>
+            <li><a href="#m-wallet">Wallet &amp; Financial Overview</a></li>
+            <li><a href="#m-customers">Customers (Credit Accounts)</a></li>
+            <li><a href="#m-cashiers">Staff (Cashiers)</a></li>
+            <li><a href="#m-manager">Manager &mdash; Bar Expense</a></li>
+            <li><a href="#m-summary">Summary Reports</a></li>
+            <li><a href="#m-profile">Profile &amp; Settings</a></li>
+            <li><a href="#m-offline">Partial Offline Mode &amp; Sync</a></li>
+          </ol>
+        </div>
+        <div class="manual-section" id="m-login">
+          <div class="manual-section-header"><div class="manual-section-icon">🔐</div><div><h3>Signing In &amp; Account Roles</h3><span>Section 1</span></div></div>
+          <div class="manual-cards">
+            <div class="manual-card"><h4>👑 Owner</h4><ul><li>Full access to all features</li><li>Manage staff, products, wallet</li><li>View all reports and history</li><li>Billing and plan management</li></ul></div>
+            <div class="manual-card"><h4>🧑‍💼 Cashier</h4><ul><li>Take orders at the register</li><li>Cash and credit sales</li><li>View own wallet balance</li><li>No access to owner settings</li></ul></div>
+            <div class="manual-card"><h4>📋 Manager</h4><ul><li>Record bar expenses</li><li>View items and customers</li><li>Stock check access</li><li>No billing or staff management</li></ul></div>
+          </div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>Open the app</h4><p>Launch P.O.S. Pro from your browser or the installed APK.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Enter your username and password</h4><p>Owners register first. Cashiers and managers are created by the owner inside the app.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">3</div><div class="manual-step-body"><h4>You'll land on your role's home screen</h4><p>Owners and cashiers go to the Bar register. Managers go to Items.</p></div></div>
+          </div>
+          <div class="manual-tip"><div class="manual-tip-icon">💡</div><p><strong>Forgot your password?</strong> Use the Forgot Password link on the login page to reset via email.</p></div>
+        </div>
+        <div class="manual-section" id="m-session">
+          <div class="manual-section-header"><div class="manual-section-icon">🕐</div><div><h3>Opening &amp; Closing the Bar Session</h3><span>Section 2</span></div></div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>Open the Bar tab</h4><p>Tap <code>Bar</code> in the menu. If no session is open you'll see the Open Session button.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Start selling</h4><p>Once open, cashiers can take orders immediately. All sales are logged in real time.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">3</div><div class="manual-step-body"><h4>Close the session (owner)</h4><p>At end of day the owner closes the session from the Wallet page. This locks the session totals.</p></div></div>
+          </div>
+        </div>
+        <div class="manual-section" id="m-pos">
+          <div class="manual-section-header"><div class="manual-section-icon">🍺</div><div><h3>Bar (POS) — Taking Orders</h3><span>Section 3</span></div></div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>Tap items to add to cart</h4><p>Browse by category tabs at the top. Tap any product to add one unit to the cart.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Adjust quantities</h4><p>Long-press an item in the cart to change its quantity or remove it.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">3</div><div class="manual-step-body"><h4>Choose cash or credit</h4><p>Tap <code>Cash Sale</code> or <code>Credit Sale</code> to proceed to checkout.</p></div></div>
+          </div>
+          <div class="manual-tip"><div class="manual-tip-icon">💡</div><p><strong>Sort items</strong> by tapping the sort icon (⇅) at the top right of the product grid.</p></div>
+        </div>
+        <div class="manual-section" id="m-cash">
+          <div class="manual-section-header"><div class="manual-section-icon">💵</div><div><h3>Cash Sales &amp; Change</h3><span>Section 4</span></div></div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>Tap Cash Sale</h4><p>After building the order, tap the Cash Sale button at the bottom of the cart.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Enter amount tendered</h4><p>Type in the amount the customer gives you. The app calculates change instantly.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">3</div><div class="manual-step-body"><h4>Confirm the sale</h4><p>Tap Confirm. The sale is recorded and the cashier wallet is updated.</p></div></div>
+          </div>
+        </div>
+        <div class="manual-section" id="m-credit">
+          <div class="manual-section-header"><div class="manual-section-icon">💳</div><div><h3>Credit Sales (Charge to Tab)</h3><span>Section 5</span></div></div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>Tap Credit Sale</h4><p>Select Credit Sale from the cart. You'll be prompted to choose a customer.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Select or create a customer</h4><p>Search existing credit accounts or tap <code>+ New Account</code> to create one on the spot.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">3</div><div class="manual-step-body"><h4>Confirm charge</h4><p>The amount is added to that customer's outstanding balance.</p></div></div>
+          </div>
+          <div class="manual-tip"><div class="manual-tip-icon">💡</div><p>Customers pay off their tab from the <strong>Customers</strong> section. Tap a customer then <code>Add Payment</code>.</p></div>
+        </div>
+        <div class="manual-section" id="m-products">
+          <div class="manual-section-header"><div class="manual-section-icon">📦</div><div><h3>Items (Product Catalog)</h3><span>Section 6</span></div></div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>Tap Items in the menu</h4><p>Only owners and managers can access this section.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Add or edit a product</h4><p>Set name, category, selling price, cost price, and stock level. Optionally add a photo.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">3</div><div class="manual-step-body"><h4>Stock is tracked automatically</h4><p>Every confirmed sale deducts from stock. Low-stock indicators appear when levels drop.</p></div></div>
+          </div>
+          <div class="manual-tip"><div class="manual-tip-icon">💡</div><p>Set a <strong>cost price</strong> to see your profit margin per product in the Summary report.</p></div>
+        </div>
+        <div class="manual-section" id="m-wallet">
+          <div class="manual-section-header"><div class="manual-section-icon">💰</div><div><h3>Wallet &amp; Financial Overview</h3><span>Section 7</span></div></div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>View balance and records</h4><p>Tap <code>Wallet</code> to see your running balance and full transaction history.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Clear cashier wallets</h4><p>Owners go to <code>Staff</code>, select a cashier, and tap <code>Clear to Owner</code> to transfer their balance.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">3</div><div class="manual-step-body"><h4>Download statement</h4><p>Tap Statement in the wallet to generate a PDF of all transactions.</p></div></div>
+          </div>
+        </div>
+        <div class="manual-section" id="m-customers">
+          <div class="manual-section-header"><div class="manual-section-icon">👤</div><div><h3>Customers (Credit Accounts)</h3><span>Section 8</span></div></div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>Go to Customers</h4><p>Tap <code>Customers</code> to see all credit accounts and outstanding balances.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Record a payment</h4><p>Tap <code>Add Payment</code>, enter the amount, and confirm. The balance updates immediately.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">3</div><div class="manual-step-body"><h4>Download a bill</h4><p>Tap <code>Bill</code> to generate a PDF statement to share with the customer.</p></div></div>
+          </div>
+        </div>
+        <div class="manual-section" id="m-cashiers">
+          <div class="manual-section-header"><div class="manual-section-icon">👥</div><div><h3>Staff (Cashiers)</h3><span>Section 9</span></div></div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>Tap Staff in the menu</h4><p>Only the owner can manage staff accounts.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Add a cashier</h4><p>Tap <code>Add Cashier</code>, set a username and password. They can log in immediately.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">3</div><div class="manual-step-body"><h4>Clear or suspend a cashier</h4><p>Tap a cashier card to transfer their wallet balance to the owner or suspend their access.</p></div></div>
+          </div>
+        </div>
+        <div class="manual-section" id="m-manager">
+          <div class="manual-section-header"><div class="manual-section-icon">📋</div><div><h3>Manager — Bar Expense</h3><span>Section 10</span></div></div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>Log in as manager</h4><p>Managers are created by the owner in the Staff section with job title set to Manager.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Open Bar Expense</h4><p>Tap <code>Manage</code> in the menu to record a new expense with category, amount, and note.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">3</div><div class="manual-step-body"><h4>Owner reviews in Summary</h4><p>All manager-logged expenses appear in the owner's Summary report under the Expenses tab.</p></div></div>
+          </div>
+        </div>
+        <div class="manual-section" id="m-summary">
+          <div class="manual-section-header"><div class="manual-section-icon">📊</div><div><h3>Summary Reports</h3><span>Section 11</span></div></div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>Tap Summary</h4><p>Available to owners only. Shows totals for the current and previous sessions.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Filter by date range</h4><p>Use the date pickers to see data for any custom period.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">3</div><div class="manual-step-body"><h4>Download PDF</h4><p>Tap the download icon to export the full summary report as a PDF.</p></div></div>
+          </div>
+        </div>
+        <div class="manual-section" id="m-profile">
+          <div class="manual-section-header"><div class="manual-section-icon">⚙️</div><div><h3>Profile &amp; Settings</h3><span>Section 12</span></div></div>
+          <div class="manual-steps">
+            <div class="manual-step"><div class="manual-step-num">1</div><div class="manual-step-body"><h4>Tap Profile</h4><p>Update your bar name, contact details, and change your password.</p></div></div>
+            <div class="manual-step"><div class="manual-step-num">2</div><div class="manual-step-body"><h4>Language</h4><p>Switch the app between English and Spanish from the Language option in the menu.</p></div></div>
+          </div>
+        </div>
+        <div class="manual-section" id="m-offline">
+          <div class="manual-section-header"><div class="manual-section-icon">📡</div><div><h3>Partial Offline Mode &amp; Sync</h3><span>Section 13</span></div></div>
+          <p style="font-size:0.88rem;color:var(--muted);margin-bottom:16px;">P.O.S. Pro supports partial offline operation. If your connection drops <strong>after logging in</strong>, you can continue taking sales — but only from the Register page.</p>
+          <div class="manual-tip"><div class="manual-tip-icon">⚠️</div><p><strong>Partial offline mode.</strong> If your internet connection is lost after login, stay on the <strong>Register (Bar)</strong> page to keep taking sales. Sales made while offline are queued locally and will <strong>auto-sync</strong> once your connection is restored. Navigating away from the Register page or closing the app while offline may cause unsaved sales to be lost.</p></div>
+          <div class="manual-tip"><div class="manual-tip-icon">💡</div><p>All other features — wallets, reports, staff management, and settings — require an active internet connection. Use a stable Wi-Fi or mobile data connection at your bar for the best experience.</p></div>
+          <div class="manual-tip"><div class="manual-tip-icon">💡</div><p>Install the app as a <strong>PWA</strong> (Add to Home Screen in your browser) for a native-app feel and faster load times.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="logo-wrap">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="100" height="100">
+        <defs>
+          <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#00b4ff"/>
+            <stop offset="100%" stop-color="#0047ab"/>
+          </linearGradient>
+          <radialGradient id="bg1" cx="40%" cy="35%">
+            <stop offset="0%" stop-color="#061428"/>
+            <stop offset="100%" stop-color="#020810"/>
+          </radialGradient>
+        </defs>
+        <circle cx="60" cy="60" r="60" fill="url(#bg1)"/>
+        <circle cx="60" cy="60" r="56" fill="none" stroke="#00b4ff" stroke-width="1" opacity="0.25"/>
+        <text x="60" y="82" font-family="Georgia,serif" font-size="72" font-weight="900" text-anchor="middle" fill="url(#g1)">P</text>
+        <rect x="70" y="85" width="36" height="14" rx="5" fill="url(#g1)"/>
+        <text x="88" y="96" font-family="Arial,sans-serif" font-size="7" font-weight="800" text-anchor="middle" fill="#000d1a" letter-spacing="1">PRO</text>
+      </svg>
+    </div>
+    <h1>P.O.S. Pro</h1>
+    <p class="tagline">The complete business point-of-sale for owners and cashiers. Products, wallets, staff &mdash; all in one Android app.</p>
+    <div class="cta-wrap">
+      <a class="btn-download" id="dlBtn" href="https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download APK  v1.0.4
+      </a>
+      <span class="dl-note" id="dlNote">Android 7.0+  •  v1.1.7  •  No Play Store required</span>
+      <span id="releaseDate" style="display:none;font-size:0.75rem;color:var(--muted);margin-top:2px;"></span>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- FEATURES -->
+  <section class="features">
+    <h2 class="section-title">Everything your business <span>needs</span></h2>
+    <div class="features-grid">
+      <div class="feature-card"><div class="feature-icon">🛒</div><h3>POS Register</h3><p>Fast order entry with categories, quantities, and instant cash change calculation.</p></div>
+      <div class="feature-card"><div class="feature-icon">💳</div><h3>Credit Tabs</h3><p>Run credit accounts for regular customers. Track balances and record payments with a tap.</p></div>
+      <div class="feature-card"><div class="feature-icon">💰</div><h3>Cashier Wallets</h3><p>Every cashier has their own wallet. Owners clear balances to their own account at close.</p></div>
+      <div class="feature-card"><div class="feature-icon">📦</div><h3>Product Catalog</h3><p>Manage your full inventory with prices, photos, categories, and stock tracking.</p></div>
+      <div class="feature-card"><div class="feature-icon">📊</div><h3>Summary Reports</h3><p>Daily and custom-range reports with expenses, revenue, and cashier breakdowns as PDFs.</p></div>
+      <div class="feature-card"><div class="feature-icon">📡</div><h3>Real-time Sync</h3><p>Sales sync instantly across all devices. Multiple cashiers, one live view for the owner.</p></div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- INSTALL STEPS -->
+  <section class="install">
+    <h2 class="section-title">Install in <span>3 steps</span></h2>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-text"><h4>Download the APK</h4><p>Tap the Download APK button above. Your browser may warn you &mdash; tap OK to allow the download.</p></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-text"><h4>Allow unknown sources</h4><p>Go to Settings &rarr; Apps &rarr; Special access &rarr; Install unknown apps and allow your browser or file manager.</p></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-text"><h4>Open and install</h4><p>Open the downloaded APK from your notifications or Downloads folder and tap Install.</p></div></div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- PRICING -->
+  <section class="pricing">
+    <h2 class="section-title">Simple <span>pricing</span></h2>
+    <p class="pricing-intro">One app, one flat annual fee. No hidden charges.</p>
+    <div class="pricing-grid" style="max-width:420px;margin:0 auto 32px;">
+      <div class="pricing-card featured" style="border-color:rgba(0,180,255,0.5);box-shadow:0 8px 32px rgba(0,180,255,0.15);">
+        <div class="plan-badge popular">P.O.S. Pro</div>
+        <div class="plan-price"><span class="currency">$</span><span class="amount">1,800</span><span class="period">/yr</span></div>
+        <p class="plan-desc">Everything you need to run your business</p>
+        <ul class="plan-features">
+          <li>✅ Full POS register</li>
+          <li>✅ Unlimited products &amp; categories</li>
+          <li>✅ Cashier wallets</li>
+          <li>✅ Credit accounts</li>
+          <li>✅ Summary reports &amp; PDFs</li>
+          <li>✅ Real-time sync</li>
+        </ul>
+      </div>
+    </div>
+    <div class="pricing-card" style="max-width:420px;margin:0 auto 32px;border-style:dashed;border-color:rgba(0,180,255,0.3);">
+      <div class="plan-badge">Extra Store</div>
+      <div class="plan-price"><span class="currency">$</span><span class="amount">1,200</span><span class="period">/yr</span></div>
+      <p class="plan-desc">Each additional location — pro-rated to your renewal date</p>
+      <ul class="plan-features">
+        <li>✅ Separate inventory &amp; cashiers</li>
+        <li>✅ Own wallet &amp; reports</li>
+        <li>✅ Switch between stores from menu</li>
+        <li>✅ Renews with main plan</li>
+      </ul>
+    </div>
+    <p class="pricing-note">All prices in TTD. Contact us to activate your account after payment.</p>
+
+    <!-- SUPPORT -->
+    <div class="support-banner">
+      <div class="support-icon">💬</div>
+      <div class="support-content">
+        <h3>Get in touch</h3>
+        <p>Questions about pricing, setup, or your account? Reach out directly.</p>
+        <div class="contact-buttons">
+          <a class="contact-btn whatsapp" href="https://wa.me/18687865811">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"/></svg>
+            WhatsApp
+          </a>
+          <a class="contact-btn" href="mailto:support@pospro.app">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Email
+          </a>
+        </div>
+        <div class="contact-number">+1 (868) 786-5811</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BOTTOM CTA -->
+  <section class="bottom-cta">
+    <h2>Ready to run your business smarter?</h2>
+    <p>Download P.O.S. Pro for Android — free to try, no Play Store required.</p>
+    <a class="btn-download" href="https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download APK
+    </a>
+
+  <footer>
+    <p>&copy; 2025 P.O.S. Pro &mdash; Built for bar owners. <a href="#" onclick="document.getElementById('manualOverlay').classList.add('open');document.body.style.overflow='hidden';return false;" style="color:var(--blue);text-decoration:none;">User Manual</a></p>
+  </footer>
+
+  <script>
+    function closeManual() {
+      document.getElementById('manualOverlay').classList.remove('open');
+      document.body.style.overflow = '';
+    }
+
+    async function downloadManualPdf() {
+      const btn = document.getElementById('manualPdfBtn');
+      btn.disabled = true;
+      btn.textContent = 'Generating…';
+      try {
+        const { jsPDF } = await import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+        const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+        const body = document.getElementById('manualBody');
+        const lines = body.innerText.split('\n').filter(l => l.trim());
+        let y = 60;
+        doc.setFontSize(22); doc.setFont('helvetica','bold');
+        doc.text('P.O.S. Pro — User Manual', 40, y); y += 36;
+        doc.setFontSize(10); doc.setFont('helvetica','normal');
+        for (const line of lines) {
+          if (y > 780) { doc.addPage(); y = 40; }
+          const wrapped = doc.splitTextToSize(line, 515);
+          doc.text(wrapped, 40, y);
+          y += wrapped.length * 14 + 2;
+        }
+        doc.save('pos-pro-manual.pdf');
+      } catch(e) {
+        alert('PDF generation failed. Please try again.');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download PDF';
+      }
+    }
+
+    // ── Fetch version.json and update download buttons ─────────────────────
+    (async function loadVersion() {
+      try {
+        const res = await fetch('/version.json?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const v = data.version;
+        if (!v) return;
+
+        const apkUrl = data.apkUrl || 'https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk';
+
+        // Update all download buttons with version + correct URL
+        document.querySelectorAll('.btn-download').forEach(function(btn) {
+          btn.href = apkUrl;
+          const svg = btn.querySelector('svg');
+          btn.innerHTML = '';
+          if (svg) btn.appendChild(svg);
+          btn.appendChild(document.createTextNode(' Download APK  v' + v));
+        });
+
+        // Update the sub-note
+        const note = document.getElementById('dlNote');
+        if (note) {
+          note.textContent = 'Android 7.0+  •  v1.1.7  •  No Play Store required';
+        }
+
+        // Show release date if available
+        if (data.releaseDate) {
+          const dateEl = document.getElementById('releaseDate');
+          if (dateEl) {
+            const d = new Date(data.releaseDate);
+            dateEl.textContent = 'Released ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+            dateEl.style.display = 'block';
+          }
+        }
+      } catch(e) { /* offline or not deployed yet — buttons stay as-is */ }
+    })();
+  </script>
+</body>
+</html>

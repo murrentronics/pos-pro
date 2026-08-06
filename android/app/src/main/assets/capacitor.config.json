@@ -1,0 +1,28 @@
+{
+	"appId": "com.pospro.app",
+	"appName": "P.O.S. Pro",
+	"webDir": "dist/client",
+	"plugins": {
+		"SplashScreen": {
+			"launchShowDuration": 0,
+			"launchAutoHide": true,
+			"showSpinner": false,
+			"backgroundColor": "#000000"
+		},
+		"Camera": {},
+		"Filesystem": {},
+		"Share": {},
+		"Browser": {},
+		"FileOpener": {},
+		"LocalNotifications": {
+			"smallIcon": "ic_stat_icon_config_sample",
+			"iconColor": "#00b4ff",
+			"sound": "default"
+		}
+	},
+	"android": {
+		"backgroundColor": "#000000",
+		"captureInput": true,
+		"webContentsDebuggingEnabled": false
+	}
+}

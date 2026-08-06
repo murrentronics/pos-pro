@@ -92,11 +92,8 @@ lint/tmp/
 # Cordova plugins for Capacitor
 # capacitor-cordova-android-plugins  <-- keep this committed for CI builds
 
-# Copied web assets
-app/src/main/assets/public
-
 # Generated Config files
-app/src/main/assets/capacitor.config.json
+# app/src/main/assets/capacitor.config.json is committed — needed for CI
 # capacitor.plugins.json is committed — do not ignore it
 # app/src/main/assets/capacitor.plugins.json
 app/src/main/res/xml/config.xml
