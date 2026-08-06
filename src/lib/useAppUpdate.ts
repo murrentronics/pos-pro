@@ -27,7 +27,7 @@ interface VersionJson {
   releaseDate?: string;
 }
 
-const VERSION_URL = "https://pos-pro.pages.dev/version.json";
+const VERSION_URL = "https://raw.githubusercontent.com/murrentronics/pos-pro/main/public/version.json";
 const CURRENT_VERSION: string = import.meta.env.VITE_APP_VERSION ?? "0.0.0";
 
 /** Returns true when remote > local using semver integer comparison */
