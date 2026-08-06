@@ -171,8 +171,9 @@ jobs:
           # Copy assets needed by the download page
           cp -r public/assets dist/download/assets 2>/dev/null || true
           cp public/logo.svg dist/download/logo.svg 2>/dev/null || true
-          # _redirects: version.json must be served directly, not rewritten
-          printf '/version.json /version.json 200\n/* /index.html 200\n' > dist/download/_redirects
+          # No catch-all _redirects — version.json must be served as a real file.
+          # Only add a specific 404 fallback so direct links still work.
+          printf '/version.json /version.json 200\n' > dist/download/_redirects
 
       - name: Deploy to Cloudflare Pages (pos-pro download)
         uses: cloudflare/wrangler-action@v3
