@@ -573,7 +573,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
   const { profile } = useAuth();
   const { effectiveOwnerId } = useChain();
   const ownerId = effectiveOwnerId(profile?.role === "owner" ? (profile?.id ?? "") : (profile?.parent_id ?? ""));
-  const ownerName = profile?.username ?? "Bar";
+  const ownerName = profile?.username ?? "Store";
   const [expanded, setExpanded]     = useState<string | null>(null);
   const [txs, setTxs]               = useState<CreditTx[]>([]);
   const [txLoading, setTxLoading]   = useState(false);
@@ -942,7 +942,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
 // ── Closed Tab ─────────────────────────────────────────────────────────────────
 function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditAccount[]; loading: boolean; onRefresh: () => void; onEdit: (a: CreditAccount) => void }) {
   const { profile } = useAuth();
-  const ownerName = profile?.username ?? "Bar";
+  const ownerName = profile?.username ?? "Store";
   const [expanded, setExpanded]   = useState<string | null>(null);
   const [txs, setTxs]             = useState<CreditTx[]>([]);
   const [txLoading, setTxLoading] = useState(false);

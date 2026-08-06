@@ -112,7 +112,7 @@ export default function SwitchBarPage() {
                       <span className="text-xs text-muted-foreground truncate">{bar.bar_location}</span>
                       <span className="shrink-0">
                         <span className="flex items-center gap-1 text-xs font-bold text-muted-foreground">
-                          <Wine className="h-3 w-3" />{t("bar_only_lbl", "Bar")}
+                          <Wine className="h-3 w-3" />{t("bar_only_lbl", "Store")}
                         </span>
                       </span>
                     </div>

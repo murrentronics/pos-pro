@@ -236,25 +236,25 @@ export default function RegisterPage() {
     setBarOverlayReady(false);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from("profiles")
-      .select("bar_session_start, bar_closed_at")
+      .select("store_session_start, store_closed_at")
       .eq("id", ownerId)
       .single()
-      .then(async ({ data, error }: { data: { bar_session_start: string | null; bar_closed_at: string | null } | null; error: unknown }) => {
+      .then(async ({ data, error }: { data: { store_session_start: string | null; store_closed_at: string | null } | null; error: unknown }) => {
         if (data) {
           // Network success — update state and refresh cache
-          setBarSessionStart(data.bar_session_start ?? null);
-          setBarClosedAt(data.bar_closed_at ?? null);
+          setBarSessionStart(data.store_session_start ?? null);
+          setBarClosedAt(data.store_closed_at ?? null);
           cacheBarSession(ownerId, {
-            bar_session_start: data.bar_session_start ?? null,
-            bar_closed_at: data.bar_closed_at ?? null,
+            store_session_start: data.store_session_start ?? null,
+            store_closed_at: data.store_closed_at ?? null,
           });
         } else {
           // Network failed (offline) — serve from IndexedDB cache
           console.warn("[register] bar session fetch failed, using cache:", error);
           const cached = await getCachedBarSession(ownerId);
           if (cached) {
-            setBarSessionStart(cached.bar_session_start);
-            setBarClosedAt(cached.bar_closed_at);
+            setBarSessionStart(cached.store_session_start);
+            setBarClosedAt(cached.store_closed_at);
           }
         }
         setBarSessionLoading(false);
@@ -268,16 +268,16 @@ export default function RegisterPage() {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${ownerId}` },
         (payload) => {
           const rec = payload.new as Record<string, unknown>;
-          const newStart = "bar_session_start" in rec ? (rec.bar_session_start as string | null) ?? null : undefined;
-          const newClosed = "bar_closed_at" in rec ? (rec.bar_closed_at as string | null) ?? null : undefined;
+          const newStart = "store_session_start" in rec ? (rec.store_session_start as string | null) ?? null : undefined;
+          const newClosed = "store_closed_at" in rec ? (rec.store_closed_at as string | null) ?? null : undefined;
           if (newStart !== undefined) setBarSessionStart(newStart);
           if (newClosed !== undefined) setBarClosedAt(newClosed);
           // Keep IndexedDB cache in sync with realtime updates
           if (newStart !== undefined || newClosed !== undefined) {
             getCachedBarSession(ownerId).then((prev) => {
               cacheBarSession(ownerId, {
-                bar_session_start: newStart !== undefined ? newStart : (prev?.bar_session_start ?? null),
-                bar_closed_at:     newClosed !== undefined ? newClosed : (prev?.bar_closed_at ?? null),
+                store_session_start: newStart !== undefined ? newStart : (prev?.store_session_start ?? null),
+                store_closed_at:     newClosed !== undefined ? newClosed : (prev?.store_closed_at ?? null),
               });
             });
           }
@@ -324,7 +324,7 @@ export default function RegisterPage() {
 
   const confirmOpenBarWithFloat = async () => {
     const barFloatVal = isMachinesAccount ? 0 : parseInt(floatBarAmount, 10);
-    if (!isMachinesAccount && (isNaN(barFloatVal) || barFloatVal < 0)) { toast.error("Enter a valid bar float amount"); return; }
+    if (!isMachinesAccount && (isNaN(barFloatVal) || barFloatVal < 0)) { toast.error("Enter a valid store float amount"); return; }
     if (hasMachinesAddon) {
       const machineFloatVal = parseInt(floatMachineAmount, 10);
       if (isNaN(machineFloatVal) || machineFloatVal < 0) { toast.error("Enter a valid machine float amount"); return; }
@@ -333,20 +333,20 @@ export default function RegisterPage() {
 
     // Guard: do not create a new session if one is already open
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingOpen } = await (supabase as any).from("bar_sessions")
+    const { data: existingOpen } = await (supabase as any).from("store_sessions")
       .select("id").eq("owner_id", ownerId).is("closed_at", null).limit(1).maybeSingle();
     if (existingOpen) {
       setBarToggleBusy(false);
-      toast.error("Bar is already open — close the current session first");
+    toast.error("Store is already open — close the current session first");
       return;
     }
 
     const now = new Date().toISOString();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any).from("profiles")
-      .update({ bar_session_start: now, bar_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
+      .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
       .eq("id", ownerId);
-    if (error) { setBarToggleBusy(false); toast.error("Failed to open bar: " + error.message); return; }
+    if (error) { setBarToggleBusy(false); toast.error("Failed to open store: " + error.message); return; }
 
     // Insert machine float session if machines addon active
     if (hasMachinesAddon) {
@@ -357,14 +357,14 @@ export default function RegisterPage() {
 
     // Insert bar_sessions parent row + first sub-session
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: newSession } = await (supabase as any).from("bar_sessions")
+    const { data: newSession } = await (supabase as any).from("store_sessions")
       .insert({ owner_id: ownerId, opened_at: now })
       .select("id").single();
     if (newSession?.id) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from("bar_sub_sessions").insert({
+      await (supabase as any).from("store_sub_sessions").insert({
         owner_id: ownerId,
-        bar_session_id: newSession.id,
+        store_session_id: newSession.id,
         opened_at: now,
         cashier_float: barFloatVal,
       });
@@ -374,7 +374,7 @@ export default function RegisterPage() {
     setShowFloatModal(false);
     setBarSessionStart(now);
     setBarClosedAt(null);
-    toast.success("🟢 Bar opened at " + new Date(now).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true }));
+    toast.success("🟢 Store opened at " + new Date(now).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true }));
     setShowBarOpenedOverlay(true);
   };
 
@@ -383,18 +383,18 @@ export default function RegisterPage() {
     const now = new Date().toISOString();
     // Close open sub-sessions
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("bar_sub_sessions")
+    await (supabase as any).from("store_sub_sessions")
       .update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
     // Close open bar_session row
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("bar_sessions")
+    await (supabase as any).from("store_sessions")
       .update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("profiles").update({ bar_closed_at: now }).eq("id", ownerId);
+    const { error } = await (supabase as any).from("profiles").update({ store_closed_at: now }).eq("id", ownerId);
     setBarToggleBusy(false);
-    if (error) { toast.error("Failed to close bar: " + error.message); return; }
+    if (error) { toast.error("Failed to close store: " + error.message); return; }
     setBarClosedAt(now);
-    toast.success("🔴 Bar closed");
+    toast.success("🔴 Store closed");
   };
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -1089,7 +1089,7 @@ export default function RegisterPage() {
 
   return (
     <>
-      {/* ── Float Modal (Open Bar) ── */}
+      {/* ── Float Modal (Open Store) ── */}
       {showFloatModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
@@ -1099,14 +1099,14 @@ export default function RegisterPage() {
                 style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac" }}>
                 <span className="text-2xl">🟢</span>
               </div>
-              <h2 className="font-black text-xl">Open Bar</h2>
-              <p className="text-xs text-muted-foreground mt-1">Set floats before starting the session</p>
+              <h2 className="font-black text-xl">Open Store</h2>
+              <p className="text-xs text-muted-foreground mt-1">Set float before starting the session</p>
             </div>
             <div className="px-6 pb-6 pt-4 space-y-4">
               {/* Bar Float — hidden for machines-only accounts */}
               {!isMachinesAccount && (
                 <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Bar Float</label>
+                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Store Float</label>
                   <div
                     onClick={() => setActiveFloatField(activeFloatField === "bar" ? null : "bar")}
                     className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
@@ -1164,7 +1164,7 @@ export default function RegisterPage() {
                   disabled={barToggleBusy || (!isMachinesAccount && !floatBarAmount) || (hasMachinesAddon && !floatMachineAmount)}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                   style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
-                  {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open Bar"}
+                  {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open Store"}
                 </button>
               </div>
             </div>
@@ -1172,16 +1172,16 @@ export default function RegisterPage() {
         </div>
       )}
 
-      {/* ── Bar Opened overlay ── */}
+      {/* ── Store Opened overlay ── */}
       {showBarOpenedOverlay && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
             style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-7 pb-4 text-center space-y-2">
               <div className="text-5xl">🟢</div>
-              <h2 className="font-black text-xl">Bar is Open!</h2>
+              <h2 className="font-black text-xl">Store is Open!</h2>
               <p className="text-sm text-muted-foreground leading-snug">
-                Session started. Floats have been set. Good luck tonight!
+                Session started. Float has been set. Good luck today!
               </p>
             </div>
             <div className="px-6 pb-6 pt-2">
@@ -1195,25 +1195,25 @@ export default function RegisterPage() {
         </div>
       )}
 
-      {/* ── Page loading spinner while bar session state is being fetched ── */}
+      {/* ── Page loading spinner while store session state is being fetched ── */}
       {barSessionLoading && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       )}
 
-      {/* ── Bar Closed overlay — blocks all selling ── */}
+      {/* ── Store Closed overlay — blocks all selling ── */}
       {barOverlayReady && !barSessionLoading && !barIsOpen && (
         <div className="fixed inset-0 z-40 flex flex-col items-center justify-center bg-black/85 backdrop-blur-sm px-6">
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center"
             style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-8 pb-4">
               <div className="text-5xl mb-4">🔒</div>
-              <h2 className="font-black text-xl mb-2">Bar is Closed</h2>
+              <h2 className="font-black text-xl mb-2">Store is Closed</h2>
               <p className="text-sm text-muted-foreground leading-snug">
                 {barSessionStart
-                  ? "The bar session has ended. The owner needs to set a new float to open a new session before sales can be made."
-                  : "No session has been started yet. The owner needs to set the cashier float to open the bar."}
+                  ? "The store session has ended. The owner needs to set a new float to open a new session before sales can be made."
+                  : "No session has been started yet. The owner needs to set the float to open the store."}
               </p>
             </div>
             <div className="px-6 pb-6 pt-2">
@@ -1225,7 +1225,7 @@ export default function RegisterPage() {
                   className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50"
                   style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}
                 >
-                  {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "🟢 Open Bar Now"}
+                  {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "🟢 Open Store Now"}
                 </button>
               ) : (
                 <div className="rounded-xl px-4 py-3 text-xs text-muted-foreground"

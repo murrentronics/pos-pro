@@ -1,4 +1,4 @@
-package com.bartendaz.pro;
+package com.pospro.app;
 
 import android.app.DownloadManager;
 import android.content.Context;
@@ -87,7 +87,7 @@ public class PdfDownloadPlugin extends Plugin {
                 // On Android 10+ use MediaStore scan via DownloadManager
                 dm.addCompletedDownload(
                     filename,
-                    "Bartendaz Pro statement",
+                    "P.O.S. Pro statement",
                     true,
                     "application/pdf",
                     destFile.getAbsolutePath(),
@@ -97,7 +97,7 @@ public class PdfDownloadPlugin extends Plugin {
             } else {
                 dm.addCompletedDownload(
                     filename,
-                    "Bartendaz Pro statement",
+                    "P.O.S. Pro statement",
                     true,
                     "application/pdf",
                     destFile.getAbsolutePath(),

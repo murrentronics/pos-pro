@@ -13,71 +13,61 @@ function LogoMark({ size = 160 }: { size?: number }) {
       <defs>
         <linearGradient id="sp-grad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#00d4ff" />
-          <stop offset="100%" stopColor="#0047ab" />
-        </linearGradient>
-        <linearGradient id="sp-grad2" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#00b4ff" stopOpacity="0.6" />
-          <stop offset="100%" stopColor="#0047ab" stopOpacity="0.1" />
+          <stop offset="100%" stopColor="#0055cc" />
         </linearGradient>
         <radialGradient id="sp-bg" cx="40%" cy="35%">
-          <stop offset="0%" stopColor="#061c36" />
+          <stop offset="0%" stopColor="#071828" />
           <stop offset="100%" stopColor="#020810" />
         </radialGradient>
-        <radialGradient id="sp-glow" cx="50%" cy="50%">
-          <stop offset="0%" stopColor="#00b4ff" stopOpacity="0.25" />
+        <radialGradient id="sp-glow" cx="50%" cy="45%">
+          <stop offset="0%" stopColor="#00b4ff" stopOpacity="0.22" />
           <stop offset="100%" stopColor="#00b4ff" stopOpacity="0" />
         </radialGradient>
         <filter id="sp-blur">
-          <feGaussianBlur stdDeviation="6" />
+          <feGaussianBlur stdDeviation="8" />
         </filter>
       </defs>
 
       {/* Background circle */}
       <circle cx="256" cy="256" r="256" fill="url(#sp-bg)" />
 
-      {/* Outer glow ring */}
-      <circle cx="256" cy="256" r="240" fill="none" stroke="url(#sp-grad)" strokeWidth="2" opacity="0.35" />
-      <circle cx="256" cy="256" r="228" fill="none" stroke="#00b4ff" strokeWidth="0.5" opacity="0.15" />
+      {/* Outer ring */}
+      <circle cx="256" cy="256" r="238" fill="none" stroke="url(#sp-grad)" strokeWidth="2.5" opacity="0.4" />
+      <circle cx="256" cy="256" r="224" fill="none" stroke="#00b4ff" strokeWidth="0.8" opacity="0.15" />
 
-      {/* Circuit trace lines — horizontal */}
-      <line x1="56" y1="200" x2="140" y2="200" stroke="#00b4ff" strokeWidth="1.5" opacity="0.18" />
-      <line x1="56" y1="200" x2="56" y2="260" stroke="#00b4ff" strokeWidth="1.5" opacity="0.18" />
-      <circle cx="56" cy="260" r="3" fill="#00b4ff" opacity="0.3" />
-      <line x1="372" y1="312" x2="456" y2="312" stroke="#00b4ff" strokeWidth="1.5" opacity="0.18" />
-      <line x1="456" y1="312" x2="456" y2="252" stroke="#00b4ff" strokeWidth="1.5" opacity="0.18" />
-      <circle cx="456" cy="252" r="3" fill="#00b4ff" opacity="0.3" />
-      <line x1="120" y1="380" x2="120" y2="430" stroke="#00b4ff" strokeWidth="1.5" opacity="0.12" />
-      <circle cx="120" cy="430" r="3" fill="#00b4ff" opacity="0.2" />
-      <line x1="392" y1="130" x2="392" y2="80" stroke="#00b4ff" strokeWidth="1.5" opacity="0.12" />
-      <circle cx="392" cy="80" r="3" fill="#00b4ff" opacity="0.2" />
+      {/* Glow behind letter */}
+      <circle cx="256" cy="230" r="140" fill="url(#sp-glow)" filter="url(#sp-blur)" />
 
-      {/* Inner glow behind P */}
-      <circle cx="256" cy="230" r="130" fill="url(#sp-glow)" filter="url(#sp-blur)" />
+      {/*
+        P letterform — geometrically centered in the circle.
+        The full letter occupies roughly x:155–340, y:110–370.
+        Width ~185, Height ~260 → visual center at x:247, y:240 ≈ circle center.
 
-      {/* The P letterform — bold, geometric, with open bowl */}
+        Stem: x=155, width=58, full height 110→370
+        Top bar: x=155, y=110, width=185, height=54
+        Mid bar: x=155, y=218, width=175, height=50
+        Right bowl: x=281, y=110, width=59, height=158
+      */}
       {/* Vertical stem */}
-      <rect x="148" y="110" width="52" height="292" rx="8" fill="url(#sp-grad)" />
-      {/* Bowl top horizontal */}
-      <rect x="148" y="110" width="158" height="52" rx="10" fill="url(#sp-grad)" />
-      {/* Bowl bottom horizontal */}
-      <rect x="148" y="228" width="148" height="48" rx="10" fill="url(#sp-grad)" />
-      {/* Bowl right vertical */}
-      <rect x="258" y="110" width="52" height="166" rx="10" fill="url(#sp-grad)" />
+      <rect x="155" y="110" width="58" height="260" rx="10" fill="url(#sp-grad)" />
+      {/* Top horizontal bar */}
+      <rect x="155" y="110" width="185" height="54" rx="11" fill="url(#sp-grad)" />
+      {/* Middle horizontal bar */}
+      <rect x="155" y="218" width="175" height="50" rx="11" fill="url(#sp-grad)" />
+      {/* Right vertical (bowl) */}
+      <rect x="281" y="110" width="59" height="158" rx="11" fill="url(#sp-grad)" />
 
-      {/* PRO badge pill */}
-      <rect x="182" y="430" width="148" height="44" rx="14" fill="url(#sp-grad)" />
+      {/* PRO badge — tucked into the negative space under the P bowl */}
+      <rect x="270" y="298" width="100" height="34" rx="9" fill="url(#sp-grad)" />
       <text
-        x="256" y="460"
+        x="320" y="321"
         fontFamily="Arial, sans-serif"
-        fontSize="22"
+        fontSize="16"
         fontWeight="900"
         textAnchor="middle"
         fill="#000d1a"
-        letterSpacing="4"
+        letterSpacing="3"
       >PRO</text>
-
-      {/* Scan-line shimmer overlay */}
-      <rect x="0" y="0" width="512" height="512" fill="url(#sp-grad2)" rx="256" opacity="0.08" />
     </svg>
   );
 }

@@ -39,8 +39,8 @@ export interface CachedProduct {
 }
 
 export interface CachedBarSession {
-  bar_session_start: string | null;
-  bar_closed_at: string | null;
+  store_session_start: string | null;
+  store_closed_at: string | null;
 }
 
 export interface CachedCreditAccount {

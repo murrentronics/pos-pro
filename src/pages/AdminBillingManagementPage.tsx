@@ -237,7 +237,7 @@ export default function AdminBillingManagementPage() {
             chain_bar_count: 1,  // their existing bar is automatically bar 1
             subscription_start_date: startDate.toISOString(),
             subscription_end_date: chainEnd.toISOString(),
-            music_addon: true,
+            
           }).eq("id", selectedPayment.owner_id);
 
           updates.next_due_date = chainEnd.toISOString();
@@ -256,7 +256,7 @@ export default function AdminBillingManagementPage() {
             machines_addon_start_date: startDate.toISOString(),
             machines_addon_end_date: endDate.toISOString(),
             bar_addon_active: false,
-            music_addon: true,
+            
           }).eq("id", selectedPayment.owner_id);
 
           updates.next_due_date = endDate.toISOString();
@@ -276,7 +276,7 @@ export default function AdminBillingManagementPage() {
             plan_type: (plan as any).plan_type, // "premium" or "premium_20"
             premium_subscription_start_date: startDate.toISOString(),
             premium_subscription_end_date: premiumEnd.toISOString(),
-            music_addon: true,
+            
           }).eq("id", selectedPayment.owner_id);
 
           updates.next_due_date = premiumEnd.toISOString();
@@ -349,7 +349,7 @@ export default function AdminBillingManagementPage() {
           await supabase.from("profiles").update({
             status: "approved",
             billing_status: "active",
-            music_addon: true,
+            
             plan_type: "basic",
             ...(isActiveRenewal ? {} : { subscription_start_date: startDate.toISOString() }),
             subscription_end_date: endDate.toISOString(),

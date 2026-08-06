@@ -393,13 +393,13 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
 
   const loadBarSessions = useCallback(async () => {
     const { data: profileData } = await sb.from("profiles")
-      .select("bar_session_start, bar_closed_at")
+      .select("store_session_start, store_closed_at")
       .eq("id", ownerId).single();
-    const sessionStart: string | null = profileData?.bar_session_start ?? null;
-    const closedAt: string | null = profileData?.bar_closed_at ?? null;
+    const sessionStart: string | null = profileData?.store_session_start ?? null;
+    const closedAt: string | null = profileData?.store_closed_at ?? null;
     setActiveBarSession(sessionStart ? { start: sessionStart, end: closedAt } : null);
 
-    const { data: hist } = await sb.from("bar_sessions")
+    const { data: hist } = await sb.from("store_sessions")
       .select("id, opened_at, closed_at")
       .eq("owner_id", ownerId)
       .order("opened_at", { ascending: false })
@@ -1639,7 +1639,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
   useEffect(() => {
     if (!ownerId) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("bar_sessions").select("id, opened_at, closed_at")
+    (supabase as any).from("store_sessions").select("id, opened_at, closed_at")
       .eq("owner_id", ownerId).order("opened_at", { ascending: false }).limit(10)
       .then(({ data }: { data: { id: string; opened_at: string; closed_at: string | null }[] | null }) => {
         // Map to the shape the rest of this component expects (session_start/session_end)
@@ -1983,7 +1983,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                 </button>
               ) : pickingSession ? (
                 <div className="space-y-3">
-                  <p className="text-xs font-black text-center" style={{ color: "var(--primary)" }}>Bar is closed — which session is this expense for?</p>
+                  <p className="text-xs font-black text-center" style={{ color: "var(--primary)" }}>Store is closed — which session is this expense for?</p>
                   <p className="text-xs text-center text-muted-foreground">${pendingExpenseTotal.toFixed(2)} expense</p>
                   {/* Previous session — most recent closed session */}
                   {availableSessions.length > 0 ? (
@@ -2833,25 +2833,25 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
       setTimeout(() => refreshProfile(), 300);
     } else {
       // New Session (cashier change) — close the current open sub-session and create a new one.
-      // This does NOT touch bar_session_start — the bar parent session stays open.
+      // This does NOT touch store_session_start — the bar parent session stays open.
       // Reset the cashier float to the new value and stamp a new cashier_float_set_at anchor.
 
       // Find the current open bar_session to attach the new sub-session to
-      const { data: openBarSession } = await sb.from("bar_sessions")
+      const { data: openBarSession } = await sb.from("store_sessions")
         .select("id").eq("owner_id", profile.id).is("closed_at", null)
         .order("opened_at", { ascending: false }).limit(1).maybeSingle();
 
       // Close the current open sub-session
       if (openBarSession?.id) {
-        await sb.from("bar_sub_sessions")
+        await sb.from("store_sub_sessions")
           .update({ closed_at: now })
           .eq("owner_id", profile.id)
           .eq("bar_session_id", openBarSession.id)
           .is("closed_at", null);
         // Insert new sub-session
-        await sb.from("bar_sub_sessions").insert({
+        await sb.from("store_sub_sessions").insert({
           owner_id: profile.id,
-          bar_session_id: openBarSession.id,
+          store_session_id: openBarSession.id,
           opened_at: now,
           cashier_float: val,
         });
@@ -2895,21 +2895,21 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
     setLoadingSummary(true);
 
     // Bar session start — used for BOTH today's and session income/expense
-    // "Today" = from current bar_session_start → now (resets only when bar closes & reopens)
-    const barSessionStart: string | null = (profile as any).bar_session_start ?? null;
+    // "Today" = from current store_session_start → now (resets only when bar closes & reopens)
+    const barSessionStart: string | null = (profile as any).store_session_start ?? null;
 
     // Session cards anchor = cashier_float_set_at (resets when owner clicks New Session on float)
-    // This is independent of bar_session_start so machines/register/cashiers are unaffected.
+    // This is independent of store_session_start so machines/register/cashiers are unaffected.
     const floatSessionStart: string | null = (profile as any).cashier_float_set_at ?? null;
 
-    // "Today's" anchor = bar_session_start when open, or bar_closed_at's session start when closed.
+    // "Today's" anchor = store_session_start when open, or store_closed_at's session start when closed.
     // We look at bar_sessions to find the most recent closed session so Today still shows
     // the right numbers after the bar has been closed.
-    const barClosedAtVal: string | null = (profile as any).bar_closed_at ?? null;
+    const barClosedAtVal: string | null = (profile as any).store_closed_at ?? null;
     let todayAnchor: string | null = barSessionStart; // bar is open — use current session start
     if (!barSessionStart && barClosedAtVal) {
       // Bar was closed — find the most recent closed session's start time
-      const lastSessionRes = await (sb as any).from("bar_sessions")
+      const lastSessionRes = await (sb as any).from("store_sessions")
         .select("opened_at")
         .eq("owner_id", profile.id)
         .order("opened_at", { ascending: false })
@@ -2928,7 +2928,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
       supabase.from("wallet_transactions").select("amount").eq("profile_id", profile.id).eq("type", "credit_payment").gt("amount", 0),
       supabase.from("products").select("id, name, price, cost_price, units_per_item, stock_qty").eq("owner_id", profile.id),
       sb.from("opened_bottles").select("revenue, product_id, products(price)").eq("owner_id", profile.id).eq("status", "open"),
-      // Today's orders: from bar_session_start → now (resets only on bar close+reopen, not midnight)
+      // Today's orders: from store_session_start → now (resets only on bar close+reopen, not midnight)
       todayAnchor
         ? supabase.from("orders").select("total").eq("owner_id", profile.id).gte("created_at", todayAnchor)
         : Promise.resolve({ data: [] }),
@@ -3033,19 +3033,19 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
     // todayProfit matches Summary page Day filter: income - item costs - non-stock expenses
     const todayProfit = todayIncome - todayCostFromItems - todayNonStock;
 
-    // Session income: orders only since current bar_session_start (resets on New Session, never exceeds Today)
+    // Session income: orders only since current store_session_start (resets on New Session, never exceeds Today)
     const sessionIncome = barSessionStart
       ? (sessionOrdersRes.data ?? []).reduce((s: number, o: { total: number }) => s + Number(o.total), 0)
       : 0;
 
-    // Session expense: manual (non-stock) expenses only since current bar_session_start
+    // Session expense: manual (non-stock) expenses only since current store_session_start
     const sessionExpense = barSessionStart
       ? (sessionExpenseRes.data ?? [])
           .filter((e: { description: string | null }) => (e.description ?? "").startsWith("Non-Stock Expense"))
           .reduce((s: number, e: { amount: number }) => s + Number(e.amount), 0)
       : 0;
 
-    // Session stock cost: cost of items sold since current bar_session_start
+    // Session stock cost: cost of items sold since current store_session_start
     type SessionOrderItem = { id?: string; name: string; qty: number; price: number; units_consumed?: number | null };
     const sessionStockCost = barSessionStart
       ? ((sessionItemOrdersRes.data ?? []) as any[]).reduce((s: number, o: { items: any }) => {
@@ -3069,7 +3069,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
 
     setFinancialSummary({ initialExpense, monthlyExpenses, totalIncome, totalStockSoldCost, sessionIncome, sessionExpense, sessionStockCost, stockResaleValue, stockExpectedProfit, stockCost: closedStockCost, todayIncome, todayProfit, todayStockCost: todayCostFromItems, todayExpenses: todayNonStock });
     setLoadingSummary(false);
-  }, [profile.id, (profile as any).cashier_float_set_at, (profile as any).bar_session_start, (profile as any).bar_closed_at]);
+  }, [profile.id, (profile as any).cashier_float_set_at, (profile as any).store_session_start, (profile as any).store_closed_at]);
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
 
@@ -3101,7 +3101,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
       .on("postgres_changes", { event: "*", schema: "public", table: "products", filter: `owner_id=eq.${profile.id}` }, () => loadSummaryRef.current())
       // Opened/finished bottles → stock resale value changes
       .on("postgres_changes", { event: "*", schema: "public", table: "opened_bottles", filter: `owner_id=eq.${profile.id}` }, () => loadSummaryRef.current())
-      // Profile updates (bar_session_start, cashier_float_set_at) → session/today cards re-calculate
+      // Profile updates (store_session_start, cashier_float_set_at) → session/today cards re-calculate
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${profile.id}` }, () => loadSummaryRef.current())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -3122,8 +3122,8 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
   const sessionIncome = financialSummary ? financialSummary.sessionIncome : 0;
   const sessionExpense = financialSummary ? financialSummary.sessionExpense : 0;
   const sessionStockCost = financialSummary ? financialSummary.sessionStockCost : 0;
-  const barSessionStart: string | null = (profile as any).bar_session_start ?? null;
-  const barIsOpenWallet = !!barSessionStart && !((profile as any).bar_closed_at);
+  const barSessionStart: string | null = (profile as any).store_session_start ?? null;
+  const barIsOpenWallet = !!barSessionStart && !((profile as any).store_closed_at);
   const todayIncome = financialSummary ? financialSummary.todayIncome : 0;
   const todayProfit = financialSummary ? financialSummary.todayProfit : 0;
   const netProfit = totalIncome - totalExpenses;
@@ -3418,8 +3418,8 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
           ownerWalletBalance={profile.wallet_balance}
           totalIncome={totalIncome}
           onDataChange={() => { loadSummary(); loadFloatUsed(); refreshProfile(); }}
-          barSessionStart={(profile as any).bar_session_start ?? null}
-          barClosedAt={(profile as any).bar_closed_at ?? null}
+          barSessionStart={(profile as any).store_session_start ?? null}
+          barClosedAt={(profile as any).store_closed_at ?? null}
         />
       )}
 

@@ -77,12 +77,12 @@ function ManagerExpenses({
     if (!ownerId) return;
     setBarStateLoading(true);
     sb.from("profiles")
-      .select("bar_session_start, bar_closed_at")
+      .select("store_session_start, store_closed_at")
       .eq("id", ownerId)
       .single()
-      .then(({ data }: { data: { bar_session_start: string | null; bar_closed_at: string | null } | null }) => {
-        setBarSessionStart(data?.bar_session_start ?? null);
-        setBarClosedAt(data?.bar_closed_at ?? null);
+      .then(({ data }: { data: { store_session_start: string | null; store_closed_at: string | null } | null }) => {
+        setBarSessionStart(data?.store_session_start ?? null);
+        setBarClosedAt(data?.store_closed_at ?? null);
         setBarStateLoading(false);
       });
     const ch = supabase
@@ -90,8 +90,8 @@ function ManagerExpenses({
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${ownerId}` },
         (payload: any) => {
           const rec = payload.new as Record<string, unknown>;
-          if ("bar_session_start" in rec) setBarSessionStart((rec.bar_session_start as string | null) ?? null);
-          if ("bar_closed_at" in rec) setBarClosedAt((rec.bar_closed_at as string | null) ?? null);
+          if ("store_session_start" in rec) setBarSessionStart((rec.store_session_start as string | null) ?? null);
+          if ("store_closed_at" in rec) setBarClosedAt((rec.store_closed_at as string | null) ?? null);
         }
       )
       .subscribe();
@@ -170,8 +170,8 @@ function ManagerExpenses({
 
   // ── Financial summary cards ───────────────────────────────────────────────
   // Total: all time expenses tagged with this manager
-  // Today: expenses since bar_session_start (same anchor as wallet Today)
-  // Session: expenses since bar_session_start (same window — bar session = today for managers)
+  // Today: expenses since store_session_start (same anchor as wallet Today)
+  // Session: expenses since store_session_start (same window — bar session = today for managers)
   const totalAllTime = expenses.reduce((s, e) => s + Number(e.amount), 0);
 
   const todayExpenses = expenses
@@ -345,18 +345,18 @@ function ManagerExpenses({
           <BarChart3 className="h-5 w-5 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="text-xl font-black leading-tight">{t("bar_expense", "Bar Expense")}</h1>
+          <h1 className="text-xl font-black leading-tight">{t("bar_expense", "Store Expense")}</h1>
           <p className="text-xs text-muted-foreground">{managerName}</p>
         </div>
       </div>
 
-      {/* Bar closed banner */}
+      {/* Store closed banner */}
       {!barStateLoading && !barIsOpen && (
         <div className="rounded-2xl px-4 py-3 flex items-center gap-3"
           style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}>
           <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
           <span className="text-sm font-semibold text-red-400">
-            {t("bar_closed_msg", "Bar is closed — expenses cannot be added, edited, or deleted.")}
+            {t("bar_closed_msg", "Store is closed — expenses cannot be added, edited, or deleted.")}
           </span>
         </div>
       )}
@@ -660,7 +660,7 @@ function ManagerExpenses({
                                   </div>
                                 )}
                                 {isLast && !barIsOpen && (
-                                  <span className="text-[9px] text-muted-foreground/50 mt-0.5">{t("bar_closed_label", "Bar closed")}</span>
+                                  <span className="text-[9px] text-muted-foreground/50 mt-0.5">{t("bar_closed_label", "Store closed")}</span>
                                 )}
                               </div>
                             </div>

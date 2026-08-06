@@ -22,7 +22,7 @@ type FilterType = "session" | "week" | "month" | "year" | "period";
 // Parent bar session (Open Bar → Close Bar)
 type BarSession = { id: string; opened_at: string; closed_at: string | null };
 // Sub-session (cashier shift within a bar session)
-type SubSession = { id: string; bar_session_id: string; opened_at: string; closed_at: string | null; cashier_float: number };
+type SubSession = { id: string; store_session_id: string; opened_at: string; closed_at: string | null; cashier_float: number };
 // Lazy-loaded data per session or sub-session
 type SessionData = { orders: Order[]; expenses: Expense[]; walletIncome: number; loaded: boolean; loading: boolean };
 
@@ -214,7 +214,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
               {/* Mini stats — top row: Bar Sales, Items Cost */}
               <div className="grid grid-cols-2 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
                 {[
-                  { label: "Bar Sales",  value: totalIncome,    color: "#86efac" },
+                  { label: "Store Sales",  value: totalIncome,    color: "#86efac" },
                   { label: "Items Cost", value: totalItemsCost, color: "#fca5a5" },
                 ].map((s, i, arr) => (
                   <div key={i} className="px-2 py-2 text-center" style={i < arr.length - 1 ? { borderRight: "1px solid rgba(255,255,255,0.06)" } : {}}>
@@ -355,7 +355,7 @@ function BarSessionAccordion({ session, subSessions, products, categoryFilter, a
 
   const fallbackSub: SubSession = {
     id: `session-${session.id}`,
-    bar_session_id: session.id,
+    store_session_id: session.id,
     opened_at: session.opened_at,
     closed_at: session.closed_at,
     cashier_float: 0,
@@ -450,22 +450,22 @@ export default function SummaryPage() {
     setLoadingSessions(true);
     Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from("profiles").select("bar_session_start, bar_closed_at").eq("id", ownerId).maybeSingle(),
+      (supabase as any).from("profiles").select("store_session_start, store_closed_at").eq("id", ownerId).maybeSingle(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from("bar_sessions").select("id, opened_at, closed_at").eq("owner_id", ownerId).order("opened_at", { ascending: false }).limit(200),
+      (supabase as any).from("store_sessions").select("id, opened_at, closed_at").eq("owner_id", ownerId).order("opened_at", { ascending: false }).limit(200),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from("bar_sub_sessions").select("id, bar_session_id, opened_at, closed_at, cashier_float").eq("owner_id", ownerId).order("opened_at", { ascending: false }).limit(500),
+      (supabase as any).from("store_sub_sessions").select("id, bar_session_id, opened_at, closed_at, cashier_float").eq("owner_id", ownerId).order("opened_at", { ascending: false }).limit(500),
       supabase.from("products").select("id, name, cost_price, units_per_item, category").eq("owner_id", ownerId),
     ]).then(([profileRes, sessionsRes, subSessionsRes, productsRes]: any[]) => {
       const pData = profileRes.data;
-      const isOpen = !!(pData?.bar_session_start) && !(pData?.bar_closed_at);
+      const isOpen = !!(pData?.store_session_start) && !(pData?.store_closed_at);
       setBarIsOpen(isOpen);
       let sessions: BarSession[] = (sessionsRes.data ?? []).map((s: any) => ({ id: s.id, opened_at: s.opened_at, closed_at: s.closed_at }));
-      if (isOpen && pData?.bar_session_start && !sessions.some((s: BarSession) => s.opened_at === pData.bar_session_start)) {
-        sessions = [{ id: "active-session", opened_at: pData.bar_session_start, closed_at: null }, ...sessions];
+      if (isOpen && pData?.store_session_start && !sessions.some((s: BarSession) => s.opened_at === pData.store_session_start)) {
+        sessions = [{ id: "active-session", opened_at: pData.store_session_start, closed_at: null }, ...sessions];
       }
       setAllSessions(sessions);
-      setAllSubSessions((subSessionsRes.data ?? []).map((s: any) => ({ id: s.id, bar_session_id: s.bar_session_id, opened_at: s.opened_at, closed_at: s.closed_at, cashier_float: Number(s.cashier_float ?? 0) })));
+      setAllSubSessions((subSessionsRes.data ?? []).map((s: any) => ({ id: s.id, store_session_id: s.bar_session_id, opened_at: s.opened_at, closed_at: s.closed_at, cashier_float: Number(s.cashier_float ?? 0) })));
       setProducts((productsRes.data ?? []) as ProductCost[]);
       setLoadingSessions(false);
     });
@@ -610,7 +610,7 @@ export default function SummaryPage() {
           <span className="text-sm shrink-0">{barIsOpen ? "🟢" : "🔴"}</span>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: barIsOpen ? "#86efac" : "var(--muted-foreground)" }}>
-              {barIsOpen ? "Bar Open" : "Bar Closed"}
+              {barIsOpen ? "Store Open" : "Store Closed"}
             </p>
             <p className="text-[11px] text-muted-foreground">
               {filter === "week" && <><span className="font-bold text-foreground">{new Date(fromDate + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>{" → "}<span className="font-bold text-foreground">{new Date(toDate + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span></>}
@@ -628,7 +628,7 @@ export default function SummaryPage() {
           <CalendarPopover label={t("select_day", "Select Day")} value={fromDate} maxDate={today} minDate={earliestDate} onChange={v => setFromDate(v)} />
           {!loadingSessions && (
             <p className="text-xs text-muted-foreground pt-1">
-              {filteredSessions.length === 0 ? t("bar_not_open_day", "Bar was not opened this day.") : `${filteredSessions.length} session${filteredSessions.length !== 1 ? "s" : ""} this day`}
+              {filteredSessions.length === 0 ? t("bar_not_open_day", "Store was not opened this day.") : `${filteredSessions.length} session${filteredSessions.length !== 1 ? "s" : ""} this day`}
             </p>
           )}
         </div>
@@ -680,7 +680,7 @@ export default function SummaryPage() {
         <div className="rounded-2xl border border-border p-8 text-center" style={{ background: "var(--gradient-card)" }}>
           <div className="text-3xl mb-3">📊</div>
           <p className="font-black text-sm">No sessions found</p>
-          <p className="text-xs text-muted-foreground mt-1">{filter === "session" ? "Bar was not opened this day." : `No sessions in this ${filter === "week" ? "week" : filter === "month" ? "month" : filter === "year" ? "year" : "period"}.`}</p>
+          <p className="text-xs text-muted-foreground mt-1">{filter === "session" ? "Store was not opened this day." : `No sessions in this ${filter === "week" ? "week" : filter === "month" ? "month" : filter === "year" ? "year" : "period"}.`}</p>
         </div>
       ) : (
         <div className="space-y-3">

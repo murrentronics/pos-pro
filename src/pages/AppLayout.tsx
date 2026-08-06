@@ -4,7 +4,6 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { supabase } from "@/integrations/supabase/client";
-import { useYouTube } from "@/lib/YouTubeContext";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import { useTranslation } from "@/lib/i18n";
 import { useOffline } from "@/lib/OfflineProvider";
@@ -24,7 +23,6 @@ export default function AppLayout() {
   const { isOnline } = useOffline();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const yt = useYouTube();
   const [ownerEmail, setOwnerEmail] = useState("");
 
   useEffect(() => {
@@ -78,28 +76,6 @@ export default function AppLayout() {
     document.querySelector("main")?.scrollTo({ top: 0, behavior: "instant" });
   }, [loc.pathname]);
 
-  // Hide YouTube fullscreen when navigating away from /music
-  useEffect(() => {
-    if (loc.pathname !== "/music" && yt.ytFullscreen) {
-      yt.setYtFullscreen(false);
-    }
-  }, [loc.pathname]);
-
-  // Auto-play next history track when current video ends (YT player state 0 = ended)
-  useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      try {
-        const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
-        // YouTube IFrame API fires: { event: "infoDelivery", info: { playerState: 0 } }
-        if (data?.event === "infoDelivery" && data?.info?.playerState === 0) {
-          yt.playNextFromHistory();
-        }
-      } catch { /* ignore non-JSON messages */ }
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, [yt.playNextFromHistory]);
-
   // Register FCM push token for the owner's device — must be before any early returns (Rules of Hooks)
   usePushNotifications(profile?.role === "owner" ? profile.id : null);
 
@@ -136,8 +112,7 @@ export default function AppLayout() {
   const isDemo     = DEMO_EMAILS.includes(ownerEmail);
   const isPending  = !isAdmin && !isCashier && !isManager && !isDemo && profile.status === "pending";
   const isSuspended = !isAdmin && !isCashier && !isManager && !isDemo && profile.status === "suspended";
-  const hasMusic   = isOwner || isCashier;
-  const isOnMusic  = loc.pathname === "/music";
+
 
   if (!isAdmin && !isCashier && profile.status === "expelled") {
     return (
@@ -227,7 +202,7 @@ export default function AppLayout() {
         { to: "/manager",     label: t("manage", "Manage"),             icon: TrendingDown },
       ]
     : [
-        { to: "/register",  label: t("bar", "Bar"),                    icon: Wine       },
+        { to: "/register",  label: t("store", "Store"),                  icon: Wine       },
         { to: "/credit",    label: t("customers_title", "Customers"),  icon: Receipt    },
         ...(isOwner ? [{ to: "/products",    label: t("products_title", "Items"),    icon: Package      }] : []),
         ...(isOwner ? [{ to: "/stock-check", label: t("stock_check", "Stock Check"), icon: ClipboardList }] : []),
@@ -256,18 +231,6 @@ export default function AppLayout() {
               )}
             </div>
           </div>
-
-          {/* Music / Bar toggle — owners/cashiers only (not managers) */}
-          {hasMusic && !isManager && (
-            <Link
-              to={isOnMusic ? "/register" : "/music"}
-              className="h-10 px-4 rounded-lg flex items-center justify-center font-black text-sm transition active:scale-95 text-primary-foreground"
-              style={{ background: "var(--gradient-hero)" }}
-              title={isOnMusic ? "Back to Bar" : "Open Music Player"}
-            >
-              {isOnMusic ? t("bar", "Bar") : t("music", "Music")}
-            </Link>
-          )}
 
           {/* Hamburger — no username in header on mobile */}
           <div className="flex items-center gap-2 relative" ref={menuRef}>
@@ -415,7 +378,7 @@ export default function AppLayout() {
                       <GitBranch className={`h-6 w-6 ${loc.pathname === "/switch-bar" ? "text-white" : "text-primary"}`} />
                     </div>
                     <span className={`text-xs font-black text-center leading-tight ${loc.pathname === "/switch-bar" ? "text-white" : "text-foreground"}`}>
-                      {t("switch_bar", "Switch Bar")}
+                      {t("switch_bar", "Switch Store")}
                     </span>
                   </button>
                 )}

@@ -1,4 +1,4 @@
-package com.bartendaz.pro;
+package com.pospro.app;
 
 import android.graphics.Color;
 import android.os.Build;
@@ -17,7 +17,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(PdfDownloadPlugin.class);
-        registerPlugin(YouTubeOverlayPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Clear WebView cache on every launch so updated APKs always load fresh JS

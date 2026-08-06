@@ -1764,7 +1764,7 @@ export default function ProductsPage() {
       <div className="sticky top-0 z-30 -mx-3 px-3 py-2 bg-background/95 backdrop-blur border-b border-border space-y-2">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-black leading-tight">{t("products_title", "Bar Items")}</h1>
+            <h1 className="text-xl font-black leading-tight">{t("products_title", "Items")}</h1>
             <p className="text-muted-foreground text-xs">{items.length} items</p>
           </div>
           <div className="flex items-center gap-2">

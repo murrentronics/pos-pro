@@ -14,28 +14,34 @@ export type Database = {
   }
   public: {
     Tables: {
-      bar_sessions: {
+      store_sessions: {
         Row: {
           id: string
           owner_id: string
           opened_at: string
           closed_at: string | null
+          float_amount: number
+          created_at: string
         }
         Insert: {
           id?: string
           owner_id: string
           opened_at?: string
           closed_at?: string | null
+          float_amount?: number
+          created_at?: string
         }
         Update: {
           id?: string
           owner_id?: string
           opened_at?: string
           closed_at?: string | null
+          float_amount?: number
+          created_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "bar_sessions_owner_id_fkey"
+            foreignKeyName: "store_sessions_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -43,44 +49,98 @@ export type Database = {
           },
         ]
       }
-      bar_sub_sessions: {
+      store_sub_sessions: {
         Row: {
           id: string
           owner_id: string
-          bar_session_id: string
+          store_session_id: string
+          cashier_id: string
           opened_at: string
           closed_at: string | null
-          cashier_float: number
+          float_amount: number
+          float_set_at: string | null
+          created_at: string
         }
         Insert: {
           id?: string
           owner_id: string
-          bar_session_id: string
+          store_session_id: string
+          cashier_id: string
           opened_at?: string
           closed_at?: string | null
-          cashier_float?: number
+          float_amount?: number
+          float_set_at?: string | null
+          created_at?: string
         }
         Update: {
           id?: string
           owner_id?: string
-          bar_session_id?: string
+          store_session_id?: string
+          cashier_id?: string
           opened_at?: string
           closed_at?: string | null
-          cashier_float?: number
+          float_amount?: number
+          float_set_at?: string | null
+          created_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "bar_sub_sessions_owner_id_fkey"
+            foreignKeyName: "store_sub_sessions_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "bar_sub_sessions_bar_session_id_fkey"
-            columns: ["bar_session_id"]
+            foreignKeyName: "store_sub_sessions_store_session_id_fkey"
+            columns: ["store_session_id"]
             isOneToOne: false
-            referencedRelation: "bar_sessions"
+            referencedRelation: "store_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_variations: {
+        Row: {
+          id: string
+          product_id: string
+          owner_id: string
+          name: string
+          price: number
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          product_id: string
+          owner_id: string
+          name: string
+          price: number
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          product_id?: string
+          owner_id?: string
+          name?: string
+          price?: number
+          sort_order?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_variations_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_variations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]

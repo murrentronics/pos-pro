@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,7 +11,7 @@ import {
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types --------------------------------------------------------------------
 type Expense = {
   id: string;
   amount: number;
@@ -36,7 +36,7 @@ type TimeCard = {
   work_date: string;
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 function fmt(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -63,7 +63,7 @@ function fmtDuration(inIso: string, outIso: string | null) {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-// ─── Root export ──────────────────────────────────────────────────────────────
+// --- Root export --------------------------------------------------------------
 export default function ManagerPage() {
   const { profile } = useAuth();
   const { effectiveOwnerId } = useChain();
@@ -74,7 +74,7 @@ export default function ManagerPage() {
   return <ManagerMain profile={profile} ownerId={ownerId} />;
 }
 
-// ─── Main shell ───────────────────────────────────────────────────────────────
+// --- Main shell ---------------------------------------------------------------
 function ManagerMain({
   profile,
   ownerId,
@@ -102,10 +102,10 @@ function ManagerMain({
     if (!ownerId) return;
     setBarStateLoading(true);
     const fetchBarState = () =>
-      sb.from("profiles").select("bar_session_start, bar_closed_at").eq("id", ownerId).single()
+      sb.from("profiles").select("store_session_start, store_closed_at").eq("id", ownerId).single()
         .then(({ data }: any) => {
-          setBarSessionStart(data?.bar_session_start ?? null);
-          setBarClosedAt(data?.bar_closed_at ?? null);
+          setBarSessionStart(data?.store_session_start ?? null);
+          setBarClosedAt(data?.store_closed_at ?? null);
           setBarStateLoading(false);
         });
     fetchBarState();
@@ -114,8 +114,8 @@ function ManagerMain({
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${ownerId}` },
         (payload: any) => {
           const rec = payload.new as Record<string, unknown>;
-          if ("bar_session_start" in rec) setBarSessionStart((rec.bar_session_start as string | null) ?? null);
-          if ("bar_closed_at" in rec) setBarClosedAt((rec.bar_closed_at as string | null) ?? null);
+          if ("store_session_start" in rec) setBarSessionStart((rec.store_session_start as string | null) ?? null);
+          if ("store_closed_at" in rec) setBarClosedAt((rec.store_closed_at as string | null) ?? null);
         }).subscribe();
 
     // Re-fetch when the tab regains focus (handles page refresh / tab switch)
@@ -140,30 +140,30 @@ function ManagerMain({
 
   const confirmOpenBar = async () => {
     const barFloatVal = isMachinesAccount ? 0 : parseInt(openBarFloat, 10);
-    if (!isMachinesAccount && (isNaN(barFloatVal) || barFloatVal < 0)) { toast.error("Enter a valid bar float amount"); return; }
+    if (!isMachinesAccount && (isNaN(barFloatVal) || barFloatVal < 0)) { toast.error("Enter a valid store float amount"); return; }
     if (hasMachines) {
       const mf = parseInt(openMachineFloat, 10);
       if (isNaN(mf) || mf < 0) { toast.error("Enter a valid machine float amount"); return; }
     }
     setBarToggleBusy(true); setShowOpenBarModal(false);
-    const { data: existingOpen } = await sb.from("bar_sessions")
+    const { data: existingOpen } = await sb.from("store_sessions")
       .select("id").eq("owner_id", ownerId).is("closed_at", null).limit(1).maybeSingle();
-    if (existingOpen) { setBarToggleBusy(false); toast.error("Bar is already open"); return; }
+    if (existingOpen) { setBarToggleBusy(false); toast.error("Store is already open"); return; }
     const now = new Date().toISOString();
     const { error } = await sb.from("profiles")
-      .update({ bar_session_start: now, bar_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
+      .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
       .eq("id", ownerId);
-    if (error) { setBarToggleBusy(false); toast.error("Failed to open bar"); return; }
-    const { data: newSession } = await sb.from("bar_sessions")
+    if (error) { setBarToggleBusy(false); toast.error("Failed to open store"); return; }
+    const { data: newSession } = await sb.from("store_sessions")
       .insert({ owner_id: ownerId, opened_at: now }).select("id").single();
     if (newSession?.id) {
-      await sb.from("bar_sub_sessions").insert({ owner_id: ownerId, bar_session_id: newSession.id, opened_at: now, cashier_float: barFloatVal });
+      await sb.from("store_sub_sessions").insert({ owner_id: ownerId, store_session_id: newSession.id, opened_at: now, cashier_float: barFloatVal });
     }
     if (hasMachines) {
       await sb.from("machine_float_sessions").insert({ owner_id: ownerId, amount: parseInt(openMachineFloat, 10) || 0, set_at: now });
     }
     setBarToggleBusy(false); setBarSessionStart(now); setBarClosedAt(null);
-    toast.success("🟢 Bar opened");
+    toast.success("?? Store opened");
   };
 
   const handleCloseBar = async () => {
@@ -171,12 +171,12 @@ function ManagerMain({
     const now = new Date().toISOString();
     // Auto clock-out all open time cards for this owner
     await sb.from("time_cards").update({ clocked_out_at: now }).eq("owner_id", ownerId).is("clocked_out_at", null);
-    await sb.from("bar_sub_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
-    await sb.from("bar_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
-    const { error } = await sb.from("profiles").update({ bar_closed_at: now }).eq("id", ownerId);
+    await sb.from("store_sub_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
+    await sb.from("store_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
+    const { error } = await sb.from("profiles").update({ store_closed_at: now }).eq("id", ownerId);
     setBarToggleBusy(false);
-    if (error) { toast.error("Failed to close bar"); return; }
-    setBarClosedAt(now); toast.success("🔴 Bar closed");
+    if (error) { toast.error("Failed to close store"); return; }
+    setBarClosedAt(now); toast.success("?? Store closed");
   };
 
   const [tab, setTab] = useState<"dashboard" | "timecards">("dashboard");
@@ -202,7 +202,7 @@ function ManagerMain({
             style={barIsOpen
               ? { background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac", color: "#86efac" }
               : { background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171", color: "#f87171" }}>
-            {barToggleBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="text-[11px]">{barIsOpen ? "🟢" : "🔴"}</span>}
+            {barToggleBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="text-[11px]">{barIsOpen ? "??" : "??"}</span>}
             {barIsOpen ? "Open" : "Closed"}
           </button>
         )}
@@ -227,15 +227,15 @@ function ManagerMain({
         <TimeCardsTab profile={profile} ownerId={ownerId} managerName={managerName} barIsOpen={barIsOpen} />
       )}
 
-      {/* Close Bar Confirm */}
+      {/* Close Store Confirm */}
       {showCloseBarConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden" style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-6 pb-2 text-center">
               <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171" }}>
-                <span className="text-2xl">🔴</span>
+                <span className="text-2xl">??</span>
               </div>
-              <h2 className="font-black text-xl">Close Bar?</h2>
+              <h2 className="font-black text-xl">Close Store?</h2>
               <p className="text-sm text-muted-foreground mt-2">This will end the current session.</p>
             </div>
             <div className="px-6 pb-6 pt-4 flex gap-3">
@@ -243,28 +243,28 @@ function ManagerMain({
               <button onClick={() => { setShowCloseBarConfirm(false); handleCloseBar(); }} disabled={barToggleBusy}
                 className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50"
                 style={{ background: "rgba(239,68,68,0.15)", border: "1.5px solid #f87171", color: "#f87171" }}>
-                {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Close Bar"}
+                {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Close Store"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Open Bar Modal */}
+      {/* Open Store Modal */}
       {showOpenBarModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden" style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-6 pb-2 text-center">
               <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac" }}>
-                <span className="text-2xl">🟢</span>
+                <span className="text-2xl">??</span>
               </div>
-              <h2 className="font-black text-xl">Open Bar</h2>
+              <h2 className="font-black text-xl">Open Store</h2>
               <p className="text-sm text-muted-foreground mt-1">Set the opening float</p>
             </div>
             <div className="px-6 pb-6 pt-4 space-y-3">
               {!isMachinesAccount && (
                 <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-widest block">Bar Float ($)</label>
+                  <label className="text-xs font-black text-muted-foreground uppercase tracking-widest block">Store Float ($)</label>
                   <div
                     onClick={() => setActiveOpenBarField(activeOpenBarField === "bar" ? null : "bar")}
                     className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
@@ -290,10 +290,10 @@ function ManagerMain({
                   </div>
                 </div>
               )}
-              {/* Inline numpad — integers only, no decimal */}
+              {/* Inline numpad � integers only, no decimal */}
               {activeOpenBarField !== null && (
                 <div className="grid grid-cols-3 gap-1.5 pt-1">
-                  {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k, i) => (
+                  {["1","2","3","4","5","6","7","8","9","","0","?"].map((k, i) => (
                     k === "" ? <div key={i} /> :
                     <button
                       key={i}
@@ -301,11 +301,11 @@ function ManagerMain({
                       onClick={() => {
                         const current = activeOpenBarField === "bar" ? openBarFloat : openMachineFloat;
                         const setter  = activeOpenBarField === "bar" ? setOpenBarFloat : setOpenMachineFloat;
-                        if (k === "⌫") { setter(current.slice(0, -1)); return; }
+                        if (k === "?") { setter(current.slice(0, -1)); return; }
                         setter(current === "0" || current === "" ? k : current + k);
                       }}
                       className={`h-12 rounded-xl font-black text-lg transition active:scale-95 ${
-                        k === "⌫"
+                        k === "?"
                           ? "bg-destructive/20 text-destructive hover:bg-destructive/30"
                           : "bg-muted hover:bg-muted/70 text-foreground"
                       }`}
@@ -318,7 +318,7 @@ function ManagerMain({
                 <button onClick={confirmOpenBar} disabled={barToggleBusy}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50"
                   style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
-                  {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Open Bar"}
+                  {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Open Store"}
                 </button>
               </div>
             </div>
@@ -330,7 +330,7 @@ function ManagerMain({
   );
 }
 
-// ─── Dashboard Tab ────────────────────────────────────────────────────────────
+// --- Dashboard Tab ------------------------------------------------------------
 function DashboardTab({
   profile, ownerId, managerName, barIsOpen, barStateLoading, barSessionStart,
 }: {
@@ -341,7 +341,7 @@ function DashboardTab({
   const sb = supabase as any;
   const tag = `[Manager: ${managerName}]`;
 
-  // ── Bar float (live) ───────────────────────────────────────────────────────
+  // -- Bar float (live) -------------------------------------------------------
   const [floatBalance, setFloatBalance] = useState<number>(0);
   const loadFloat = useCallback(async () => {
     const { data } = await sb.from("profiles").select("cashier_float").eq("id", ownerId).single();
@@ -358,7 +358,7 @@ function DashboardTab({
     return () => { supabase.removeChannel(ch); };
   }, [ownerId]);
 
-  // ── Dashboard data (floats, sales, machine) ────────────────────────────────
+  // -- Dashboard data (floats, sales, machine) --------------------------------
   const [barFloatSet,          setBarFloatSet]          = useState<number>(0);
   const [machineFloatSet,      setMachineFloatSet]      = useState<number>(0);
   const [machineFloatBal,      setMachineFloatBal]      = useState<number>(0);
@@ -377,7 +377,7 @@ function DashboardTab({
 
     // "Amount Set" = the float value from the latest sub-session (original set amount)
     // "Remaining"  = live cashier_float (updated by all deductions in realtime)
-    const { data: lastSubSession } = await sb.from("bar_sub_sessions")
+    const { data: lastSubSession } = await sb.from("store_sub_sessions")
       .select("cashier_float").eq("owner_id", ownerId)
       .order("opened_at", { ascending: false }).limit(1).maybeSingle();
     setBarFloatSet(Number(lastSubSession?.cashier_float ?? ownerRow?.cashier_float ?? 0));
@@ -417,7 +417,7 @@ function DashboardTab({
     return () => { supabase.removeChannel(ch); };
   }, [ownerId, loadDashboard]);
 
-  // ── Set float modal state ──────────────────────────────────────────────────
+  // -- Set float modal state --------------------------------------------------
   const [showSetBarFloat,  setShowSetBarFloat]  = useState(false);
   const [showSetMachFloat, setShowSetMachFloat] = useState(false);
   const [setFloatInput,    setSetFloatInput]    = useState("");
@@ -434,22 +434,22 @@ function DashboardTab({
       const newTotal = barFloatSet + val;
       await sb.from("profiles").update({ cashier_float: newTotal }).eq("id", ownerId);
       setFloatBalance(newTotal); setBarFloatSet(newTotal);
-      toast.success(`Float topped up by $${val.toFixed(2)} — total $${newTotal.toFixed(2)}`);
+      toast.success(`Float topped up by $${val.toFixed(2)} � total $${newTotal.toFixed(2)}`);
     } else {
       // New session: close current sub-session, open new one, reset float anchor
-      const { data: openBarSession } = await sb.from("bar_sessions")
+      const { data: openBarSession } = await sb.from("store_sessions")
         .select("id").eq("owner_id", ownerId).is("closed_at", null)
         .order("opened_at", { ascending: false }).limit(1).maybeSingle();
       if (openBarSession?.id) {
-        await sb.from("bar_sub_sessions").update({ closed_at: now })
+        await sb.from("store_sub_sessions").update({ closed_at: now })
           .eq("owner_id", ownerId).eq("bar_session_id", openBarSession.id).is("closed_at", null);
-        await sb.from("bar_sub_sessions").insert({
-          owner_id: ownerId, bar_session_id: openBarSession.id, opened_at: now, cashier_float: val,
+        await sb.from("store_sub_sessions").insert({
+          owner_id: ownerId, store_session_id: openBarSession.id, opened_at: now, cashier_float: val,
         });
       }
       await sb.from("profiles").update({ cashier_float: val, cashier_float_set_at: now }).eq("id", ownerId);
       setFloatBalance(val); setBarFloatSet(val);
-      toast.success(`New session started — float set to $${val.toFixed(2)}`);
+      toast.success(`New session started � float set to $${val.toFixed(2)}`);
     }
     setSetFloatBusy(false); setShowSetBarFloat(false); setSetFloatInput(""); setBarFloatMode("new");
     loadDashboard();
@@ -465,7 +465,7 @@ function DashboardTab({
     loadDashboard();
   };
 
-  // ── Expenses state ─────────────────────────────────────────────────────────
+  // -- Expenses state ---------------------------------------------------------
   const [expenses,  setExpenses]  = useState<Expense[]>([]);
   const [loading,   setLoading]   = useState(true);
 
@@ -495,7 +495,7 @@ function DashboardTab({
     .filter((e) => barSessionStart && new Date(e.created_at) >= new Date(barSessionStart))
     .reduce((s, e) => s + Number(e.amount), 0);
 
-  // ── Add expense form ───────────────────────────────────────────────────────
+  // -- Add expense form -------------------------------------------------------
   const [showForm,   setShowForm]   = useState(false);
   const [lines,      setLines]      = useState<{ description: string; amount: string }[]>([{ description: "", amount: "" }]);
   const [saving,     setSaving]     = useState(false);
@@ -506,7 +506,7 @@ function DashboardTab({
     const valid = lines.filter((l) => l.description.trim() && parseFloat(l.amount) > 0);
     if (!valid.length) { toast.error("Add at least one item with a description and amount"); return; }
     const total = valid.reduce((s, l) => s + parseFloat(l.amount), 0);
-    if (total > floatBalance) { toast.error(`Insufficient float — balance is $${fmt(floatBalance)}`); return; }
+    if (total > floatBalance) { toast.error(`Insufficient float � balance is $${fmt(floatBalance)}`); return; }
     setSaving(true);
     const today = trinidadDate();
     const description = valid.length === 1
@@ -550,14 +550,14 @@ function DashboardTab({
     setEditSaving(true);
     const newTotal = valid.reduce((s, l) => s + parseFloat(l.amount), 0);
     const diff = newTotal - Number(e.amount);
-    if (diff > 0 && diff > floatBalance) { setEditSaving(false); toast.error(`Insufficient float — balance is $${fmt(floatBalance)}`); return; }
+    if (diff > 0 && diff > floatBalance) { setEditSaving(false); toast.error(`Insufficient float � balance is $${fmt(floatBalance)}`); return; }
     const description = valid.length === 1
       ? `Non-Stock Expense\n${valid[0].description.trim()} = $${parseFloat(valid[0].amount).toFixed(2)} ${tag}`
       : `Non-Stock Expense\n${valid.map((l) => `${l.description.trim()} = $${parseFloat(l.amount).toFixed(2)}`).join("\n")}\n${tag}`;
     try {
       const { data: updated, error: upErr } = await sb.from("owner_expenses").update({ amount: newTotal, description }).eq("id", e.id).select("id");
       if (upErr) { toast.error(upErr.message); return; }
-      if (!updated || updated.length === 0) { toast.error("Could not update expense — permission denied"); return; }
+      if (!updated || updated.length === 0) { toast.error("Could not update expense � permission denied"); return; }
       if (diff !== 0) {
         const newFloat = Math.max(0, floatBalance - diff);
         await sb.from("profiles").update({ cashier_float: newFloat }).eq("id", ownerId);
@@ -572,7 +572,7 @@ function DashboardTab({
     try {
       const { data: deleted, error: delErr } = await sb.from("owner_expenses").delete().eq("id", e.id).select("id");
       if (delErr) { toast.error(delErr.message); return; }
-      if (!deleted || deleted.length === 0) { toast.error("Could not delete expense — permission denied"); return; }
+      if (!deleted || deleted.length === 0) { toast.error("Could not delete expense � permission denied"); return; }
       const newFloat = floatBalance + Number(e.amount);
       await sb.from("profiles").update({ cashier_float: newFloat }).eq("id", ownerId);
       setFloatBalance(newFloat);
@@ -585,27 +585,27 @@ function DashboardTab({
   return (
     <div className="space-y-4">
 
-      {/* Bar closed banner */}
+      {/* Store closed banner */}
       {!barStateLoading && !barIsOpen && (
         <div className="rounded-2xl px-4 py-3 flex items-center gap-3"
           style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}>
           <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-          <span className="text-sm font-semibold text-red-400">Bar is closed — expenses cannot be added, edited, or deleted.</span>
+          <span className="text-sm font-semibold text-red-400">Store is closed � expenses cannot be added, edited, or deleted.</span>
         </div>
       )}
 
-      {/* ── Hero 1: Floats ── */}
+      {/* -- Hero 1: Floats -- */}
       <div className="rounded-3xl p-4 space-y-3 relative overflow-hidden"
         style={{ background: "var(--gradient-hero)", boxShadow: "var(--shadow-glow)" }}>
         <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
         <div className="relative space-y-1.5">
-          <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "rgba(0,0,0,0.55)" }}>Bar Float</p>
+          <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "rgba(0,0,0,0.55)" }}>Store Float</p>
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => { setSetFloatInput(String(barFloatSet)); setShowSetBarFloat(true); }}
               className="rounded-2xl p-2.5 flex flex-col items-center justify-center gap-0.5 font-black text-xs transition active:scale-95"
               style={{ background: "oklch(0.18 0.02 60)", border: "1.5px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.85)" }}>
-              <span className="text-base">💰</span>
+              <span className="text-base">??</span>
               <span>{barFloatSet > 0 ? "Update" : "Set"} Float</span>
             </button>
             <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "oklch(0.18 0.02 60)" }}>
@@ -626,7 +626,7 @@ function DashboardTab({
                 onClick={() => { setSetFloatInput(String(machineFloatSet)); setShowSetMachFloat(true); }}
                 className="rounded-2xl p-2.5 flex flex-col items-center justify-center gap-0.5 font-black text-xs transition active:scale-95"
                 style={{ background: "oklch(0.18 0.02 60)", border: "1.5px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.85)" }}>
-                <span className="text-base">🎰</span>
+                <span className="text-base">??</span>
                 <span>{machineFloatSet > 0 ? "Update" : "Set"} Float</span>
               </button>
               <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "oklch(0.18 0.02 60)" }}>
@@ -642,7 +642,7 @@ function DashboardTab({
         )}
       </div>
 
-      {/* ── Hero 2: Session ── */}
+      {/* -- Hero 2: Session -- */}
       <div className="rounded-3xl p-4 space-y-3 relative overflow-hidden"
         style={{ background: "oklch(0.18 0.02 60)", border: "1px solid rgba(255,255,255,0.07)" }}>
         <div className="absolute -left-10 -bottom-10 h-40 w-40 rounded-full bg-white/5 blur-2xl" />
@@ -652,11 +652,11 @@ function DashboardTab({
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
               <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Cash Sales</div>
-              <div className="font-black text-sm" style={{ color: "#86efac" }}>{barIsOpen ? `$${fmt(sessionBarSales)}` : "—"}</div>
+              <div className="font-black text-sm" style={{ color: "#86efac" }}>{barIsOpen ? `$${fmt(sessionBarSales)}` : "�"}</div>
             </div>
             <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
-              <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Bar Expenses</div>
-              <div className="font-black text-sm" style={{ color: "#fca5a5" }}>{barIsOpen ? `$${fmt(sessionExpenses)}` : "—"}</div>
+              <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Store Expenses</div>
+              <div className="font-black text-sm" style={{ color: "#fca5a5" }}>{barIsOpen ? `$${fmt(sessionExpenses)}` : "�"}</div>
             </div>
           </div>
         </div>
@@ -666,11 +666,11 @@ function DashboardTab({
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
                 <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Cash in Machine</div>
-                <div className="font-black text-sm" style={{ color: "#86efac" }}>{machineFloatAnchor ? `$${fmt(sessionMachineIn)}` : "—"}</div>
+                <div className="font-black text-sm" style={{ color: "#86efac" }}>{machineFloatAnchor ? `$${fmt(sessionMachineIn)}` : "�"}</div>
               </div>
               <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
                 <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Machines Payout</div>
-                <div className="font-black text-sm" style={{ color: "#fca5a5" }}>{machineFloatAnchor ? `$${fmt(sessionMachinePayout)}` : "—"}</div>
+                <div className="font-black text-sm" style={{ color: "#fca5a5" }}>{machineFloatAnchor ? `$${fmt(sessionMachinePayout)}` : "�"}</div>
               </div>
             </div>
           </div>
@@ -685,7 +685,7 @@ function DashboardTab({
             style={showForm
               ? { background: "var(--gradient-hero)", color: "var(--primary-foreground)", borderColor: "transparent" }
               : { background: "var(--gradient-card)", borderColor: "var(--border)", color: "var(--primary)" }}>
-            {showForm ? "✕ Cancel" : "+ Add Expense"}
+            {showForm ? "? Cancel" : "+ Add Expense"}
           </button>
           {showForm && (
             <div className="rounded-2xl border border-border p-4 space-y-3" style={{ background: "var(--gradient-card)" }}>
@@ -726,7 +726,7 @@ function DashboardTab({
                   <div className="space-y-2">
                     <div className="rounded-xl px-3 py-2 text-xs text-center font-semibold"
                       style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>
-                      Deduct ${lineTotal.toFixed(2)} from bar float? (Balance: ${fmt(floatBalance)})
+                      Deduct ${lineTotal.toFixed(2)} from store float? (Balance: ${fmt(floatBalance)})
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <button onClick={() => setConfirming(false)} className="h-10 rounded-xl font-black text-sm border border-border transition active:scale-95">Back</button>
@@ -744,7 +744,7 @@ function DashboardTab({
         </div>
       )}
 
-      {/* ── Set Bar Float Modal ── */}
+      {/* -- Set Store Float Modal -- */}
       {showSetBarFloat && (
         <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => { setShowSetBarFloat(false); setSetFloatInput(""); setBarFloatMode("new"); }}>
@@ -752,9 +752,9 @@ function DashboardTab({
             style={{ background: "oklch(0.13 0.03 60)", border: "1px solid oklch(0.3 0.08 60)" }}
             onClick={e => e.stopPropagation()}>
             <p className="text-center text-xs font-semibold" style={{ color: "oklch(0.65 0.15 65)" }}>
-              {barFloatSet > 0 ? "Update Bar Float" : "Set Bar Float"}
+              {barFloatSet > 0 ? "Update Store Float" : "Set Store Float"}
             </p>
-            {/* Same / New session selector — only when a float is already set */}
+            {/* Same / New session selector � only when a float is already set */}
             {barFloatSet > 0 && (
               <>
                 <div className="grid grid-cols-2 gap-2">
@@ -770,8 +770,8 @@ function DashboardTab({
                 </div>
                 <p className="text-center text-[11px]" style={{ color: "oklch(0.55 0.10 65)" }}>
                   {barFloatMode === "same"
-                    ? "Adds to current float — used amount unchanged"
-                    : "Starts fresh — used amount resets to $0"}
+                    ? "Adds to current float � used amount unchanged"
+                    : "Starts fresh � used amount resets to $0"}
                 </p>
               </>
             )}
@@ -792,18 +792,18 @@ function DashboardTab({
               <button onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + "0"; })}
                 className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>0</button>
               <button onClick={() => setSetFloatInput(v => v.slice(0, -1))}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>⌫</button>
+                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>?</button>
             </div>
             <button onClick={handleSetBarFloat} disabled={setFloatBusy || !setFloatInput}
               className="w-full py-4 rounded-2xl text-base font-black active:scale-95 transition disabled:opacity-50"
               style={{ background: "oklch(0.60 0.18 65)", color: "#000" }}>
-              {setFloatBusy ? "Saving…" : barFloatSet > 0 ? "Update Float" : "Set Float"}
+              {setFloatBusy ? "Saving�" : barFloatSet > 0 ? "Update Float" : "Set Float"}
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Set Machine Float Modal ── */}
+      {/* -- Set Machine Float Modal -- */}
       {showSetMachFloat && (
         <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => { setShowSetMachFloat(false); setSetFloatInput(""); }}>
@@ -828,12 +828,12 @@ function DashboardTab({
               <button onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + "0"; })}
                 className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>0</button>
               <button onClick={() => setSetFloatInput(v => v.slice(0, -1))}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>⌫</button>
+                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>?</button>
             </div>
             <button onClick={handleSetMachFloat} disabled={setFloatBusy || !setFloatInput}
               className="w-full py-4 rounded-2xl text-base font-black active:scale-95 transition disabled:opacity-50"
               style={{ background: "oklch(0.60 0.18 65)", color: "#000" }}>
-              {setFloatBusy ? "Saving…" : machineFloatSet > 0 ? "Update Float" : "Set Float"}
+              {setFloatBusy ? "Saving�" : machineFloatSet > 0 ? "Update Float" : "Set Float"}
             </button>
           </div>
         </div>
@@ -944,7 +944,7 @@ function DashboardTab({
         )}
       </div>
 
-      {/* ── Set Bar Float Modal ── */}
+      {/* -- Set Store Float Modal -- */}
       {showSetBarFloat && (
         <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => { setShowSetBarFloat(false); setSetFloatInput(""); setBarFloatMode("new"); }}>
@@ -952,7 +952,7 @@ function DashboardTab({
             style={{ background: "oklch(0.13 0.03 60)", border: "1px solid oklch(0.3 0.08 60)" }}
             onClick={e => e.stopPropagation()}>
             <p className="text-center text-xs font-semibold" style={{ color: "oklch(0.65 0.15 65)" }}>
-              {barFloatSet > 0 ? "Update Bar Float" : "Set Bar Float"}
+              {barFloatSet > 0 ? "Update Store Float" : "Set Store Float"}
             </p>
             {barFloatSet > 0 && (
               <>
@@ -969,8 +969,8 @@ function DashboardTab({
                 </div>
                 <p className="text-center text-[11px]" style={{ color: "oklch(0.55 0.10 65)" }}>
                   {barFloatMode === "same"
-                    ? "Adds to current float — used amount unchanged"
-                    : "Starts fresh — used amount resets to $0"}
+                    ? "Adds to current float � used amount unchanged"
+                    : "Starts fresh � used amount resets to $0"}
                 </p>
               </>
             )}
@@ -989,18 +989,18 @@ function DashboardTab({
               <button onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + "0"; })}
                 className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>0</button>
               <button onClick={() => setSetFloatInput(v => v.slice(0, -1))}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>⌫</button>
+                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>?</button>
             </div>
             <button onClick={handleSetBarFloat} disabled={setFloatBusy || !setFloatInput}
               className="w-full py-4 rounded-2xl text-base font-black active:scale-95 transition disabled:opacity-50"
               style={{ background: "oklch(0.60 0.18 65)", color: "#000" }}>
-              {setFloatBusy ? "Saving…" : barFloatSet > 0 ? "Update Float" : "Set Float"}
+              {setFloatBusy ? "Saving�" : barFloatSet > 0 ? "Update Float" : "Set Float"}
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Set Machine Float Modal ── */}
+      {/* -- Set Machine Float Modal -- */}
       {showSetMachFloat && (
         <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => { setShowSetMachFloat(false); setSetFloatInput(""); }}>
@@ -1025,12 +1025,12 @@ function DashboardTab({
               <button onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + "0"; })}
                 className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>0</button>
               <button onClick={() => setSetFloatInput(v => v.slice(0, -1))}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>⌫</button>
+                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>?</button>
             </div>
             <button onClick={handleSetMachFloat} disabled={setFloatBusy || !setFloatInput}
               className="w-full py-4 rounded-2xl text-base font-black active:scale-95 transition disabled:opacity-50"
               style={{ background: "oklch(0.60 0.18 65)", color: "#000" }}>
-              {setFloatBusy ? "Saving…" : machineFloatSet > 0 ? "Update Float" : "Set Float"}
+              {setFloatBusy ? "Saving�" : machineFloatSet > 0 ? "Update Float" : "Set Float"}
             </button>
           </div>
         </div>
@@ -1041,7 +1041,7 @@ function DashboardTab({
 }
 
 
-// ─── Mini calendar ────────────────────────────────────────────────────────────
+// --- Mini calendar ------------------------------------------------------------
 function MgrCalendar({ workedDates, selectedDate, onSelect }: {
   workedDates: Set<string>; selectedDate: string | null; onSelect: (d: string | null) => void;
 }) {
@@ -1095,7 +1095,7 @@ function MgrCalendar({ workedDates, selectedDate, onSelect }: {
       </div>
       {selectedDate && (
         <button onClick={() => onSelect(null)} className="mt-2 w-full text-[11px] font-black text-muted-foreground hover:text-foreground transition text-center">
-          Show all dates ✕
+          Show all dates ?
         </button>
       )}
     </div>
@@ -1103,7 +1103,7 @@ function MgrCalendar({ workedDates, selectedDate, onSelect }: {
 }
 
 
-// ─── Timesheet PDF (manager) ──────────────────────────────────────────────────
+// --- Timesheet PDF (manager) --------------------------------------------------
 async function downloadTimesheetPdf(
   cards: TimeCard[],
   staffName: string | null,
@@ -1159,7 +1159,7 @@ async function downloadTimesheetPdf(
   await downloadPdf(`timesheet-${safeName}-${periodLabel.replace(/\s+/g, "-")}.pdf`, doc.output("datauristring"));
 }
 
-// ─── Time Cards Tab ───────────────────────────────────────────────────────────
+// --- Time Cards Tab -----------------------------------------------------------
 export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
   profile: { id: string; username?: string | null; wallet_balance: number };
   ownerId: string; managerName: string; barIsOpen: boolean;
@@ -1242,7 +1242,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
     return "Cashier";
   }
 
-  // ── Timesheets filter helpers ──────────────────────────────────────────────
+  // -- Timesheets filter helpers ----------------------------------------------
   function getTsFilteredCards(): TimeCard[] {
     const base = (tsStaffEmp ? timeCards.filter(tc => tc.employee_id === tsStaffEmp.id) : timeCards)
       .filter(tc => !!tc.clocked_out_at); // timesheets only shows completed shifts
@@ -1268,7 +1268,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
       const dow = ref.getDay();
       const start = new Date(ref); start.setDate(ref.getDate() - dow);
       const end   = new Date(ref); end.setDate(ref.getDate() + (6 - dow));
-      return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+      return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} � ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
     }
     if (tsPeriod === "month") return ref.toLocaleDateString("en-US", { month: "long", year: "numeric" });
     if (tsPeriod === "year")  return String(ref.getFullYear());
@@ -1293,7 +1293,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
         ))}
       </div>
 
-      {/* ══ CLOCK TAB ══════════════════════════════════════════════════════ */}
+      {/* -- CLOCK TAB ------------------------------------------------------ */}
       {tcSubTab === "clock" && (
         <div className="space-y-3">
           {empLoading
@@ -1317,7 +1317,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                       <div className="flex-1 min-w-0">
                         <p className="font-black text-sm truncate">{emp.username}</p>
                         <p className="text-xs text-muted-foreground">{roleLabel(emp)}</p>
-                        {isSel && empOpen && <p className="text-[10px] mt-0.5" style={{ color: "rgba(134,239,172,0.8)" }}>Since {fmtTime(empOpen.clocked_in_at)} · {fmtDuration(empOpen.clocked_in_at, null)} on shift</p>}
+                        {isSel && empOpen && <p className="text-[10px] mt-0.5" style={{ color: "rgba(134,239,172,0.8)" }}>Since {fmtTime(empOpen.clocked_in_at)} � {fmtDuration(empOpen.clocked_in_at, null)} on shift</p>}
                       </div>
                       {empOpen
                         ? <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.4)" }}>Clocked In</span>
@@ -1341,7 +1341,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                 );
               })}
 
-          {/* ── Active workers flat list ── */}
+          {/* -- Active workers flat list -- */}
           {(() => {
             const activeCards = timeCards.filter(tc => !tc.clocked_out_at);
             if (activeCards.length === 0) return null;
@@ -1358,7 +1358,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                     <div className="flex-1 min-w-0">
                       <p className="font-black text-sm truncate">{tc.employee_name}</p>
                       <p className="text-xs mt-0.5" style={{ color: "rgba(134,239,172,0.8)" }}>
-                        Since {fmtTime(tc.clocked_in_at)} · {fmtDuration(tc.clocked_in_at, null)} on shift
+                        Since {fmtTime(tc.clocked_in_at)} � {fmtDuration(tc.clocked_in_at, null)} on shift
                       </p>
                     </div>
                     <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0"
@@ -1371,7 +1371,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
         </div>
       )}
 
-      {/* ══ TIMESHEETS TAB ═════════════════════════════════════════════════ */}
+      {/* -- TIMESHEETS TAB ------------------------------------------------- */}
       {tcSubTab === "timesheets" && (
         <div className="space-y-3">
           {/* Filter row: date picker + staff picker + PDF button */}
@@ -1418,7 +1418,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
             <div className="rounded-2xl border border-border overflow-hidden" style={{ background: "var(--gradient-card)" }}>
               <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
                 <p className="font-black text-xs text-muted-foreground uppercase tracking-widest">Select Staff</p>
-                <button onClick={() => setTsShowStaffPicker(false)} className="text-xs font-black text-muted-foreground hover:text-foreground">✕</button>
+                <button onClick={() => setTsShowStaffPicker(false)} className="text-xs font-black text-muted-foreground hover:text-foreground">?</button>
               </div>
               <div className="divide-y divide-border/50">
                 <button onClick={() => { setTsStaffEmp(null); setTsShowStaffPicker(false); }}
@@ -1448,7 +1448,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
             </div>
           )}
 
-          {/* Week / Month / Year / Day period pickers — only shown when a date is selected */}
+          {/* Week / Month / Year / Day period pickers � only shown when a date is selected */}
           {tsSelectedDate && (
             <div className="flex gap-1.5">
               {(["day","week","month","year"] as const).map(p => (
@@ -1477,11 +1477,11 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                 </span>
               )}
               <button onClick={() => { setTsSelectedDate(null); setTsStaffEmp(null); setTsPeriod("day"); setTsShowCal(false); }}
-                className="text-[11px] font-black text-muted-foreground hover:text-foreground transition">Clear ✕</button>
+                className="text-[11px] font-black text-muted-foreground hover:text-foreground transition">Clear ?</button>
             </div>
           )}
 
-          {/* Records — Month accordion → Day rows → Employee entries */}
+          {/* Records � Month accordion ? Day rows ? Employee entries */}
           {tcLoading
             ? <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="rounded-xl h-14 bg-muted/30 animate-pulse" />)}</div>
             : tsSortedDates.length === 0
@@ -1514,7 +1514,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                           <p className="font-black text-sm">{mLabel}</p>
                           <p className="text-xs text-muted-foreground">
                             {mDays.length} day{mDays.length !== 1 ? "s" : ""}
-                            {mActive && <span className="text-green-400 ml-1">· active</span>}
+                            {mActive && <span className="text-green-400 ml-1">� active</span>}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1541,7 +1541,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                                   className="w-full flex items-center justify-between px-4 py-2.5 transition hover:bg-muted/20 pl-6">
                                   <div className="text-left">
                                     <p className="font-black text-xs">{dl}</p>
-                                    <p className="text-[10px] text-muted-foreground">{cards.length} record{cards.length !== 1 ? "s" : ""}{dActive > 0 && <span className="text-green-400 ml-1">· {dActive} active</span>}</p>
+                                    <p className="text-[10px] text-muted-foreground">{cards.length} record{cards.length !== 1 ? "s" : ""}{dActive > 0 && <span className="text-green-400 ml-1">� {dActive} active</span>}</p>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <span className="font-black text-[11px]" style={{ color: "var(--primary)" }}>{dHM}</span>
@@ -1561,8 +1561,8 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                                             <LogIn className="h-3 w-3 text-green-400 shrink-0" />
                                             <span className="text-green-400 font-bold">{fmtTime(tc.clocked_in_at)}</span>
                                             {tc.clocked_out_at
-                                              ? <><span className="text-muted-foreground/40">→</span><LogOut className="h-3 w-3 text-red-400 shrink-0" /><span className="text-red-400 font-bold">{fmtTime(tc.clocked_out_at)}</span><span className="text-muted-foreground ml-1">· {fmtDuration(tc.clocked_in_at, tc.clocked_out_at)}</span></>
-                                              : <span className="text-green-400 font-semibold">· Still on shift</span>}
+                                              ? <><span className="text-muted-foreground/40">?</span><LogOut className="h-3 w-3 text-red-400 shrink-0" /><span className="text-red-400 font-bold">{fmtTime(tc.clocked_out_at)}</span><span className="text-muted-foreground ml-1">� {fmtDuration(tc.clocked_in_at, tc.clocked_out_at)}</span></>
+                                              : <span className="text-green-400 font-semibold">� Still on shift</span>}
                                           </div>
                                         </div>
                                         {!tc.clocked_out_at && <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.35)" }}>Active</span>}

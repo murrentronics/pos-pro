@@ -55,7 +55,7 @@ export async function setUserStatus(
         chain_bar_count:                 0,
         addon_bar_count:                 0,
         is_multi_bar:                    false,
-        music_addon:                     false,
+        
       };
     }
   }
@@ -162,7 +162,7 @@ export async function revokeSubscription(owner_id: string): Promise<RevokeResult
       chain_bar_count:                     0,
       addon_bar_count:                     0,
       is_multi_bar:                        false,
-      music_addon:                         false,
+      
       wallet_balance:                      0,
     })
     .eq("id", owner_id);

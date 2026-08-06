@@ -91,20 +91,20 @@ function AppLayout() {
     if (!barOwnerId) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from("profiles")
-      .select("bar_session_start, bar_closed_at")
+      .select("store_session_start, store_closed_at")
       .eq("id", barOwnerId)
       .single()
-      .then(({ data }: { data: { bar_session_start: string | null; bar_closed_at: string | null } | null }) => {
-        setBarSessionStart(data?.bar_session_start ?? null);
-        setBarClosedAt(data?.bar_closed_at ?? null);
+      .then(({ data }: { data: { store_session_start: string | null; store_closed_at: string | null } | null }) => {
+        setBarSessionStart(data?.store_session_start ?? null);
+        setBarClosedAt(data?.store_closed_at ?? null);
       });
     const ch = supabase
       .channel(`bar-session-layout-${barOwnerId}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${barOwnerId}` },
         (payload) => {
           const rec = payload.new as Record<string, unknown>;
-          if ("bar_session_start" in rec) setBarSessionStart((rec.bar_session_start as string | null) ?? null);
-          if ("bar_closed_at"     in rec) setBarClosedAt((rec.bar_closed_at as string | null) ?? null);
+          if ("store_session_start" in rec) setBarSessionStart((rec.store_session_start as string | null) ?? null);
+          if ("store_closed_at"     in rec) setBarClosedAt((rec.store_closed_at as string | null) ?? null);
         }
       )
       .subscribe();
@@ -156,34 +156,34 @@ function AppLayout() {
 
     // Guard: do not create a new session if one is already open
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingOpen } = await (supabase as any).from("bar_sessions")
+    const { data: existingOpen } = await (supabase as any).from("store_sessions")
       .select("id").eq("owner_id", ownerId).is("closed_at", null).limit(1).maybeSingle();
     if (existingOpen) {
       setBarToggleBusy(false);
-      toast.error("Bar is already open — close the current session first");
+      toast.error("Store is already open — close the current session first");
       return;
     }
 
     const now = new Date().toISOString();
-    // 1. Update profiles: set bar_session_start, clear bar_closed_at, set cashier float
+    // 1. Update profiles: set store_session_start, clear store_closed_at, set cashier float
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any).from("profiles")
-      .update({ bar_session_start: now, bar_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
+      .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
       .eq("id", ownerId);
-    if (error) { setBarToggleBusy(false); toast.error("Failed to open bar"); return; }
+    if (error) { setBarToggleBusy(false); toast.error("Failed to open store"); return; }
 
     // 2. Insert bar_sessions row
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: newSession } = await (supabase as any).from("bar_sessions")
+    const { data: newSession } = await (supabase as any).from("store_sessions")
       .insert({ owner_id: ownerId, opened_at: now })
       .select("id").single();
 
     // 3. Insert first sub-session for this bar open
     if (newSession?.id) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from("bar_sub_sessions").insert({
+      await (supabase as any).from("store_sub_sessions").insert({
         owner_id: ownerId,
-        bar_session_id: newSession.id,
+        store_session_id: newSession.id,
         opened_at: now,
         cashier_float: barFloatVal,
       });
@@ -201,7 +201,7 @@ function AppLayout() {
     setBarToggleBusy(false);
     setBarSessionStart(now);
     setBarClosedAt(null);
-    toast.success("🟢 Bar opened");
+    toast.success("🟢 Store opened");
   };
 
   const handleCloseBar = async () => {
@@ -212,23 +212,23 @@ function AppLayout() {
     const now = new Date().toISOString();
     // 1. Close any open sub-sessions for this owner
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("bar_sub_sessions")
+    await (supabase as any).from("store_sub_sessions")
       .update({ closed_at: now })
       .eq("owner_id", ownerId)
       .is("closed_at", null);
     // 2. Close the open bar_sessions row
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("bar_sessions")
+    await (supabase as any).from("store_sessions")
       .update({ closed_at: now })
       .eq("owner_id", ownerId)
       .is("closed_at", null);
-    // 3. Stamp bar_closed_at on profiles
+    // 3. Stamp store_closed_at on profiles
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("profiles").update({ bar_closed_at: now }).eq("id", ownerId);
+    const { error } = await (supabase as any).from("profiles").update({ store_closed_at: now }).eq("id", ownerId);
     setBarToggleBusy(false);
-    if (error) { toast.error("Failed to close bar"); return; }
+    if (error) { toast.error("Failed to close store"); return; }
     setBarClosedAt(now);
-    toast.success("🔴 Bar closed");
+    toast.success("🔴 Store closed");
   };
 
   const [managerHasMachinesNav, setManagerHasMachinesNav] = useState(false);
@@ -381,7 +381,7 @@ function AppLayout() {
         <Outlet />
       </main>
 
-      {/* ── Close Bar Confirm Modal ────────────────────────────────────── */}
+      {/* ── Close Store Confirm Modal ──────────────────────────────────── */}
       {showCloseBarConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
@@ -391,7 +391,7 @@ function AppLayout() {
                 style={{ background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171" }}>
                 <span className="text-2xl">🔴</span>
               </div>
-              <h2 className="font-black text-xl">Close Bar?</h2>
+              <h2 className="font-black text-xl">Close Store?</h2>
               <p className="text-sm text-muted-foreground mt-2">This will end the current session. Are you sure?</p>
             </div>
             <div className="px-6 pb-6 pt-4 flex gap-3">
@@ -405,14 +405,14 @@ function AppLayout() {
                 disabled={barToggleBusy}
                 className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50"
                 style={{ background: "rgba(239,68,68,0.15)", border: "1.5px solid #f87171", color: "#f87171" }}>
-                {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Close Bar"}
+                {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Close Store"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Open Bar Modal ─────────────────────────────────────────────── */}
+      {/* ── Open Store Modal ───────────────────────────────────────────── */}
       {showOpenBarModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
@@ -422,15 +422,15 @@ function AppLayout() {
                 style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac" }}>
                 <span className="text-2xl">🟢</span>
               </div>
-              <h2 className="font-black text-xl">Open Bar</h2>
-              <p className="text-xs text-muted-foreground mt-1">Set floats before starting the session</p>
+              <h2 className="font-black text-xl">Open Store</h2>
+              <p className="text-xs text-muted-foreground mt-1">Set float before starting the session</p>
             </div>
 
             <div className="px-6 pb-6 pt-4 space-y-4">
-              {/* Bar Float — hidden for machines-only accounts */}
+              {/* Store Float — hidden for machines-only accounts */}
               {!isMachinesAccount && (
                 <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Bar Float</label>
+                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Store Float</label>
                   <div
                     onClick={() => setActiveOpenBarField(activeOpenBarField === "bar" ? null : "bar")}
                     className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
@@ -489,7 +489,7 @@ function AppLayout() {
                   disabled={(!isMachinesAccount && !openBarFloat) || (hasMachines && !openMachineFloat)}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50"
                   style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
-                  Open Bar
+                  Open Store
                 </button>
               </div>
             </div>

@@ -265,7 +265,7 @@ function CreditPage() {
   const { t } = useTranslation();
   const rawOwnerId = profile?.role === "owner" ? profile.id : profile?.parent_id;
   const ownerId = profile?.role === "owner" ? effectiveOwnerId(profile.id) : rawOwnerId;
-  const ownerName = profile?.username ?? "Bar";
+  const ownerName = profile?.username ?? "Store";
   const ownerIdRef = useRef(ownerId);
   useEffect(() => { ownerIdRef.current = ownerId; }, [ownerId]);
 
@@ -873,7 +873,7 @@ function PaymentOverlay({
   const [printed, setPrinted] = useState(false);
   const [charges, setCharges] = useState<{ id: string; amount: number; items: { id: string; name: string; qty: number; price?: number; cost_price?: number }[] | null; created_at: string; cashier_id: string | null }[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const ownerName = profile?.username ?? "Bar";
+  const ownerName = profile?.username ?? "Store";
   const amountNum = parseFloat(amount) || 0;
   const owed = Number(account.balance_owed);
   const tooMuch = amountNum > owed;

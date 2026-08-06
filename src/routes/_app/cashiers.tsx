@@ -1707,11 +1707,11 @@ export default function CashiersPage() {
     if (!ownerIdForBar) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from("profiles")
-      .select("bar_session_start, bar_closed_at")
+      .select("store_session_start, store_closed_at")
       .eq("id", ownerIdForBar).single()
       .then(({ data }: any) => {
-        setBarSessionStart(data?.bar_session_start ?? null);
-        setBarClosedAt(data?.bar_closed_at ?? null);
+        setBarSessionStart(data?.store_session_start ?? null);
+        setBarClosedAt(data?.store_closed_at ?? null);
       });
   }, [ownerIdForBar]);
 
@@ -1723,8 +1723,8 @@ export default function CashiersPage() {
       .on("postgres_changes" as any, { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${ownerIdForBar}` },
         (payload: any) => {
           const rec = payload.new as Record<string, unknown>;
-          if ("bar_session_start" in rec) setBarSessionStart((rec.bar_session_start as string | null) ?? null);
-          if ("bar_closed_at" in rec) setBarClosedAt((rec.bar_closed_at as string | null) ?? null);
+          if ("store_session_start" in rec) setBarSessionStart((rec.store_session_start as string | null) ?? null);
+          if ("store_closed_at" in rec) setBarClosedAt((rec.store_closed_at as string | null) ?? null);
         })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -1873,20 +1873,20 @@ export default function CashiersPage() {
 
     // Guard: do not create a new session if one is already open
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingOpen } = await (supabase as any).from("bar_sessions")
+    const { data: existingOpen } = await (supabase as any).from("store_sessions")
       .select("id").eq("owner_id", ownerIdForBar).is("closed_at", null).limit(1).maybeSingle();
     if (existingOpen) {
       setBarToggleBusy(false);
-      toast.error("Bar is already open — close the current session first");
+      toast.error("Store is already open — close the current session first");
       return;
     }
 
     const now = new Date().toISOString();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any).from("profiles")
-      .update({ bar_session_start: now, bar_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
+      .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
       .eq("id", ownerIdForBar);
-    if (error) { setBarToggleBusy(false); toast.error("Failed to open bar: " + error.message); return; }
+    if (error) { setBarToggleBusy(false); toast.error("Failed to open store: " + error.message); return; }
 
     // Insert machine float session
     const machineAmt = hasMachinesAddon ? (parseFloat(floatMachineAmount) || 0) : 0;
@@ -1895,14 +1895,14 @@ export default function CashiersPage() {
 
     // Insert bar_sessions parent row + first sub-session
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: newSession } = await (supabase as any).from("bar_sessions")
+    const { data: newSession } = await (supabase as any).from("store_sessions")
       .insert({ owner_id: ownerIdForBar, opened_at: now })
       .select("id").single();
     if (newSession?.id) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from("bar_sub_sessions").insert({
+      await (supabase as any).from("store_sub_sessions").insert({
         owner_id: ownerIdForBar,
-        bar_session_id: newSession.id,
+        store_session_id: newSession.id,
         opened_at: now,
         cashier_float: barFloatVal,
       });
@@ -1911,7 +1911,7 @@ export default function CashiersPage() {
     setBarToggleBusy(false);
     setShowFloatModal(false);
     setBarSessionStart(now); setBarClosedAt(null);
-    toast.success("🟢 Bar opened at " + new Date(now).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true }));
+    toast.success("🟢 Store opened at " + new Date(now).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true }));
     setShowBarOpenedOverlay(true);
   };
 
@@ -1924,18 +1924,18 @@ export default function CashiersPage() {
       .update({ clocked_out_at: now }).eq("owner_id", ownerIdForBar).is("clocked_out_at", null);
     // Close open sub-sessions
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("bar_sub_sessions")
+    await (supabase as any).from("store_sub_sessions")
       .update({ closed_at: now }).eq("owner_id", ownerIdForBar).is("closed_at", null);
     // Close open bar_session row
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("bar_sessions")
+    await (supabase as any).from("store_sessions")
       .update({ closed_at: now }).eq("owner_id", ownerIdForBar).is("closed_at", null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("profiles").update({ bar_closed_at: now }).eq("id", ownerIdForBar);
+    const { error } = await (supabase as any).from("profiles").update({ store_closed_at: now }).eq("id", ownerIdForBar);
     setBarToggleBusy(false);
-    if (error) { toast.error("Failed to close bar: " + error.message); return; }
+    if (error) { toast.error("Failed to close store: " + error.message); return; }
     setBarClosedAt(now);
-    toast.success("🔴 Bar closed at " + new Date(now).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true }));
+    toast.success("🔴 Store closed at " + new Date(now).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true }));
   };
 
   return (
@@ -1948,9 +1948,9 @@ export default function CashiersPage() {
             style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-7 pb-4 text-center space-y-3">
               <div className="text-5xl">🔴</div>
-              <h2 className="font-black text-xl">Close the Bar?</h2>
+              <h2 className="font-black text-xl">Close the Store?</h2>
               <p className="text-sm text-muted-foreground leading-snug">
-                This will end the current session. Cashiers will not be able to make sales until the bar is reopened.
+                This will end the current session. Cashiers will not be able to make sales until the store is reopened.
               </p>
             </div>
             <div className="grid grid-cols-2 border-t border-border">
@@ -1964,7 +1964,7 @@ export default function CashiersPage() {
                 onClick={async () => { setShowConfirmClose(false); await handleCloseBar(); }}
                 className="h-14 font-black text-sm text-white transition active:opacity-80 disabled:opacity-40"
                 style={{ background: "#dc2626" }}>
-                {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Close Bar"}
+                {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Close Store"}
               </button>
             </div>
           </div>
@@ -1981,14 +1981,14 @@ export default function CashiersPage() {
                 style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac" }}>
                 <span className="text-2xl">🟢</span>
               </div>
-              <h2 className="font-black text-xl">Open Bar</h2>
-              <p className="text-xs text-muted-foreground mt-1">Set floats before starting the session</p>
+              <h2 className="font-black text-xl">Open Store</h2>
+              <p className="text-xs text-muted-foreground mt-1">Set float before starting the session</p>
             </div>
             <div className="px-6 pb-6 pt-4 space-y-4">
               {/* Bar Float — hidden for machines-only accounts */}
               {!isMachinesAccount && (
                 <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Bar Float</label>
+                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Store Float</label>
                   <input
                     type="number"
                     min="0"
@@ -2027,7 +2027,7 @@ export default function CashiersPage() {
                   disabled={barToggleBusy || (!isMachinesAccount && !floatBarAmount) || (hasMachinesAddon && !floatMachineAmount)}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                   style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
-                  {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open Bar"}
+                  {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open Store"}
                 </button>
               </div>
             </div>
@@ -2042,9 +2042,9 @@ export default function CashiersPage() {
             style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-7 pb-4 text-center space-y-2">
               <div className="text-5xl">🟢</div>
-              <h2 className="font-black text-xl">Bar is Open!</h2>
+              <h2 className="font-black text-xl">Store is Open!</h2>
               <p className="text-sm text-muted-foreground leading-snug">
-                Session started. Floats have been set. Good luck tonight!
+                Session started. Float has been set. Good luck today!
               </p>
             </div>
             <div className="px-6 pb-6 pt-2">
@@ -2074,7 +2074,7 @@ export default function CashiersPage() {
             {barToggleBusy
               ? <Loader2 className="h-4 w-4 animate-spin" />
               : <span className="text-xs">{barIsOpen ? "🟢" : "🔴"}</span>}
-            {barIsOpen ? "Bar Open" : "Bar Closed"}
+            {barIsOpen ? "Store Open" : "Store Closed"}
           </button>
         </div>
       </div>
