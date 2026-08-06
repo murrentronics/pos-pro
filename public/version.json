@@ -1,7 +1,7 @@
 {
-  "version": "1.0.8",
+  "version": "1.0.9",
   "apkUrl": "https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk",
   "downloadPage": "https://pos-pro.pages.dev",
-  "releaseNotes": "Version 1.0.8 — latest build",
+  "releaseNotes": "Version 1.0.9 — latest build",
   "releaseDate": "2026-08-06"
 }
