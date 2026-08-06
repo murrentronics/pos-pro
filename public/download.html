@@ -382,11 +382,12 @@
     <h1>P.O.S. Pro</h1>
     <p class="tagline">The complete business point-of-sale for owners and cashiers. Products, wallets, staff &mdash; all in one Android app.</p>
     <div class="cta-wrap">
-      <a class="btn-download" href="https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk">
+      <a class="btn-download" id="dlBtn" href="https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Download APK
       </a>
-      <span class="dl-note">Android 7.0+ &bull; Free to try &bull; No Play Store required</span>
+      <span class="dl-note" id="dlNote">Android 7.0+ &bull; Free to try &bull; No Play Store required</span>
+      <span id="releaseDate" style="display:none;font-size:0.75rem;color:var(--muted);margin-top:2px;"></span>
     </div>
   </section>
 
@@ -480,7 +481,6 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Download APK
     </a>
-  </section>
 
   <footer>
     <p>&copy; 2025 P.O.S. Pro &mdash; Built for bar owners. <a href="#" onclick="document.getElementById('manualOverlay').classList.add('open');document.body.style.overflow='hidden';return false;" style="color:var(--blue);text-decoration:none;">User Manual</a></p>
@@ -519,6 +519,44 @@
         btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download PDF';
       }
     }
+
+    // ── Fetch version.json and update download buttons ─────────────────────
+    (async function loadVersion() {
+      try {
+        const res = await fetch('/version.json?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const v = data.version;
+        if (!v) return;
+
+        const apkUrl = data.apkUrl || 'https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk';
+
+        // Update all download buttons with version + correct URL
+        document.querySelectorAll('.btn-download').forEach(function(btn) {
+          btn.href = apkUrl;
+          const svg = btn.querySelector('svg');
+          btn.innerHTML = '';
+          if (svg) btn.appendChild(svg);
+          btn.appendChild(document.createTextNode(' Download APK  v' + v));
+        });
+
+        // Update the sub-note
+        const note = document.getElementById('dlNote');
+        if (note) {
+          note.textContent = 'Android 7.0+  \u2022  v' + v + '  \u2022  No Play Store required';
+        }
+
+        // Show release date if available
+        if (data.releaseDate) {
+          const dateEl = document.getElementById('releaseDate');
+          if (dateEl) {
+            const d = new Date(data.releaseDate);
+            dateEl.textContent = 'Released ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+            dateEl.style.display = 'block';
+          }
+        }
+      } catch(e) { /* offline or not deployed yet — buttons stay as-is */ }
+    })();
   </script>
 </body>
 </html>

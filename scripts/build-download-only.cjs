@@ -36,7 +36,21 @@ if (fs.existsSync(assetsSrc)) {
   console.log('✓ Copied assets folder');
 }
 
-// _redirects: named pages served directly, everything else → download page
+// Copy manifest.json
+const manifestSrc = path.join(__dirname, '..', 'public', 'manifest.json');
+const manifestDest = path.join(distDir, 'manifest.json');
+if (fs.existsSync(manifestSrc)) {
+  fs.copyFileSync(manifestSrc, manifestDest);
+  console.log('✓ Copied manifest.json');
+}
+
+// Copy version.json — used by the in-app updater to detect new APK releases
+const versionSrc = path.join(__dirname, '..', 'public', 'version.json');
+const versionDest = path.join(distDir, 'version.json');
+if (fs.existsSync(versionSrc)) {
+  fs.copyFileSync(versionSrc, versionDest);
+  console.log('✓ Copied version.json');
+}
 fs.writeFileSync(
   path.join(distDir, '_redirects'),
   `/flyer /flyer.html 200\n/* /index.html 200\n`

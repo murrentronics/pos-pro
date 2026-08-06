@@ -66,6 +66,16 @@ const newGradle = gradleContent
   .replace(/versionName\s+"[^"]+"/, `versionName "${newVersion}"`);
 fs.writeFileSync(GRADLE_FILE, newGradle, "utf8");
 
-// ── 5. Done ───────────────────────────────────────────────────────────────────
+// ── 5. Write public/version.json ─────────────────────────────────────────────
+const versionJson = JSON.stringify({
+  version: newVersion,
+  apkUrl: `https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk`,
+  downloadPage: "https://pos-pro.pages.dev",
+  releaseNotes: `Version ${newVersion} — latest build`,
+  releaseDate: new Date().toISOString().slice(0, 10),
+}, null, 2);
+fs.writeFileSync(path.join(ROOT, "public", "version.json"), versionJson, "utf8");
+
+// ── 6. Done ───────────────────────────────────────────────────────────────────
 console.log(`✅  Version bumped: ${currentVersion} → ${newVersion}  (versionCode ${newVersionCode})`);
 console.log(`🏷️   GitHub Release tag to use: v${newVersion}`);
