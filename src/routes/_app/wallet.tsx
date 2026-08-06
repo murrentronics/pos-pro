@@ -15,9 +15,8 @@ import { toast } from "sonner";
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
 
-// ─── Typed supabase helpers for new tables ────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const sb = supabase as any;
+// ─── Typed supabase client ────────────────────────────────────────────────────
+import { supabase } from "@/integrations/supabase/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Order = {
@@ -191,7 +190,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
 
   // Load owner float + cashier_float_set_at + how much spent SINCE last reset
   const loadFloat = useCallback(async () => {
-    const { data: ownerData } = await sb.from("profiles")
+    const { data: ownerData } = await supabase.from("profiles")
       .select("cashier_float, cashier_float_set_at")
       .eq("id", ownerId)
       .single();
@@ -203,7 +202,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
     setFloatSetAt(since);
 
     // Only count expenses AFTER the last float reset
-    let query = sb.from("wallet_transactions")
+    let query = supabase.from("wallet_transactions")
       .select("amount")
       .eq("profile_id", profile.id)
       .eq("type", "cashier_expense");
@@ -266,7 +265,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
 
     if (clearData) { setDeletableOrderId(null); return; }
 
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from("cashier_last_delete")
       .select("deleted_at")
       .eq("cashier_id", profile.id)
@@ -345,7 +344,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
 
     const hasShotOrPack = items.some((i: any) => i.id?.startsWith("shot-") || i.id?.startsWith("pack-"));
     if (hasShotOrPack) {
-      await (supabase as any).rpc("reverse_order_shot_pack", { p_items: items });
+      await supabase.rpc("reverse_order_shot_pack", { p_items: items });
     }
 
     const restorableItems = items.filter((i: any) => !i.id?.startsWith("shot-") && !i.id?.startsWith("pack-"));
@@ -364,7 +363,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
     if (error) { toast.error(error.message); return; }
 
     // Persist delete timestamp in DB — survives refresh, prevents button jumping
-    await (supabase as any).from("cashier_last_delete").upsert(
+    await supabase.from("cashier_last_delete").upsert(
       { cashier_id: profile.id, deleted_at: new Date().toISOString() },
       { onConflict: "cashier_id" }
     );
@@ -392,14 +391,14 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
   const [expenseDateFilter, setExpenseDateFilter] = useState<"session" | "day" | "week" | "month" | "all">("session");
 
   const loadBarSessions = useCallback(async () => {
-    const { data: profileData } = await sb.from("profiles")
+    const { data: profileData } = await supabase.from("profiles")
       .select("store_session_start, store_closed_at")
       .eq("id", ownerId).single();
     const sessionStart: string | null = profileData?.store_session_start ?? null;
     const closedAt: string | null = profileData?.store_closed_at ?? null;
     setActiveBarSession(sessionStart ? { start: sessionStart, end: closedAt } : null);
 
-    const { data: hist } = await sb.from("store_sessions")
+    const { data: hist } = await supabase.from("store_sessions")
       .select("id, opened_at, closed_at")
       .eq("owner_id", ownerId)
       .order("opened_at", { ascending: false })
@@ -423,7 +422,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
 
   const loadCashierExpenses = useCallback(async () => {
     setLoadingExpenses(true);
-    const { data } = await sb.from("owner_expenses")
+    const { data } = await supabase.from("owner_expenses")
       .select("*")
       .eq("owner_id", ownerId)
       .ilike("description", `%[Cashier: ${profile.username ?? profile.id}]%`)
@@ -442,7 +441,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
     const total = valid.reduce((s, l) => s + parseFloat(l.amount), 0);
 
     // Load current owner float
-    const { data: ownerProfile } = await sb.from("profiles")
+    const { data: ownerProfile } = await supabase.from("profiles")
       .select("cashier_float, wallet_balance")
       .eq("id", ownerId)
       .single();
@@ -476,7 +475,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
         description = "Non-Stock Expense\n" + valid.map(l => `${l.description.trim()} = $${parseFloat(l.amount).toFixed(2)}`).join("\n") + `\n[Cashier: ${cashierName}]`;
       }
 
-      const { error: expError } = await sb.from("owner_expenses").insert({
+      const { error: expError } = await supabase.from("owner_expenses").insert({
         owner_id: ownerId,
         amount: total,
         description,
@@ -490,7 +489,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
 
       // Deduct from wallet first
       if (walletCovers > 0) {
-        const { error: txError } = await sb.from("wallet_transactions").insert({
+        const { error: txError } = await supabase.from("wallet_transactions").insert({
           profile_id: profile.id,
           amount: walletCovers,
           type: "cashier_expense",
@@ -498,7 +497,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
         });
         if (txError) { toast.error(txError.message); return; }
 
-        const { error: balError } = await (supabase as any).from("profiles")
+        const { error: balError } = await supabase.from("profiles")
           .update({ wallet_balance: cashierWallet - walletCovers })
           .eq("id", profile.id);
         if (balError) { toast.error(balError.message); return; }
@@ -507,13 +506,13 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
       // Deduct remainder from float
       if (floatCovers > 0) {
         const newFloat = currentFloat - floatCovers;
-        const { error: floatErr } = await sb.from("profiles")
+        const { error: floatErr } = await supabase.from("profiles")
           .update({ cashier_float: newFloat })
           .eq("id", ownerId);
         if (floatErr) { toast.error(floatErr.message); return; }
         if (walletCovers === 0) {
           // Wallet was $0 — record the transaction as from float for history
-          const { error: txError } = await sb.from("wallet_transactions").insert({
+          const { error: txError } = await supabase.from("wallet_transactions").insert({
             profile_id: profile.id,
             amount: total,
             type: "cashier_expense",
@@ -536,8 +535,8 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
       loadCashierExpenses();
       setTimeout(() => refreshProfile(), 500);
       // Refresh float display
-      const { data: updatedOwner } = await sb.from("profiles").select("cashier_float").eq("id", ownerId).single();
-      const { data: updatedTxs } = await sb.from("wallet_transactions").select("amount").eq("profile_id", profile.id).eq("type", "cashier_expense");
+      const { data: updatedOwner } = await supabase.from("profiles").select("cashier_float").eq("id", ownerId).single();
+      const { data: updatedTxs } = await supabase.from("wallet_transactions").select("amount").eq("profile_id", profile.id).eq("type", "cashier_expense");
       setFloatAmount(Number(updatedOwner?.cashier_float ?? 0) > 0 ? Number(updatedOwner?.cashier_float ?? 0) : null);
       setFloatUsed((updatedTxs ?? []).reduce((s: number, tx: { amount: number }) => s + Number(tx.amount), 0));
     } finally {
@@ -1639,7 +1638,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
   useEffect(() => {
     if (!ownerId) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("store_sessions").select("id, opened_at, closed_at")
+    supabase.from("store_sessions").select("id, opened_at, closed_at")
       .eq("owner_id", ownerId).order("opened_at", { ascending: false }).limit(10)
       .then(({ data }: { data: { id: string; opened_at: string; closed_at: string | null }[] | null }) => {
         // Map to the shape the rest of this component expects (session_start/session_end)
@@ -1718,7 +1717,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
   const loadData = useCallback(async () => {
     setLoadingData(true);
     const [expRes, ownerOrdRes, transfersRes, creditRes] = await Promise.all([
-      sb.from("owner_expenses").select("*").eq("owner_id", ownerId).order("created_at", { ascending: false }),
+      supabase.from("owner_expenses").select("*").eq("owner_id", ownerId).order("created_at", { ascending: false }),
       // Only owner's OWN direct orders (not cashier orders — cash still with cashier until cleared)
       supabase.from("orders").select("total, created_at").eq("owner_id", ownerId).eq("cashier_id", ownerId),
       // Transfer-in: cashier balances cleared to owner
@@ -2229,7 +2228,7 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
       setDeletableOrderId(null); return;
     }
 
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from("cashier_last_delete")
       .select("deleted_at")
       .eq("cashier_id", profile.id)
@@ -2329,7 +2328,7 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
     //    removing the bottle_finished / pack_finished wallet entry in the process.
     const hasShotOrPack = items.some(i => i.id?.startsWith("shot-") || i.id?.startsWith("pack-"));
     if (hasShotOrPack) {
-      await (supabase as any).rpc("reverse_order_shot_pack", { p_items: items });
+      await supabase.rpc("reverse_order_shot_pack", { p_items: items });
     }
 
     // 2. Restore stock for every real product in the order (skip shot-xxx and pack-xxx)
@@ -2352,7 +2351,7 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
     setDeletableOrderId(null);
 
     // Persist delete timestamp so button never reappears on refresh
-    await (supabase as any).from("cashier_last_delete").upsert(
+    await supabase.from("cashier_last_delete").upsert(
       { cashier_id: profile.id, deleted_at: new Date().toISOString() },
       { onConflict: "cashier_id" }
     );
@@ -2782,17 +2781,17 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
 
   const loadFloatUsed = useCallback(async () => {
     // Get all cashier profiles under this owner
-    const { data: ownerRow } = await sb.from("profiles")
+    const { data: ownerRow } = await supabase.from("profiles")
       .select("cashier_float_set_at")
       .eq("id", profile.id)
       .single();
     const since: string | null = ownerRow?.cashier_float_set_at ?? null;
 
-    const { data: cashiers } = await sb.from("profiles").select("id").eq("parent_id", profile.id);
+    const { data: cashiers } = await supabase.from("profiles").select("id").eq("parent_id", profile.id);
     if (!cashiers || cashiers.length === 0) { setFloatUsed(0); return; }
     const cashierIds = cashiers.map((c: { id: string }) => c.id);
 
-    let query = sb.from("wallet_transactions")
+    let query = supabase.from("wallet_transactions")
       .select("amount")
       .in("profile_id", cashierIds)
       .eq("type", "cashier_expense");
@@ -2821,7 +2820,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
       // Same Session — add the entered amount to the current float total
       // Does NOT reset float_set_at so the used calculation window stays the same
       const newTotal = cashierFloat + val;
-      const { error } = await sb.from("profiles")
+      const { error } = await supabase.from("profiles")
         .update({ cashier_float: newTotal })
         .eq("id", profile.id);
       setSavingFloat(false);
@@ -2837,19 +2836,19 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
       // Reset the cashier float to the new value and stamp a new cashier_float_set_at anchor.
 
       // Find the current open bar_session to attach the new sub-session to
-      const { data: openBarSession } = await sb.from("store_sessions")
+      const { data: openBarSession } = await supabase.from("store_sessions")
         .select("id").eq("owner_id", profile.id).is("closed_at", null)
         .order("opened_at", { ascending: false }).limit(1).maybeSingle();
 
       // Close the current open sub-session
       if (openBarSession?.id) {
-        await sb.from("store_sub_sessions")
+        await supabase.from("store_sub_sessions")
           .update({ closed_at: now })
           .eq("owner_id", profile.id)
           .eq("bar_session_id", openBarSession.id)
           .is("closed_at", null);
         // Insert new sub-session
-        await sb.from("store_sub_sessions").insert({
+        await supabase.from("store_sub_sessions").insert({
           owner_id: profile.id,
           store_session_id: openBarSession.id,
           opened_at: now,
@@ -2857,7 +2856,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
         });
       }
 
-      const { error } = await sb.from("profiles")
+      const { error } = await supabase.from("profiles")
         .update({ cashier_float: val, cashier_float_set_at: now })
         .eq("id", profile.id);
       setSavingFloat(false);
@@ -2920,14 +2919,14 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
     }
 
     const [finRes, expRes, transfersRes, ownerOrdersRes, cashierOrdersRes, creditPaymentsRes, productsRes, openBottlesRes, todayOrdersRes, todayItemOrdersRes, todayNonStockExpRes, sessionOrdersRes, sessionExpenseRes, sessionItemOrdersRes, allItemOrdersRes] = await Promise.all([
-      sb.from("owner_financials").select("initial_expense").eq("owner_id", profile.id).maybeSingle(),
-      sb.from("owner_expenses").select("amount, description").eq("owner_id", profile.id),
+      supabase.from("owner_financials").select("initial_expense").eq("owner_id", profile.id).maybeSingle(),
+      supabase.from("owner_expenses").select("amount, description").eq("owner_id", profile.id),
       supabase.from("wallet_transactions").select("amount").eq("profile_id", profile.id).eq("type", "transfer_in"),
       supabase.from("orders").select("total").eq("owner_id", profile.id).eq("cashier_id", profile.id),
       supabase.from("orders").select("total").eq("owner_id", profile.id).neq("cashier_id", profile.id),
       supabase.from("wallet_transactions").select("amount").eq("profile_id", profile.id).eq("type", "credit_payment").gt("amount", 0),
       supabase.from("products").select("id, name, price, cost_price, units_per_item, stock_qty").eq("owner_id", profile.id),
-      sb.from("opened_bottles").select("revenue, product_id, products(price)").eq("owner_id", profile.id).eq("status", "open"),
+      supabase.from("opened_bottles").select("revenue, product_id, products(price)").eq("owner_id", profile.id).eq("status", "open"),
       // Today's orders: from store_session_start → now (resets only on bar close+reopen, not midnight)
       todayAnchor
         ? supabase.from("orders").select("total").eq("owner_id", profile.id).gte("created_at", todayAnchor)
@@ -3148,7 +3147,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               onClick={() => { setFloatInput(""); setShowSetFloat(true); }}
               disabled={!barIsOpenWallet}
               className="shrink-0 w-24 rounded-2xl font-black text-[11px] leading-tight active:scale-95 transition flex items-center justify-center text-center px-2 py-3 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ background: "oklch(0.20 0.04 60)", color: "#fbbf24", border: "1.5px solid oklch(0.35 0.10 60)" }}>
+              style={{ background: "#000000", color: "#3b82f6", border: "1.5px solid #1d4ed8" }}>
               {cashierFloat > 0 ? "Update\nFloat" : "Set\nFloat"}
             </button>
             <div className="flex-1 flex flex-col justify-center gap-0.5 rounded-2xl px-4 py-2"
@@ -3430,12 +3429,12 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
       {/* Set / Update Float numpad */}
       {showSetFloat && (
         <NumPad
-          label={cashierFloat > 0 ? "Actualizar Float de Cajero" : "Establecer Float de Cajero"}
+          label={cashierFloat > 0 ? "Update Cashier Float" : "Set Cashier Float"}
           value={floatInput}
           onChange={setFloatInput}
           onCancel={() => { setShowSetFloat(false); setFloatInput(""); setFloatSessionMode("new"); }}
           onDone={handleSetFloat}
-          confirmLabel={savingFloat ? "Guardando…" : cashierFloat > 0 ? "Actualizar Float" : "Establecer Float"}
+          confirmLabel={savingFloat ? "Saving…" : cashierFloat > 0 ? "Update Float" : "Set Float"}
           sessionType={cashierFloat > 0 ? floatSessionMode : undefined}
           onSessionChange={cashierFloat > 0 ? setFloatSessionMode : undefined}
         />

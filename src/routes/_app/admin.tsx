@@ -270,7 +270,7 @@ function TemplateImportPanel() {
   // ── Load existing template URLs to detect duplicates ─────────────────────
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from("template_images")
       .select("url")
       .then(({ data }: { data: { url: string }[] | null }) => {
@@ -447,7 +447,7 @@ function TemplateImportPanel() {
       }
     }));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("template_images").upsert(rows, { onConflict: "url", ignoreDuplicates: true });
+    const { error } = await supabase.from("template_images").upsert(rows, { onConflict: "url", ignoreDuplicates: true });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`${toSave.length} template${toSave.length !== 1 ? "s" : ""} added`);
@@ -485,7 +485,7 @@ function TemplateImportPanel() {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any).from("template_images").select("id, url").order("id");
+      const { data, error } = await supabase.from("template_images").select("id, url").order("id");
       if (error) { toast.error(error.message); return; }
       const dbRows = (data as { id: string; url: string }[]).filter((r) => r.url?.startsWith(supabaseUrl));
       if (dbRows.length === 0) { setCompressResult("No Supabase-hosted images to compress."); return; }
@@ -762,7 +762,7 @@ function TemplateCard({ t, onDelete, onCategoryChange }: {
     if (newLabel === t.label && newCategory === t.category) return;
     setSaving(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from("template_images")
       .update({ label: newLabel, category: newCategory })
       .eq("id", t.id);
@@ -792,7 +792,7 @@ function TemplateCard({ t, onDelete, onCategoryChange }: {
     if (!ok) return;
     setDeleting(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("template_images").delete().eq("id", t.id);
+    const { error } = await supabase.from("template_images").delete().eq("id", t.id);
     setDeleting(false);
     if (error) { toast.error(error.message); return; }
     onDelete(t.id);
@@ -993,7 +993,7 @@ function AddTemplateModal({ onDone }: { onDone: () => void }) {
       url = supabase.storage.from("product-images").getPublicUrl(path).data.publicUrl;
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("template_images").insert({
+    const { error } = await supabase.from("template_images").insert({
       url: url ?? `manual:${crypto.randomUUID()}`,
       label: name.trim(),
       category,
@@ -1022,7 +1022,7 @@ function AddTemplateModal({ onDone }: { onDone: () => void }) {
       if (upErr) { toast.error(`${it.name}: ${upErr.message}`); continue; }
       const url = supabase.storage.from("product-images").getPublicUrl(path).data.publicUrl;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any).from("template_images").insert({
+      const { error } = await supabase.from("template_images").insert({
         url,
         label: it.name.trim(),
         category: bulkCat,
@@ -1222,7 +1222,7 @@ function TemplateGalleryPanel() {
   const load = async () => {
     setLoading(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from("template_images")
       .select("id, url, label, category, created_at")
       .order("category", { ascending: true })
@@ -1237,7 +1237,7 @@ function TemplateGalleryPanel() {
   const handleFixAllTitles = async () => {
     setFixing(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from("template_images")
       .select("id, url, label");
 
@@ -1256,7 +1256,7 @@ function TemplateGalleryPanel() {
     let updated = 0;
     for (const item of toUpdate) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any)
+      await supabase
         .from("template_images")
         .update({ label: item.cleaned })
         .eq("id", item.id);
@@ -1346,7 +1346,7 @@ function TemplateGalleryPanel() {
 function AdminBillingInline({ onCountChange }: { onCountChange: (n: number) => void }) {
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("billing_payments").select("*", { count: "exact", head: true }).eq("status", "pending")
+    supabase.from("billing_payments").select("*", { count: "exact", head: true }).eq("status", "pending")
       .then(({ count }: { count: number | null }) => onCountChange(count ?? 0));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return <AdminBillingManagementPage />;
@@ -1566,11 +1566,8 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={outerTab} onValueChange={setOuterTab}>
-        <TabsList className={`grid w-full ${user?.email === "renard@bartendazpro.com" ? "grid-cols-5" : "grid-cols-6"}`}>
-          {(["panel","billing","users","import","templates","youtube"] as const).filter(key => {
-            if (key === "youtube" && user?.email === "renard@bartendazpro.com") return false;
-            return true;
-          }).map((key) => (
+        <TabsList className="grid w-full grid-cols-3">
+          {(["panel","billing","users"] as const).map((key) => (
             <TabsTrigger
               key={key}
               value={key}
@@ -1580,7 +1577,7 @@ export default function AdminPage() {
                 : { background: "transparent", boxShadow: "none", color: "var(--muted-foreground)" }
               }
             >
-              {key === "youtube" ? <Youtube className="h-3.5 w-3.5" /> : key.charAt(0).toUpperCase() + key.slice(1)}
+              {key.charAt(0).toUpperCase() + key.slice(1)}
               {key === "billing" && pendingBillingCount > 0 && (
                 <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
                   {pendingBillingCount > 9 ? "9+" : pendingBillingCount}
@@ -1844,7 +1841,9 @@ export default function AdminPage() {
                           {r.plan_type === "chain" && (
                             <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">
                               <GitBranch className="h-2.5 w-2.5" />
-                              Chain · {r.chain_bar_count ?? 0} bar{(r.chain_bar_count ?? 0) !== 1 ? "s" : ""}
+                              {(r.chain_bar_count ?? 0) <= 1
+                                ? "Multi-store · 1 additional"
+                                : `Chain · ${r.chain_bar_count ?? 0} bars`}
                             </span>
                           )}
                           {r.is_bar_account && (
@@ -1962,18 +1961,6 @@ export default function AdminPage() {
             ))}
           </Tabs>
           {busy && <div className="text-xs text-muted-foreground">Loading…</div>}
-        </TabsContent>
-
-        <TabsContent value="import" className="mt-4">
-          <TemplateImportPanel />
-        </TabsContent>
-
-        <TabsContent value="templates" className="mt-4">
-          <TemplateGalleryPanel />
-        </TabsContent>
-
-        <TabsContent value="youtube" className="mt-4">
-          <YouTubeAdminPanel />
         </TabsContent>
       </Tabs>
     </div>

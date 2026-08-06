@@ -270,9 +270,8 @@ async function downloadOwnerTimesheetPdf(
 }
 
 // ─── HoursTab ─────────────────────────────────────────────────────────────────
-function HoursTab({ ownerId, barIsOpen }: { ownerId: string; barIsOpen: boolean }) {
-  const sb = supabase as any;
-
+function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: boolean }) {
+  
   // Shared data
   const [timeCards, setTimeCards] = useState<TimeCardRow[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -294,7 +293,7 @@ function HoursTab({ ownerId, barIsOpen }: { ownerId: string; barIsOpen: boolean 
   const [openMonth, setOpenMonth] = useState<string | null>(null);
 
   const loadEmployees = useCallback(async () => {
-    const { data } = await sb.from("profiles")
+    const { data } = await supabase.from("profiles")
       .select("id, username, role, job_title").eq("parent_id", ownerId)
       .in("role", ["cashier", "manager", "custom"]).order("username", { ascending: true });
     setEmployees((data ?? []) as { id: string; username: string; role: string; job_title?: string }[]);
@@ -302,7 +301,7 @@ function HoursTab({ ownerId, barIsOpen }: { ownerId: string; barIsOpen: boolean 
 
   const loadCards = useCallback(async () => {
     setLoading(true);
-    const { data } = await sb.from("time_cards").select("*").eq("owner_id", ownerId)
+    const { data } = await supabase.from("time_cards").select("*").eq("owner_id", ownerId)
       .order("clocked_in_at", { ascending: false });
     setTimeCards((data ?? []) as TimeCardRow[]);
     setLoading(false);
@@ -322,7 +321,7 @@ function HoursTab({ ownerId, barIsOpen }: { ownerId: string; barIsOpen: boolean 
 
   const handleClockIn = async () => {
     if (!selectedEmp) return; setClockBusy(true);
-    const { error } = await sb.from("time_cards").insert({
+    const { error } = await supabase.from("time_cards").insert({
       owner_id: ownerId, employee_id: selectedEmp.id,
       employee_name: selectedEmp.username, clocked_in_at: new Date().toISOString(), work_date: tzNow().toLocaleDateString("en-CA"),
     });
@@ -332,7 +331,7 @@ function HoursTab({ ownerId, barIsOpen }: { ownerId: string; barIsOpen: boolean 
   };
   const handleClockOut = async () => {
     if (!openCard) return; setClockBusy(true);
-    const { error } = await sb.from("time_cards").update({ clocked_out_at: new Date().toISOString() }).eq("id", openCard.id);
+    const { error } = await supabase.from("time_cards").update({ clocked_out_at: new Date().toISOString() }).eq("id", openCard.id);
     setClockBusy(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`${openCard.employee_name} clocked out`); loadCards();
@@ -430,9 +429,9 @@ function HoursTab({ ownerId, barIsOpen }: { ownerId: string; barIsOpen: boolean 
                     </button>
                     {isSel && (
                       <div className="grid grid-cols-2 gap-3 pt-2 pb-4">
-                        <button onClick={handleClockIn} disabled={isCIn || clockBusy || !barIsOpen}
+                        <button onClick={handleClockIn} disabled={isCIn || clockBusy || !storeIsOpen}
                           className="h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                          style={!isCIn && barIsOpen ? { background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
+                          style={!isCIn && storeIsOpen ? { background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
                           {clockBusy && !isCIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />} Clock In
                         </button>
                         <button onClick={handleClockOut} disabled={!isCIn || clockBusy}
@@ -1695,21 +1694,17 @@ export default function CashiersPage() {
   // ── Float modal state ──────────────────────────────────────────────────────
   const [showFloatModal, setShowFloatModal] = useState(false);
   const [floatBarAmount, setFloatBarAmount] = useState("");
-  const [floatMachineAmount, setFloatMachineAmount] = useState("");
-  const [hasMachinesAddon, setHasMachinesAddon] = useState(false);
-  const [isMachinesAccount, setIsMachinesAccount] = useState(false);
-  const barIsOpen = !!barSessionStart && !barClosedAt;
+  const storeIsOpen = !!barSessionStart && !barClosedAt;
 
   const ownerIdForBar = profile ? effectiveOwnerId(profile.id) : "";
 
-  // Load bar session state
+  // Load store session state
   useEffect(() => {
     if (!ownerIdForBar) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("profiles")
+    supabase.from("profiles")
       .select("store_session_start, store_closed_at")
       .eq("id", ownerIdForBar).single()
-      .then(({ data }: any) => {
+      .then(({ data }) => {
         setBarSessionStart(data?.store_session_start ?? null);
         setBarClosedAt(data?.store_closed_at ?? null);
       });
@@ -1720,8 +1715,8 @@ export default function CashiersPage() {
     if (!ownerIdForBar) return;
     const ch = supabase
       .channel(`bar-session-cashiers-${ownerIdForBar}`)
-      .on("postgres_changes" as any, { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${ownerIdForBar}` },
-        (payload: any) => {
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${ownerIdForBar}` },
+        (payload) => {
           const rec = payload.new as Record<string, unknown>;
           if ("store_session_start" in rec) setBarSessionStart((rec.store_session_start as string | null) ?? null);
           if ("store_closed_at" in rec) setBarClosedAt((rec.store_closed_at as string | null) ?? null);
@@ -1799,7 +1794,7 @@ export default function CashiersPage() {
     setBusy(true);
     try {
       const ownerIdForQuery = effectiveOwnerId(profile!.id);
-      const { error } = await (supabase as any).from("profiles").insert({
+      const { error } = await supabase.from("profiles").insert({
         id: crypto.randomUUID(),
         username: customName.trim().toLowerCase().replace(/\s+/g, "_"),
         job_title: customTitle.trim(),
@@ -1846,34 +1841,17 @@ export default function CashiersPage() {
   };
 
   const handleOpenBar = async () => {
-    // Check if machines addon is active before showing float modal
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: ownerRow } = await (supabase as any)
-      .from("profiles")
-      .select("machines_addon_active, plan_type, is_machines_account")
-      .eq("id", ownerIdForBar)
-      .single();
-    const machinesActive = !!(ownerRow?.machines_addon_active) || ownerRow?.plan_type === "premium" || ownerRow?.plan_type === "chain";
-    const machinesOnly = !!(ownerRow?.is_machines_account);
-    setHasMachinesAddon(machinesActive);
-    setIsMachinesAccount(machinesOnly);
     setFloatBarAmount("");
-    setFloatMachineAmount("");
     setShowFloatModal(true);
   };
 
   const confirmOpenBarWithFloat = async () => {
-    const barFloatVal = isMachinesAccount ? 0 : parseFloat(floatBarAmount);
-    if (!isMachinesAccount && (isNaN(barFloatVal) || barFloatVal < 0)) { toast.error("Enter a valid bar float amount"); return; }
-    if (hasMachinesAddon) {
-      const machineFloatVal = parseFloat(floatMachineAmount);
-      if (isNaN(machineFloatVal) || machineFloatVal < 0) { toast.error("Enter a valid machine float amount"); return; }
-    }
+    const floatVal = parseFloat(floatBarAmount);
+    if (isNaN(floatVal) || floatVal < 0) { toast.error("Enter a valid store float amount"); return; }
     setBarToggleBusy(true);
 
-    // Guard: do not create a new session if one is already open
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingOpen } = await (supabase as any).from("store_sessions")
+    // Guard: no double-open
+    const { data: existingOpen } = await supabase.from("store_sessions")
       .select("id").eq("owner_id", ownerIdForBar).is("closed_at", null).limit(1).maybeSingle();
     if (existingOpen) {
       setBarToggleBusy(false);
@@ -1882,29 +1860,21 @@ export default function CashiersPage() {
     }
 
     const now = new Date().toISOString();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("profiles")
-      .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
+    const { error } = await supabase.from("profiles")
+      .update({ store_session_start: now, store_closed_at: null, cashier_float: floatVal, cashier_float_set_at: now })
       .eq("id", ownerIdForBar);
     if (error) { setBarToggleBusy(false); toast.error("Failed to open store: " + error.message); return; }
 
-    // Insert machine float session
-    const machineAmt = hasMachinesAddon ? (parseFloat(floatMachineAmount) || 0) : 0;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("machine_float_sessions").insert({ owner_id: ownerIdForBar, amount: machineAmt, set_at: now });
-
-    // Insert bar_sessions parent row + first sub-session
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: newSession } = await (supabase as any).from("store_sessions")
+    // Insert store_sessions parent row + first sub-session
+    const { data: newSession } = await supabase.from("store_sessions")
       .insert({ owner_id: ownerIdForBar, opened_at: now })
       .select("id").single();
     if (newSession?.id) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from("store_sub_sessions").insert({
+      await supabase.from("store_sub_sessions").insert({
         owner_id: ownerIdForBar,
         store_session_id: newSession.id,
         opened_at: now,
-        cashier_float: barFloatVal,
+        cashier_float: floatVal,
       });
     }
 
@@ -1919,19 +1889,15 @@ export default function CashiersPage() {
     setBarToggleBusy(true);
     const now = new Date().toISOString();
     // Auto clock-out all open time cards for this owner
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("time_cards")
+    await supabase.from("time_cards")
       .update({ clocked_out_at: now }).eq("owner_id", ownerIdForBar).is("clocked_out_at", null);
     // Close open sub-sessions
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("store_sub_sessions")
+    await supabase.from("store_sub_sessions")
       .update({ closed_at: now }).eq("owner_id", ownerIdForBar).is("closed_at", null);
-    // Close open bar_session row
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("store_sessions")
+    // Close open store_sessions row
+    await supabase.from("store_sessions")
       .update({ closed_at: now }).eq("owner_id", ownerIdForBar).is("closed_at", null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("profiles").update({ store_closed_at: now }).eq("id", ownerIdForBar);
+    const { error } = await supabase.from("profiles").update({ store_closed_at: now }).eq("id", ownerIdForBar);
     setBarToggleBusy(false);
     if (error) { toast.error("Failed to close store: " + error.message); return; }
     setBarClosedAt(now);
@@ -2066,15 +2032,15 @@ export default function CashiersPage() {
           <button
             type="button"
             disabled={barToggleBusy}
-            onClick={barIsOpen ? () => setShowConfirmClose(true) : handleOpenBar}
+            onClick={storeIsOpen ? () => setShowConfirmClose(true) : handleOpenBar}
             className="h-10 px-4 rounded-xl font-black text-sm flex items-center gap-2 transition active:scale-95 disabled:opacity-50"
-            style={barIsOpen
+            style={storeIsOpen
               ? { background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }
               : { background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171", color: "#f87171" }}>
             {barToggleBusy
               ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <span className="text-xs">{barIsOpen ? "🟢" : "🔴"}</span>}
-            {barIsOpen ? "Store Open" : "Store Closed"}
+              : <span className="text-xs">{storeIsOpen ? "🟢" : "🔴"}</span>}
+            {storeIsOpen ? "Store Open" : "Store Closed"}
           </button>
         </div>
       </div>
@@ -2287,7 +2253,7 @@ export default function CashiersPage() {
         </TabsContent>
 
         <TabsContent value="hours">
-          <HoursTab ownerId={effectiveOwnerId(profile.id)} barIsOpen={barIsOpen} />
+          <HoursTab ownerId={effectiveOwnerId(profile.id)} storeIsOpen={storeIsOpen} />
         </TabsContent>
       </Tabs>
 

@@ -449,14 +449,11 @@ export default function SummaryPage() {
     if (!ownerId) return;
     setLoadingSessions(true);
     Promise.all([
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from("profiles").select("store_session_start, store_closed_at").eq("id", ownerId).maybeSingle(),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from("store_sessions").select("id, opened_at, closed_at").eq("owner_id", ownerId).order("opened_at", { ascending: false }).limit(200),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from("store_sub_sessions").select("id, bar_session_id, opened_at, closed_at, cashier_float").eq("owner_id", ownerId).order("opened_at", { ascending: false }).limit(500),
+      supabase.from("profiles").select("store_session_start, store_closed_at").eq("id", ownerId).maybeSingle(),
+      supabase.from("store_sessions").select("id, opened_at, closed_at").eq("owner_id", ownerId).order("opened_at", { ascending: false }).limit(200),
+      supabase.from("store_sub_sessions").select("id, store_session_id, opened_at, closed_at, cashier_float").eq("owner_id", ownerId).order("opened_at", { ascending: false }).limit(500),
       supabase.from("products").select("id, name, cost_price, units_per_item, category").eq("owner_id", ownerId),
-    ]).then(([profileRes, sessionsRes, subSessionsRes, productsRes]: any[]) => {
+    ]).then(([profileRes, sessionsRes, subSessionsRes, productsRes]) => {
       const pData = profileRes.data;
       const isOpen = !!(pData?.store_session_start) && !(pData?.store_closed_at);
       setBarIsOpen(isOpen);

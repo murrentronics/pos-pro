@@ -663,7 +663,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
     // (client-side delete is blocked by RLS when cashier tries to delete owner's row)
     if (ownerId && profile?.id) {
       const t = new Date(tx.created_at);
-      await (supabase as any).rpc("delete_credit_charge_wallet_rows", {
+      await supabase.rpc("delete_credit_charge_wallet_rows", {
         p_owner_id:   ownerId,
         p_cashier_id: profile.id,
         p_from_time:  new Date(t.getTime() - 5000).toISOString(),

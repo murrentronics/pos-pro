@@ -21,6 +21,7 @@ import AdminBillingManagementPage from "@/pages/AdminBillingManagementPage";
 import ProfilePage from "@/pages/ProfilePage";
 import CreditPage from "@/pages/CreditPage";
 import LanguagePage from "@/pages/LanguagePage";
+import CategoriesPage from "@/pages/CategoriesPage";
 import SpecialsPage from "@/pages/SpecialsPage";
 import SwitchBarPage from "@/pages/SwitchBarPage";
 import SummaryPage from "@/pages/SummaryPage";
@@ -95,6 +96,7 @@ function AppWithUpdateCheck() {
             <Route path="credit" element={<CreditPage />} />
             <Route path="language" element={<LanguagePage />} />
             <Route path="specials" element={<SpecialsPage />} />
+            <Route path="categories" element={<CategoriesPage />} />
             <Route path="switch-bar" element={<SwitchBarPage />} />
             <Route path="summary" element={<SummaryPage />} />
             <Route path="manager" element={<ManagerPage />} />

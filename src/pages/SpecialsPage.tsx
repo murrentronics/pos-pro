@@ -193,9 +193,9 @@ function SpecialForm({
     };
     let error;
     if (isEdit && editSpecial) {
-      ({ error } = await (supabase as any).from("specials").update(payload).eq("id", editSpecial.id));
+      ({ error } = await supabase.from("specials").update(payload).eq("id", editSpecial.id));
     } else {
-      ({ error } = await (supabase as any).from("specials").insert(payload));
+      ({ error } = await supabase.from("specials").insert(payload));
     }
     setBusy(false);
     if (error) { toast.error(error.message); return; }
@@ -542,8 +542,8 @@ export default function SpecialsPage() {
 
   const load = async () => {
     const [{ data: sp }, { data: pr }] = await Promise.all([
-      (supabase as any).from("specials").select("*").eq("owner_id", ownerId).order("created_at", { ascending: false }),
-      (supabase as any).from("products").select("id, name, price, image_url, category").eq("owner_id", ownerId).order("name", { ascending: true }),
+      supabase.from("specials").select("*").eq("owner_id", ownerId).order("created_at", { ascending: false }),
+      supabase.from("products").select("id, name, price, image_url, category").eq("owner_id", ownerId).order("name", { ascending: true }),
     ]);
     setSpecials((sp ?? []) as Special[]);
     setProducts((pr ?? []) as Product[]);
@@ -564,14 +564,14 @@ export default function SpecialsPage() {
       destructive: true,
     });
     if (!ok) return;
-    await (supabase as any).from("specials").delete().eq("id", id);
+    await supabase.from("specials").delete().eq("id", id);
     setSpecials((prev) => prev.filter((s) => s.id !== id));
     toast.success("Special deleted");
   };
 
   const toggleActive = async (special: Special) => {
     const next = !special.active;
-    await (supabase as any).from("specials").update({ active: next }).eq("id", special.id);
+    await supabase.from("specials").update({ active: next }).eq("id", special.id);
     setSpecials((prev) => prev.map((s) => s.id === special.id ? { ...s, active: next } : s));
   };
 

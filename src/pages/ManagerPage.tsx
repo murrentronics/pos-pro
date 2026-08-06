@@ -82,7 +82,7 @@ function ManagerMain({
   profile: { id: string; username?: string | null; wallet_balance: number };
   ownerId: string;
 }) {
-  const sb = supabase as any;
+  
   const managerName = profile.username ?? profile.id;
 
   const [barSessionStart, setBarSessionStart] = useState<string | null>(null);
@@ -102,7 +102,7 @@ function ManagerMain({
     if (!ownerId) return;
     setBarStateLoading(true);
     const fetchBarState = () =>
-      sb.from("profiles").select("store_session_start, store_closed_at").eq("id", ownerId).single()
+      supabase.from("profiles").select("store_session_start, store_closed_at").eq("id", ownerId).single()
         .then(({ data }: any) => {
           setBarSessionStart(data?.store_session_start ?? null);
           setBarClosedAt(data?.store_closed_at ?? null);
@@ -129,7 +129,7 @@ function ManagerMain({
   }, [ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleOpenBar = async () => {
-    const { data: ownerProfile } = await sb.from("profiles")
+    const { data: ownerProfile } = await supabase.from("profiles")
       .select("machines_addon_active, plan_type, is_machines_account").eq("id", ownerId).single();
     setHasMachines(!!(ownerProfile?.machines_addon_active) || ownerProfile?.plan_type === "premium" || ownerProfile?.plan_type === "chain");
     setIsMachinesAccount(!!(ownerProfile?.is_machines_account));
@@ -146,21 +146,21 @@ function ManagerMain({
       if (isNaN(mf) || mf < 0) { toast.error("Enter a valid machine float amount"); return; }
     }
     setBarToggleBusy(true); setShowOpenBarModal(false);
-    const { data: existingOpen } = await sb.from("store_sessions")
+    const { data: existingOpen } = await supabase.from("store_sessions")
       .select("id").eq("owner_id", ownerId).is("closed_at", null).limit(1).maybeSingle();
     if (existingOpen) { setBarToggleBusy(false); toast.error("Store is already open"); return; }
     const now = new Date().toISOString();
-    const { error } = await sb.from("profiles")
+    const { error } = await supabase.from("profiles")
       .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
       .eq("id", ownerId);
     if (error) { setBarToggleBusy(false); toast.error("Failed to open store"); return; }
-    const { data: newSession } = await sb.from("store_sessions")
+    const { data: newSession } = await supabase.from("store_sessions")
       .insert({ owner_id: ownerId, opened_at: now }).select("id").single();
     if (newSession?.id) {
-      await sb.from("store_sub_sessions").insert({ owner_id: ownerId, store_session_id: newSession.id, opened_at: now, cashier_float: barFloatVal });
+      await supabase.from("store_sub_sessions").insert({ owner_id: ownerId, store_session_id: newSession.id, opened_at: now, cashier_float: barFloatVal });
     }
     if (hasMachines) {
-      await sb.from("machine_float_sessions").insert({ owner_id: ownerId, amount: parseInt(openMachineFloat, 10) || 0, set_at: now });
+      await supabase.from("machine_float_sessions").insert({ owner_id: ownerId, amount: parseInt(openMachineFloat, 10) || 0, set_at: now });
     }
     setBarToggleBusy(false); setBarSessionStart(now); setBarClosedAt(null);
     toast.success("?? Store opened");
@@ -170,10 +170,10 @@ function ManagerMain({
     setBarToggleBusy(true);
     const now = new Date().toISOString();
     // Auto clock-out all open time cards for this owner
-    await sb.from("time_cards").update({ clocked_out_at: now }).eq("owner_id", ownerId).is("clocked_out_at", null);
-    await sb.from("store_sub_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
-    await sb.from("store_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
-    const { error } = await sb.from("profiles").update({ store_closed_at: now }).eq("id", ownerId);
+    await supabase.from("time_cards").update({ clocked_out_at: now }).eq("owner_id", ownerId).is("clocked_out_at", null);
+    await supabase.from("store_sub_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
+    await supabase.from("store_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
+    const { error } = await supabase.from("profiles").update({ store_closed_at: now }).eq("id", ownerId);
     setBarToggleBusy(false);
     if (error) { toast.error("Failed to close store"); return; }
     setBarClosedAt(now); toast.success("?? Store closed");
@@ -338,13 +338,13 @@ function DashboardTab({
   ownerId: string; managerName: string;
   barIsOpen: boolean; barStateLoading: boolean; barSessionStart: string | null;
 }) {
-  const sb = supabase as any;
+  
   const tag = `[Manager: ${managerName}]`;
 
   // -- Bar float (live) -------------------------------------------------------
   const [floatBalance, setFloatBalance] = useState<number>(0);
   const loadFloat = useCallback(async () => {
-    const { data } = await sb.from("profiles").select("cashier_float").eq("id", ownerId).single();
+    const { data } = await supabase.from("profiles").select("cashier_float").eq("id", ownerId).single();
     setFloatBalance(Number(data?.cashier_float ?? 0));
   }, [ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadFloat(); }, [loadFloat]);
@@ -369,7 +369,7 @@ function DashboardTab({
   const [hasMachinesEnabled,   setHasMachinesEnabled]   = useState(false);
 
   const loadDashboard = useCallback(async () => {
-    const { data: ownerRow } = await sb.from("profiles")
+    const { data: ownerRow } = await supabase.from("profiles")
       .select("cashier_float, machines_addon_active, plan_type, is_machines_account")
       .eq("id", ownerId).single();
     const hasMach = !!(ownerRow?.machines_addon_active) || ownerRow?.plan_type === "premium" || ownerRow?.plan_type === "chain";
@@ -377,26 +377,26 @@ function DashboardTab({
 
     // "Amount Set" = the float value from the latest sub-session (original set amount)
     // "Remaining"  = live cashier_float (updated by all deductions in realtime)
-    const { data: lastSubSession } = await sb.from("store_sub_sessions")
+    const { data: lastSubSession } = await supabase.from("store_sub_sessions")
       .select("cashier_float").eq("owner_id", ownerId)
       .order("opened_at", { ascending: false }).limit(1).maybeSingle();
     setBarFloatSet(Number(lastSubSession?.cashier_float ?? ownerRow?.cashier_float ?? 0));
 
     if (barSessionStart) {
-      const { data: orders } = await sb.from("orders")
+      const { data: orders } = await supabase.from("orders")
         .select("total").eq("owner_id", ownerId).gte("created_at", barSessionStart);
       setSessionBarSales((orders ?? []).reduce((s: number, o: { total: number }) => s + Number(o.total), 0));
     } else { setSessionBarSales(0); }
 
     if (hasMach) {
-      const { data: floatSess } = await sb.from("machine_float_sessions")
+      const { data: floatSess } = await supabase.from("machine_float_sessions")
         .select("amount, set_at").eq("owner_id", ownerId)
         .order("set_at", { ascending: false }).limit(1).maybeSingle();
       const mfAmt = Number(floatSess?.amount ?? 0);
       const mfAnchor: string | null = floatSess?.set_at ?? null;
       setMachineFloatSet(mfAmt); setMachineFloatAnchor(mfAnchor);
       if (mfAnchor) {
-        const { data: entries } = await sb.from("machine_entries")
+        const { data: entries } = await supabase.from("machine_entries")
           .select("type, amount").eq("owner_id", ownerId).gte("created_at", mfAnchor);
         const rows = (entries ?? []) as { type: string; amount: number }[];
         const mIn  = rows.filter(e => e.type === "income").reduce((s, e) => s + Number(e.amount), 0);
@@ -432,22 +432,22 @@ function DashboardTab({
     if (barFloatMode === "same") {
       // Same session: add to current float, keep cashier_float_set_at unchanged
       const newTotal = barFloatSet + val;
-      await sb.from("profiles").update({ cashier_float: newTotal }).eq("id", ownerId);
+      await supabase.from("profiles").update({ cashier_float: newTotal }).eq("id", ownerId);
       setFloatBalance(newTotal); setBarFloatSet(newTotal);
       toast.success(`Float topped up by $${val.toFixed(2)} — total $${newTotal.toFixed(2)}`);
     } else {
       // New session: close current sub-session, open new one, reset float anchor
-      const { data: openBarSession } = await sb.from("store_sessions")
+      const { data: openBarSession } = await supabase.from("store_sessions")
         .select("id").eq("owner_id", ownerId).is("closed_at", null)
         .order("opened_at", { ascending: false }).limit(1).maybeSingle();
       if (openBarSession?.id) {
-        await sb.from("store_sub_sessions").update({ closed_at: now })
+        await supabase.from("store_sub_sessions").update({ closed_at: now })
           .eq("owner_id", ownerId).eq("bar_session_id", openBarSession.id).is("closed_at", null);
-        await sb.from("store_sub_sessions").insert({
+        await supabase.from("store_sub_sessions").insert({
           owner_id: ownerId, store_session_id: openBarSession.id, opened_at: now, cashier_float: val,
         });
       }
-      await sb.from("profiles").update({ cashier_float: val, cashier_float_set_at: now }).eq("id", ownerId);
+      await supabase.from("profiles").update({ cashier_float: val, cashier_float_set_at: now }).eq("id", ownerId);
       setFloatBalance(val); setBarFloatSet(val);
       toast.success(`New session started — float set to $${val.toFixed(2)}`);
     }
@@ -459,7 +459,7 @@ function DashboardTab({
     const val = parseFloat(setFloatInput);
     if (isNaN(val) || val < 0) { toast.error("Enter a valid amount"); return; }
     setSetFloatBusy(true);
-    await sb.from("machine_float_sessions").insert({ owner_id: ownerId, amount: val, set_at: new Date().toISOString() });
+    await supabase.from("machine_float_sessions").insert({ owner_id: ownerId, amount: val, set_at: new Date().toISOString() });
     setSetFloatBusy(false); setShowSetMachFloat(false); setSetFloatInput("");
     toast.success(`Machine float set to $${val.toFixed(2)}`);
     loadDashboard();
@@ -471,7 +471,7 @@ function DashboardTab({
 
   const loadExpenses = useCallback(async () => {
     setLoading(true);
-    let query = sb.from("owner_expenses").select("*")
+    let query = supabase.from("owner_expenses").select("*")
       .eq("owner_id", ownerId).ilike("description", `%[Manager: ${managerName}]%`)
       .order("created_at", { ascending: false });
     if (barSessionStart) query = query.gte("created_at", barSessionStart);
@@ -513,13 +513,13 @@ function DashboardTab({
       ? `Non-Stock Expense\n${valid[0].description.trim()} = $${parseFloat(valid[0].amount).toFixed(2)} ${tag}`
       : `Non-Stock Expense\n${valid.map((l) => `${l.description.trim()} = $${parseFloat(l.amount).toFixed(2)}`).join("\n")}\n${tag}`;
     try {
-      const { error: expErr } = await sb.from("owner_expenses").insert({ owner_id: ownerId, amount: total, description, expense_date: today });
+      const { error: expErr } = await supabase.from("owner_expenses").insert({ owner_id: ownerId, amount: total, description, expense_date: today });
       if (expErr) { toast.error(expErr.message); return; }
       const newFloat = Math.max(0, floatBalance - total);
-      await sb.from("profiles").update({ cashier_float: newFloat }).eq("id", ownerId);
+      await supabase.from("profiles").update({ cashier_float: newFloat }).eq("id", ownerId);
       setFloatBalance(newFloat);
       const note = valid.length === 1 ? `Expense: ${valid[0].description.trim()}` : `Bulk Expense (${valid.length} items)`;
-      await sb.from("wallet_transactions").insert({ profile_id: profile.id, amount: total, type: "cashier_expense", note });
+      await supabase.from("wallet_transactions").insert({ profile_id: profile.id, amount: total, type: "cashier_expense", note });
       toast.success("Expense saved");
       setLines([{ description: "", amount: "" }]); setShowForm(false); setConfirming(false);
       loadExpenses();
@@ -555,12 +555,12 @@ function DashboardTab({
       ? `Non-Stock Expense\n${valid[0].description.trim()} = $${parseFloat(valid[0].amount).toFixed(2)} ${tag}`
       : `Non-Stock Expense\n${valid.map((l) => `${l.description.trim()} = $${parseFloat(l.amount).toFixed(2)}`).join("\n")}\n${tag}`;
     try {
-      const { data: updated, error: upErr } = await sb.from("owner_expenses").update({ amount: newTotal, description }).eq("id", e.id).select("id");
+      const { data: updated, error: upErr } = await supabase.from("owner_expenses").update({ amount: newTotal, description }).eq("id", e.id).select("id");
       if (upErr) { toast.error(upErr.message); return; }
       if (!updated || updated.length === 0) { toast.error("Could not update expense — permission denied"); return; }
       if (diff !== 0) {
         const newFloat = Math.max(0, floatBalance - diff);
-        await sb.from("profiles").update({ cashier_float: newFloat }).eq("id", ownerId);
+        await supabase.from("profiles").update({ cashier_float: newFloat }).eq("id", ownerId);
         setFloatBalance(newFloat);
       }
       toast.success("Expense updated"); setEditingId(null); loadExpenses();
@@ -570,11 +570,11 @@ function DashboardTab({
   const handleDelete = async (e: Expense) => {
     setDeleting(true);
     try {
-      const { data: deleted, error: delErr } = await sb.from("owner_expenses").delete().eq("id", e.id).select("id");
+      const { data: deleted, error: delErr } = await supabase.from("owner_expenses").delete().eq("id", e.id).select("id");
       if (delErr) { toast.error(delErr.message); return; }
       if (!deleted || deleted.length === 0) { toast.error("Could not delete expense — permission denied"); return; }
       const newFloat = floatBalance + Number(e.amount);
-      await sb.from("profiles").update({ cashier_float: newFloat }).eq("id", ownerId);
+      await supabase.from("profiles").update({ cashier_float: newFloat }).eq("id", ownerId);
       setFloatBalance(newFloat);
       toast.success("Expense deleted and float refunded"); setDeleteConfirmId(null); loadExpenses();
     } finally { setDeleting(false); }
@@ -1164,14 +1164,14 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
   profile: { id: string; username?: string | null; wallet_balance: number };
   ownerId: string; managerName: string; barIsOpen: boolean;
 }) {
-  const sb = supabase as any;
+  
   const [tcSubTab, setTcSubTab] = useState<"clock" | "timesheets">("clock");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [empLoading, setEmpLoading] = useState(true);
 
   const loadEmployees = useCallback(async () => {
     setEmpLoading(true);
-    const { data: staff } = await sb.from("profiles")
+    const { data: staff } = await supabase.from("profiles")
       .select("id, username, role, job_title").eq("parent_id", ownerId)
       .in("role", ["cashier", "manager", "custom"]).order("username", { ascending: true });
     const staffList = (staff ?? []) as Employee[];
@@ -1188,7 +1188,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
 
   const loadTimeCards = useCallback(async () => {
     setTcLoading(true);
-    const { data } = await sb.from("time_cards").select("*").eq("owner_id", ownerId)
+    const { data } = await supabase.from("time_cards").select("*").eq("owner_id", ownerId)
       .order("clocked_in_at", { ascending: false });
     setTimeCards((data ?? []) as TimeCard[]);
     setTcLoading(false);
@@ -1220,7 +1220,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
   const handleClockIn = async () => {
     if (!selectedEmp) return;
     setClockBusy(true);
-    const { error } = await sb.from("time_cards").insert({
+    const { error } = await supabase.from("time_cards").insert({
       owner_id: ownerId, employee_id: selectedEmp.id,
       employee_name: selectedEmp.username, clocked_in_at: new Date().toISOString(), work_date: trinidadDate(),
     });
@@ -1231,7 +1231,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
   const handleClockOut = async () => {
     if (!openCard) return;
     setClockBusy(true);
-    const { error } = await sb.from("time_cards").update({ clocked_out_at: new Date().toISOString() }).eq("id", openCard.id);
+    const { error } = await supabase.from("time_cards").update({ clocked_out_at: new Date().toISOString() }).eq("id", openCard.id);
     setClockBusy(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`${openCard.employee_name} clocked out`); loadTimeCards();

@@ -567,7 +567,7 @@ function TemplatePicker({ onSelect, onToggle, selectedUrls, ownerId, category, s
       );
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: dbTemplates } = await (supabase as any)
+      const { data: dbTemplates } = await supabase
         .from("template_images")
         .select("url, label")
         .eq("category", category)
@@ -1028,7 +1028,7 @@ function BulkEditModal({ items, ownerId, onClose, onSaved }: {
       if (spChanged) updatePayload.price = newSp;
       if (unitsChanged) updatePayload.units_per_item = newUnits;
       if (mergedVars) updatePayload.bottle_variations = mergedVars;
-      const { error } = await (supabase as any).from("products").update(updatePayload).eq("id", p.id);
+      const { error } = await supabase.from("products").update(updatePayload).eq("id", p.id);
       if (!error) {
         patches.push({
           id: p.id,

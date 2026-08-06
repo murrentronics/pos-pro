@@ -8,7 +8,7 @@ import { usePushNotifications } from "@/lib/usePushNotifications";
 import { useTranslation } from "@/lib/i18n";
 import { useOffline } from "@/lib/OfflineProvider";
 import { OfflinePageGuard } from "@/components/OfflinePageGuard";
-import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, UserMinus, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, Tag, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck } from "lucide-react";
+import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, UserMinus, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const DEMO_EMAILS = ["isabel@gmail.com", "renard.sankersingh@gmail.com"];
@@ -206,7 +206,7 @@ export default function AppLayout() {
         { to: "/credit",    label: t("customers_title", "Customers"),  icon: Receipt    },
         ...(isOwner ? [{ to: "/products",    label: t("products_title", "Items"),    icon: Package      }] : []),
         ...(isOwner ? [{ to: "/stock-check", label: t("stock_check", "Stock Check"), icon: ClipboardList }] : []),
-        ...(isOwner ? [{ to: "/specials",    label: t("specials", "Specials"),        icon: Tag          }] : []),
+        ...(isOwner ? [{ to: "/categories",  label: t("categories", "Categories"),   icon: LayoutGrid   }] : []),
         ...(isOwner ? [{ to: "/cashiers",    label: t("cashiers", "Staff"),           icon: Users        }] : []),
         { to: "/wallet",    label: t("wallet", "Wallet"),               icon: Wallet     },
         ...(isOwner ? [{ to: "/summary",  label: t("summary", "Summary"),   icon: BarChart3  }] : []),

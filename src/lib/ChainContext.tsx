@@ -14,8 +14,6 @@ import {
 } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const sb = supabase as any;
 
 const LS_ACTIVE_BAR = "active_bar_id";
 

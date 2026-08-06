@@ -1,8 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const sb = supabase as any;
 
 export type YTResult = {
   id: string; kind: string; title: string; channel: string; thumbnail: string; duration?: string | null;
@@ -72,7 +70,7 @@ export function YouTubeProvider({ children }: { children: ReactNode }) {
       const quotaOwnerId = (profile?.role === "cashier" && profile?.parent_id) ? profile.parent_id : uid;
       ownerIdRef.current = quotaOwnerId;
       try {
-        const { data } = await sb.rpc("get_search_quota", { p_owner_id: quotaOwnerId });
+        const { data } = await supabase.rpc("get_search_quota", { p_owner_id: quotaOwnerId });
         if (typeof data === "number") setQuotaCount(data);
       } catch { /**/ }
     };
@@ -168,7 +166,7 @@ export function YouTubeProvider({ children }: { children: ReactNode }) {
 
     // Check quota
     let count: number | null = null;
-    try { ({ data: count } = await sb.rpc("get_search_quota", { p_owner_id: ownerId })); } catch { count = 0; }
+    try { ({ data: count } = await supabase.rpc("get_search_quota", { p_owner_id: ownerId })); } catch { count = 0; }
     if (typeof count === "number" && count >= DAILY_LIMIT) {
       setSearchError(`Daily limit reached. Resets in ${searchResetTime}.`);
       return;
@@ -180,7 +178,7 @@ export function YouTubeProvider({ children }: { children: ReactNode }) {
 
     // Increment quota
     let newCount: number | null = null;
-    try { ({ data: newCount } = await sb.rpc("increment_search_quota", { p_owner_id: ownerId })); } catch { newCount = null; }
+    try { ({ data: newCount } = await supabase.rpc("increment_search_quota", { p_owner_id: ownerId })); } catch { newCount = null; }
     if (typeof newCount === "number") setQuotaCount(newCount);
 
     const projectUrl = import.meta.env.VITE_SUPABASE_URL as string;
@@ -194,14 +192,14 @@ export function YouTubeProvider({ children }: { children: ReactNode }) {
       const json = await res.json();
       if (!res.ok || json.error) {
         setSearchError(json.error ?? `HTTP ${res.status}`);
-        try { await sb.rpc("decrement_search_quota", { p_owner_id: ownerId }); } catch { /**/ }
+        try { await supabase.rpc("decrement_search_quota", { p_owner_id: ownerId }); } catch { /**/ }
         setQuotaCount(c => Math.max(0, c - 1));
         return;
       }
       setResults(json.items ?? []);
     } catch (err) {
       setSearchError(`Network error: ${String(err)}`);
-      try { await sb.rpc("decrement_search_quota", { p_owner_id: ownerId }); } catch { /**/ }
+      try { await supabase.rpc("decrement_search_quota", { p_owner_id: ownerId }); } catch { /**/ }
       setQuotaCount(c => Math.max(0, c - 1));
     } finally {
       setSearching(false);

@@ -234,8 +234,7 @@ export default function RegisterPage() {
     if (!ownerId) return;
     setBarSessionLoading(true);
     setBarOverlayReady(false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("profiles")
+    supabase.from("profiles")
       .select("store_session_start, store_closed_at")
       .eq("id", ownerId)
       .single()
@@ -291,49 +290,22 @@ export default function RegisterPage() {
   const [barToggleBusy, setBarToggleBusy] = useState(false);
   const [showFloatModal, setShowFloatModal] = useState(false);
   const [floatBarAmount, setFloatBarAmount] = useState("");
-  const [floatMachineAmount, setFloatMachineAmount] = useState("");
-  const [hasMachinesAddon, setHasMachinesAddon] = useState(false);
-  const [isMachinesAccount, setIsMachinesAccount] = useState(false);
-  const [activeFloatField, setActiveFloatField] = useState<"bar" | "machine" | null>(null);
+  const [activeFloatField, setActiveFloatField] = useState<"bar" | null>(null);
   const [showBarOpenedOverlay, setShowBarOpenedOverlay] = useState(false);
 
   const handleOpenBar = async () => {
-    // Check if machines addon is active before showing float modal
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: ownerRow } = await (supabase as any)
-      .from("profiles")
-      .select("machines_addon_active, plan_type, is_machines_account, bar_addon_active")
-      .eq("id", ownerId)
-      .single();
-
-    const planType: string = ownerRow?.plan_type ?? "";
-    const isMachinesOnlyPlan = planType === "machines_only" || !!(ownerRow?.is_machines_account);
-    const hasBarAddon        = !!(ownerRow?.bar_addon_active);
-    const hasMachinesAddon   = !!(ownerRow?.machines_addon_active) || planType === "premium" || planType === "chain" || isMachinesOnlyPlan;
-
-    const showBarFloat     = !isMachinesOnlyPlan || hasBarAddon;
-    const showMachineFloat = hasMachinesAddon;
-
-    setHasMachinesAddon(showMachineFloat);
-    setIsMachinesAccount(!showBarFloat);
     setFloatBarAmount("");
-    setFloatMachineAmount("");
     setActiveFloatField(null);
     setShowFloatModal(true);
   };
 
   const confirmOpenBarWithFloat = async () => {
-    const barFloatVal = isMachinesAccount ? 0 : parseInt(floatBarAmount, 10);
-    if (!isMachinesAccount && (isNaN(barFloatVal) || barFloatVal < 0)) { toast.error("Enter a valid store float amount"); return; }
-    if (hasMachinesAddon) {
-      const machineFloatVal = parseInt(floatMachineAmount, 10);
-      if (isNaN(machineFloatVal) || machineFloatVal < 0) { toast.error("Enter a valid machine float amount"); return; }
-    }
+    const barFloatVal = parseInt(floatBarAmount, 10);
+    if (isNaN(barFloatVal) || barFloatVal < 0) { toast.error("Enter a valid store float amount"); return; }
     setBarToggleBusy(true);
 
     // Guard: do not create a new session if one is already open
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingOpen } = await (supabase as any).from("store_sessions")
+    const { data: existingOpen } = await supabase.from("store_sessions")
       .select("id").eq("owner_id", ownerId).is("closed_at", null).limit(1).maybeSingle();
     if (existingOpen) {
       setBarToggleBusy(false);
@@ -342,27 +314,17 @@ export default function RegisterPage() {
     }
 
     const now = new Date().toISOString();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("profiles")
+    const { error } = await supabase.from("profiles")
       .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
       .eq("id", ownerId);
     if (error) { setBarToggleBusy(false); toast.error("Failed to open store: " + error.message); return; }
 
-    // Insert machine float session if machines addon active
-    if (hasMachinesAddon) {
-      const machineAmt = parseInt(floatMachineAmount, 10) || 0;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from("machine_float_sessions").insert({ owner_id: ownerId, amount: machineAmt, set_at: now });
-    }
-
-    // Insert bar_sessions parent row + first sub-session
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: newSession } = await (supabase as any).from("store_sessions")
+    // Insert store_sessions parent row + first sub-session
+    const { data: newSession } = await supabase.from("store_sessions")
       .insert({ owner_id: ownerId, opened_at: now })
       .select("id").single();
     if (newSession?.id) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from("store_sub_sessions").insert({
+      await supabase.from("store_sub_sessions").insert({
         owner_id: ownerId,
         store_session_id: newSession.id,
         opened_at: now,
@@ -382,15 +344,12 @@ export default function RegisterPage() {
     setBarToggleBusy(true);
     const now = new Date().toISOString();
     // Close open sub-sessions
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("store_sub_sessions")
+    await supabase.from("store_sub_sessions")
       .update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
-    // Close open bar_session row
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("store_sessions")
+    // Close open store_session row
+    await supabase.from("store_sessions")
       .update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("profiles").update({ store_closed_at: now }).eq("id", ownerId);
+    const { error } = await supabase.from("profiles").update({ store_closed_at: now }).eq("id", ownerId);
     setBarToggleBusy(false);
     if (error) { toast.error("Failed to close store: " + error.message); return; }
     setBarClosedAt(now);
@@ -554,7 +513,7 @@ export default function RegisterPage() {
   const loadBarSort = async () => {
     const pid = profileIdRef.current;
     if (!pid) return;
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from("bar_sort_order").select("order_json").eq("owner_id", pid).maybeSingle();
     const arr: string[] = data?.order_json && Array.isArray(data.order_json) ? data.order_json : [];
     const map: Record<string, number> = {};
@@ -574,7 +533,7 @@ export default function RegisterPage() {
     const allIds = Object.entries(newMap)
       .sort(([, a], [, b]) => a - b)
       .map(([id]) => id);
-    (supabase as any).from("bar_sort_order").upsert(
+    supabase.from("bar_sort_order").upsert(
       { owner_id: pid, order_json: allIds, updated_at: new Date().toISOString() },
       { onConflict: "owner_id" }
     ).then(() => {}).catch(() => {});
@@ -634,7 +593,7 @@ export default function RegisterPage() {
     const id = ownerIdRef.current;
     if (!id) return;
     const loadSpecials = async () => {
-      const { data } = await (supabase as any)
+      const { data } = await supabase
         .from("specials")
         .select("*")
         .eq("owner_id", id)
@@ -1103,35 +1062,19 @@ export default function RegisterPage() {
               <p className="text-xs text-muted-foreground mt-1">Set float before starting the session</p>
             </div>
             <div className="px-6 pb-6 pt-4 space-y-4">
-              {/* Bar Float — hidden for machines-only accounts */}
-              {!isMachinesAccount && (
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Store Float</label>
-                  <div
-                    onClick={() => setActiveFloatField(activeFloatField === "bar" ? null : "bar")}
-                    className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
-                    style={{ borderColor: activeFloatField === "bar" ? "var(--primary)" : "var(--border)" }}
-                  >
-                    <span className={`text-base font-black ${activeFloatField === "bar" ? "text-primary" : floatBarAmount ? "text-foreground" : "text-muted-foreground"}`}>
-                      {floatBarAmount || "0"}
-                    </span>
-                  </div>
+              {/* Store Float */}
+              <div className="space-y-1">
+                <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Store Float</label>
+                <div
+                  onClick={() => setActiveFloatField(activeFloatField === "bar" ? null : "bar")}
+                  className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
+                  style={{ borderColor: activeFloatField === "bar" ? "var(--primary)" : "var(--border)" }}
+                >
+                  <span className={`text-base font-black ${activeFloatField === "bar" ? "text-primary" : floatBarAmount ? "text-foreground" : "text-muted-foreground"}`}>
+                    {floatBarAmount || "0"}
+                  </span>
                 </div>
-              )}
-              {hasMachinesAddon && (
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Machine Float</label>
-                  <div
-                    onClick={() => setActiveFloatField(activeFloatField === "machine" ? null : "machine")}
-                    className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
-                    style={{ borderColor: activeFloatField === "machine" ? "var(--primary)" : "var(--border)" }}
-                  >
-                    <span className={`text-base font-black ${activeFloatField === "machine" ? "text-primary" : floatMachineAmount ? "text-foreground" : "text-muted-foreground"}`}>
-                      {floatMachineAmount || "0"}
-                    </span>
-                  </div>
-                </div>
-              )}
+              </div>
               {/* Inline numpad — integers only */}
               {activeFloatField !== null && (
                 <div className="grid grid-cols-3 gap-1.5">
@@ -1141,10 +1084,9 @@ export default function RegisterPage() {
                       key={i}
                       type="button"
                       onClick={() => {
-                        const current = activeFloatField === "bar" ? floatBarAmount : floatMachineAmount;
-                        const setter  = activeFloatField === "bar" ? setFloatBarAmount : setFloatMachineAmount;
-                        if (k === "⌫") { setter(current.slice(0, -1)); return; }
-                        setter(current === "0" || current === "" ? k : current + k);
+                        const current = floatBarAmount;
+                        if (k === "⌫") { setFloatBarAmount(current.slice(0, -1)); return; }
+                        setFloatBarAmount(current === "0" || current === "" ? k : current + k);
                       }}
                       className={`h-12 rounded-xl font-black text-lg transition active:scale-95 ${
                         k === "⌫"
@@ -1161,7 +1103,7 @@ export default function RegisterPage() {
                   Cancel
                 </button>
                 <button onClick={confirmOpenBarWithFloat}
-                  disabled={barToggleBusy || (!isMachinesAccount && !floatBarAmount) || (hasMachinesAddon && !floatMachineAmount)}
+                  disabled={barToggleBusy || !floatBarAmount}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                   style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
                   {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open Store"}
@@ -2684,7 +2626,7 @@ function CashOverlay({
     // If a customer was selected with cash, record history without changing balance
     if (payMode === "cash" && selectedCustomer) {
       const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
-      await (supabase as any).from("credit_transactions").insert({
+      await supabase.from("credit_transactions").insert({
         credit_account_id: selectedCustomer.id,
         owner_id: ownerId,
         cashier_id: profile.id,
@@ -3116,7 +3058,7 @@ function CashCustomerOverlay({
     await recordShotPack(groupId);
 
     // 4. Record the purchase in the customer's credit history (no balance change — cash was paid)
-    await (supabase as any).from("credit_transactions").insert(creditTxPayload);
+    await supabase.from("credit_transactions").insert(creditTxPayload);
 
     setBusy(false);
     onSuccess(paidNum, changeNum);

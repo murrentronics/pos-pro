@@ -63,9 +63,7 @@ function ManagerExpenses({
 }) {
   const managerName = profile.username ?? profile.id;
   const tag = `[Manager: ${managerName}]`;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = supabase as any;
-  const { t } = useTranslation();
+    const { t } = useTranslation();
 
   // ── Bar open/closed state ─────────────────────────────────────────────────
   const [barSessionStart, setBarSessionStart] = useState<string | null>(null);
@@ -76,7 +74,7 @@ function ManagerExpenses({
   useEffect(() => {
     if (!ownerId) return;
     setBarStateLoading(true);
-    sb.from("profiles")
+    supabase.from("profiles")
       .select("store_session_start, store_closed_at")
       .eq("id", ownerId)
       .single()
@@ -105,7 +103,7 @@ function ManagerExpenses({
 
   const loadFloat = useCallback(async () => {
     // Read the float the owner set on the profile row
-    const { data: ownerData } = await sb.from("profiles")
+    const { data: ownerData } = await supabase.from("profiles")
       .select("cashier_float, cashier_float_set_at")
       .eq("id", ownerId)
       .single();
@@ -115,7 +113,7 @@ function ManagerExpenses({
     setFloatSetAt(since);
 
     // Sum up cashier_expense transactions logged since the last float reset
-    let q = sb.from("wallet_transactions")
+    let q = supabase.from("wallet_transactions")
       .select("amount")
       .eq("profile_id", profile.id)
       .eq("type", "cashier_expense");
@@ -206,7 +204,7 @@ function ManagerExpenses({
         : `Non-Stock Expense\n${valid.map((l) => `${l.description.trim()} = $${parseFloat(l.amount).toFixed(2)}`).join("\n")}\n${tag}`;
 
     try {
-      const { error: expErr } = await sb.from("owner_expenses").insert({
+      const { error: expErr } = await supabase.from("owner_expenses").insert({
         owner_id: ownerId,
         amount: total,
         description,
@@ -214,14 +212,14 @@ function ManagerExpenses({
       });
       if (expErr) { toast.error(expErr.message); return; }
 
-      const { data: ownerRow } = await sb.from("profiles").select("wallet_balance").eq("id", ownerId).single();
+      const { data: ownerRow } = await supabase.from("profiles").select("wallet_balance").eq("id", ownerId).single();
       const newBal = Number(ownerRow?.wallet_balance ?? 0) - total;
-      await sb.from("profiles").update({ wallet_balance: newBal }).eq("id", ownerId);
+      await supabase.from("profiles").update({ wallet_balance: newBal }).eq("id", ownerId);
 
       const expenseNote = valid.length === 1 ? `Expense: ${valid[0].description.trim()}` : `Bulk Expense (${valid.length} items)`;
 
       // 1. Record on the manager's own cashier wallet (tracks against float)
-      await sb.from("wallet_transactions").insert({
+      await supabase.from("wallet_transactions").insert({
         profile_id: profile.id,
         amount: total,
         type: "cashier_expense",
@@ -229,7 +227,7 @@ function ManagerExpenses({
       });
 
       // 2. Record on the owner's wallet so it appears in their Wallet expense history
-      await sb.from("wallet_transactions").insert({
+      await supabase.from("wallet_transactions").insert({
         profile_id: ownerId,
         amount: total,
         type: "cashier_expense",
@@ -287,16 +285,16 @@ function ManagerExpenses({
         : `Non-Stock Expense\n${valid.map((l) => `${l.description.trim()} = $${parseFloat(l.amount).toFixed(2)}`).join("\n")}\n${tag}`;
 
     try {
-      const { error: upErr } = await sb.from("owner_expenses")
+      const { error: upErr } = await supabase.from("owner_expenses")
         .update({ amount: newTotal, description })
         .eq("id", e.id);
       if (upErr) { toast.error(upErr.message); return; }
 
       // Adjust owner wallet by the difference
       if (diff !== 0) {
-        const { data: ownerRow } = await sb.from("profiles").select("wallet_balance").eq("id", ownerId).single();
+        const { data: ownerRow } = await supabase.from("profiles").select("wallet_balance").eq("id", ownerId).single();
         const newBal = Number(ownerRow?.wallet_balance ?? 0) - diff;
-        await sb.from("profiles").update({ wallet_balance: newBal }).eq("id", ownerId);
+        await supabase.from("profiles").update({ wallet_balance: newBal }).eq("id", ownerId);
       }
 
       toast.success("Expense updated");
@@ -310,13 +308,13 @@ function ManagerExpenses({
   const handleDelete = async (e: Expense) => {
     setDeleting(true);
     try {
-      const { error: delErr } = await sb.from("owner_expenses").delete().eq("id", e.id);
+      const { error: delErr } = await supabase.from("owner_expenses").delete().eq("id", e.id);
       if (delErr) { toast.error(delErr.message); return; }
 
       // Refund amount back to owner wallet
-      const { data: ownerRow } = await sb.from("profiles").select("wallet_balance").eq("id", ownerId).single();
+      const { data: ownerRow } = await supabase.from("profiles").select("wallet_balance").eq("id", ownerId).single();
       const newBal = Number(ownerRow?.wallet_balance ?? 0) + Number(e.amount);
-      await sb.from("profiles").update({ wallet_balance: newBal }).eq("id", ownerId);
+      await supabase.from("profiles").update({ wallet_balance: newBal }).eq("id", ownerId);
 
       toast.success("Expense deleted and wallet refunded");
       setDeleteConfirmId(null);

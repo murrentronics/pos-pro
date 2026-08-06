@@ -14,13 +14,225 @@ export type Database = {
   }
   public: {
     Tables: {
+      store_categories: {
+        Row: {
+          id: string
+          owner_id: string
+          name: string
+          icon: string
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          owner_id: string
+          name: string
+          icon?: string
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          owner_id?: string
+          name?: string
+          icon?: string
+          sort_order?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_categories_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      specials: {
+        Row: {
+          id: string
+          owner_id: string
+          name: string
+          special_price: number
+          required_qty: number
+          product_ids: string[]
+          is_recurring: boolean
+          run_days: string[] | null
+          start_date: string | null
+          start_time: string | null
+          end_date: string | null
+          end_time: string | null
+          active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          owner_id: string
+          name: string
+          special_price: number
+          required_qty?: number
+          product_ids?: string[]
+          is_recurring?: boolean
+          run_days?: string[] | null
+          start_date?: string | null
+          start_time?: string | null
+          end_date?: string | null
+          end_time?: string | null
+          active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          owner_id?: string
+          name?: string
+          special_price?: number
+          required_qty?: number
+          product_ids?: string[]
+          is_recurring?: boolean
+          run_days?: string[] | null
+          start_date?: string | null
+          start_time?: string | null
+          end_date?: string | null
+          end_time?: string | null
+          active?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "specials_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      time_cards: {
+        Row: {
+          id: string
+          cashier_id: string
+          owner_id: string
+          clocked_in_at: string
+          clocked_out_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          cashier_id: string
+          owner_id: string
+          clocked_in_at?: string
+          clocked_out_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          cashier_id?: string
+          owner_id?: string
+          clocked_in_at?: string
+          clocked_out_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_cards_cashier_id_fkey"
+            columns: ["cashier_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_cards_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_check_actuals: {
+        Row: {
+          id: string
+          owner_id: string
+          product_id: string
+          actual_qty: number
+          checked_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          owner_id: string
+          product_id: string
+          actual_qty: number
+          checked_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          owner_id?: string
+          product_id?: string
+          actual_qty?: number
+          checked_at?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_check_actuals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_check_actuals_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cashier_last_delete: {
+        Row: {
+          cashier_id: string
+          owner_id: string
+          item_name: string
+          qty: number
+          price: number
+          deleted_at: string
+        }
+        Insert: {
+          cashier_id: string
+          owner_id: string
+          item_name: string
+          qty: number
+          price: number
+          deleted_at?: string
+        }
+        Update: {
+          cashier_id?: string
+          owner_id?: string
+          item_name?: string
+          qty?: number
+          price?: number
+          deleted_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cashier_last_delete_cashier_id_fkey"
+            columns: ["cashier_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_sessions: {
         Row: {
           id: string
           owner_id: string
           opened_at: string
           closed_at: string | null
-          float_amount: number
           created_at: string
         }
         Insert: {
@@ -28,7 +240,6 @@ export type Database = {
           owner_id: string
           opened_at?: string
           closed_at?: string | null
-          float_amount?: number
           created_at?: string
         }
         Update: {
@@ -36,7 +247,6 @@ export type Database = {
           owner_id?: string
           opened_at?: string
           closed_at?: string | null
-          float_amount?: number
           created_at?: string
         }
         Relationships: [
@@ -54,33 +264,27 @@ export type Database = {
           id: string
           owner_id: string
           store_session_id: string
-          cashier_id: string
           opened_at: string
           closed_at: string | null
-          float_amount: number
-          float_set_at: string | null
+          cashier_float: number
           created_at: string
         }
         Insert: {
           id?: string
           owner_id: string
           store_session_id: string
-          cashier_id: string
           opened_at?: string
           closed_at?: string | null
-          float_amount?: number
-          float_set_at?: string | null
+          cashier_float?: number
           created_at?: string
         }
         Update: {
           id?: string
           owner_id?: string
           store_session_id?: string
-          cashier_id?: string
           opened_at?: string
           closed_at?: string | null
-          float_amount?: number
-          float_set_at?: string | null
+          cashier_float?: number
           created_at?: string
         }
         Relationships: [
@@ -1101,8 +1305,10 @@ export type Database = {
           chain_addon_active: boolean | null
           chain_bar_count: number | null
           is_bar_account: boolean | null
-          bar_session_start: string | null
-          bar_closed_at: string | null
+          addon_bar_count: number | null
+          is_multi_bar: boolean | null
+          store_session_start: string | null
+          store_closed_at: string | null
           cashier_float: number | null
           cashier_float_set_at: string | null
           job_title: string | null
@@ -1134,8 +1340,10 @@ export type Database = {
           chain_addon_active?: boolean | null
           chain_bar_count?: number | null
           is_bar_account?: boolean | null
-          bar_session_start?: string | null
-          bar_closed_at?: string | null
+          addon_bar_count?: number | null
+          is_multi_bar?: boolean | null
+          store_session_start?: string | null
+          store_closed_at?: string | null
           cashier_float?: number | null
           cashier_float_set_at?: string | null
           job_title?: string | null
@@ -1167,8 +1375,10 @@ export type Database = {
           chain_addon_active?: boolean | null
           chain_bar_count?: number | null
           is_bar_account?: boolean | null
-          bar_session_start?: string | null
-          bar_closed_at?: string | null
+          addon_bar_count?: number | null
+          is_multi_bar?: boolean | null
+          store_session_start?: string | null
+          store_closed_at?: string | null
           cashier_float?: number | null
           cashier_float_set_at?: string | null
           job_title?: string | null

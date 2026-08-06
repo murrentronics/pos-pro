@@ -251,7 +251,7 @@ function StockCheckPage() {
   // ── Load actuals ─────────────────────────────────────────────────────────
   const loadActuals = useCallback(async () => {
     if (!ownerIdForQuery) return;
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from("stock_check_actuals")
       .select("product_id, actual_qty")
       .eq("owner_id", ownerIdForQuery);
@@ -266,12 +266,12 @@ function StockCheckPage() {
   const loadOpenItems = useCallback(async () => {
     if (!ownerIdForQuery) return;
     const [bottlesRes, packsRes] = await Promise.all([
-      (supabase as any)
+      supabase
         .from("opened_bottles")
         .select("product_id, shots_sold, shot_price")
         .eq("owner_id", ownerIdForQuery)
         .eq("status", "open"),
-      (supabase as any)
+      supabase
         .from("opened_packs")
         .select("product_id, units_sold, pack_type, unit_price")
         .eq("owner_id", ownerIdForQuery)
@@ -356,7 +356,7 @@ function StockCheckPage() {
       .subscribe();
 
     // Realtime: actuals changes
-    const actualsCh = (supabase as any)
+    const actualsCh = supabase
       .channel(`stock-check-actuals-${ownerIdForQuery}`)
       .on(
         "postgres_changes",
@@ -398,7 +398,7 @@ function StockCheckPage() {
   // ── Save actual ──────────────────────────────────────────────────────────
   const saveActual = async (productId: string, newActual: number) => {
     if (!ownerIdForQuery) return;
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from("stock_check_actuals")
       .upsert(
         {

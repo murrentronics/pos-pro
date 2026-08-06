@@ -1,7 +1,7 @@
-import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, UserMinus, Menu, X, Receipt, Gamepad2, TrendingDown, ClipboardList } from "lucide-react";
+import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, UserMinus, Menu, X, Receipt, TrendingDown, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -19,26 +19,20 @@ function AppLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // ── Bar session state (owner only — for the toggle in the header) ──────────
-  const [barSessionStart, setBarSessionStart] = useState<string | null>(null);
-  const [barClosedAt,     setBarClosedAt]     = useState<string | null>(null);
-  const [barToggleBusy,   setBarToggleBusy]   = useState(false);
-  const barIsOpen = !!barSessionStart && !barClosedAt;
+  // ── Store session state (owner/manager — for the open/close toggle) ─────────
+  const [storeSessionStart, setStoreSessionStart] = useState<string | null>(null);
+  const [storeClosedAt,     setStoreClosedAt]     = useState<string | null>(null);
+  const [storeToggleBusy,   setStoreToggleBusy]   = useState(false);
+  const storeIsOpen = !!storeSessionStart && !storeClosedAt;
 
-  // ── Open Bar modal ─────────────────────────────────────────────────────────
-  const [showOpenBarModal, setShowOpenBarModal] = useState(false);
-  const [openBarFloat, setOpenBarFloat] = useState("");
-  const [openMachineFloat, setOpenMachineFloat] = useState("");
-  const [hasMachines, setHasMachines] = useState(false);
-  const [isMachinesAccount, setIsMachinesAccount] = useState(false);
-  const [showCloseBarConfirm, setShowCloseBarConfirm] = useState(false);
-  const [activeOpenBarField, setActiveOpenBarField] = useState<"bar" | "machine" | null>(null);
+  // ── Open Store modal ──────────────────────────────────────────────────────
+  const [showOpenStoreModal,  setShowOpenStoreModal]  = useState(false);
+  const [openStoreFloat,      setOpenStoreFloat]      = useState("");
+  const [showCloseStoreConfirm, setShowCloseStoreConfirm] = useState(false);
 
-  const handleOpenBarNumpad = (field: "bar" | "machine", k: string) => {
-    const current = field === "bar" ? openBarFloat : openMachineFloat;
-    const setter  = field === "bar" ? setOpenBarFloat : setOpenMachineFloat;
-    if (k === "⌫") { setter(current.slice(0, -1)); return; }
-    setter(current === "0" || current === "" ? k : current + k);
+  const handleStoreFloatNumpad = (k: string) => {
+    if (k === "⌫") { setOpenStoreFloat((v) => v.slice(0, -1)); return; }
+    setOpenStoreFloat((v) => v === "0" || v === "" ? k : v + k);
   };
 
   useEffect(() => {
@@ -47,13 +41,12 @@ function AppLayout() {
 
   useEffect(() => {
     if (!loading && session && !profile) {
-      // Give profile a moment to load before signing out — avoids false logout on slow connections
       const t = setTimeout(() => {
         signOut().then(() => nav({ to: "/login" }));
       }, 3000);
       return () => clearTimeout(t);
     }
-  }, [loading, session, profile]);
+  }, [loading, session, profile, nav, signOut]);
 
   useEffect(() => {
     if (!loading && profile?.role === "admin" && !loc.pathname.startsWith("/admin")) {
@@ -62,7 +55,7 @@ function AppLayout() {
   }, [loading, profile, loc.pathname, nav]);
 
   useEffect(() => {
-    const isMgr = profile?.role === "manager" || (profile as any)?.job_title === "manager";
+    const isMgr = profile?.role === "manager" || (profile as { job_title?: string })?.job_title === "manager";
     if (!loading && isMgr && loc.pathname === "/register") {
       nav({ to: "/products" as "/" });
     }
@@ -79,172 +72,132 @@ function AppLayout() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Close menu on route change
   useEffect(() => { setMenuOpen(false); }, [loc.pathname]);
 
-  // Load bar session state for owner/manager toggle
+  // Load store session state for owner/manager open-close toggle
   useEffect(() => {
-    if (!profile || (profile.role !== "owner" && !(profile.role === "manager" || (profile as any).job_title === "manager"))) return;
-    // Managers operate on the owner's profile row (parent_id), not their own
-    const isManagerProfile = profile.role === "manager" || (profile as any).job_title === "manager";
-    const barOwnerId = effectiveOwnerId(isManagerProfile ? (profile.parent_id ?? profile.id) : profile.id);
-    if (!barOwnerId) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("profiles")
+    const isMgr = profile?.role === "manager" || (profile as { job_title?: string })?.job_title === "manager";
+    if (!profile || (profile.role !== "owner" && !isMgr)) return;
+    const ownerId = effectiveOwnerId(isMgr ? (profile.parent_id ?? profile.id) : profile.id);
+    if (!ownerId) return;
+
+    supabase
+      .from("profiles")
       .select("store_session_start, store_closed_at")
-      .eq("id", barOwnerId)
+      .eq("id", ownerId)
       .single()
-      .then(({ data }: { data: { store_session_start: string | null; store_closed_at: string | null } | null }) => {
-        setBarSessionStart(data?.store_session_start ?? null);
-        setBarClosedAt(data?.store_closed_at ?? null);
+      .then(({ data }) => {
+        setStoreSessionStart(data?.store_session_start ?? null);
+        setStoreClosedAt(data?.store_closed_at ?? null);
       });
+
     const ch = supabase
-      .channel(`bar-session-layout-${barOwnerId}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${barOwnerId}` },
+      .channel(`store-session-layout-${ownerId}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${ownerId}` },
         (payload) => {
           const rec = payload.new as Record<string, unknown>;
-          if ("store_session_start" in rec) setBarSessionStart((rec.store_session_start as string | null) ?? null);
-          if ("store_closed_at"     in rec) setBarClosedAt((rec.store_closed_at as string | null) ?? null);
+          if ("store_session_start" in rec) setStoreSessionStart((rec.store_session_start as string | null) ?? null);
+          if ("store_closed_at"     in rec) setStoreClosedAt((rec.store_closed_at as string | null) ?? null);
         }
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  // Use stable primitives (not the whole profile object) so the channel isn't
-  // torn down and recreated every time auth.tsx merges a realtime profile update.
   }, [profile?.id, profile?.parent_id, profile?.role]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleOpenBar = async () => {
-    if (!profile || (profile.role !== "owner" && !(profile.role === "manager" || (profile as any).job_title === "manager"))) return;
-    const isManagerProfile = profile.role === "manager" || (profile as any).job_title === "manager";
-    const ownerId = effectiveOwnerId(isManagerProfile ? (profile.parent_id ?? profile.id) : profile.id);
-    // Fetch owner's full plan info to determine which float fields to show
-    const { data: ownerProfile } = await (supabase as any)
-      .from("profiles").select("machines_addon_active, plan_type, is_machines_account, bar_addon_active").eq("id", ownerId).single();
-
-    const planType: string = ownerProfile?.plan_type ?? "";
-    const isMachinesOnlyPlan = planType === "machines_only" || !!(ownerProfile?.is_machines_account);
-    const hasBarAddon        = !!(ownerProfile?.bar_addon_active);
-    const hasMachinesAddon   = !!(ownerProfile?.machines_addon_active) || planType === "premium" || planType === "chain" || isMachinesOnlyPlan;
-
-    // machines-only owner without bar add-on → machines float only, no bar float
-    // machines-only owner with bar add-on    → both floats
-    // bar-only owner                         → bar float only
-    // bar + machines owner                   → both floats
-    const showBarFloat     = !isMachinesOnlyPlan || hasBarAddon;
-    const showMachineFloat = hasMachinesAddon;
-
-    setHasMachines(showMachineFloat);
-    setIsMachinesAccount(!showBarFloat); // reuse this flag: true = skip bar float
-    setOpenBarFloat("");
-    setOpenMachineFloat("");
-    setActiveOpenBarField(null);
-    setShowOpenBarModal(true);
+  const handleOpenStore = () => {
+    setOpenStoreFloat("");
+    setShowOpenStoreModal(true);
   };
 
-  const confirmOpenBar = async () => {
-    if (!profile || (profile.role !== "owner" && !(profile.role === "manager" || (profile as any).job_title === "manager"))) return;
-    const isManagerProfile = profile.role === "manager" || (profile as any).job_title === "manager";
-    const ownerId = effectiveOwnerId(isManagerProfile ? (profile.parent_id ?? profile.id) : profile.id);
-    const barFloatVal = isMachinesAccount ? 0 : parseInt(openBarFloat, 10);
-    if (!isMachinesAccount && (isNaN(barFloatVal) || barFloatVal < 0)) { toast.error("Enter a valid bar float amount"); return; }
-    if (hasMachines) {
-      const machineFloatVal = parseInt(openMachineFloat, 10);
-      if (isNaN(machineFloatVal) || machineFloatVal < 0) { toast.error("Enter a valid machine float amount"); return; }
-    }
-    setBarToggleBusy(true);
-    setShowOpenBarModal(false);
+  const confirmOpenStore = async () => {
+    const isMgr = profile?.role === "manager" || (profile as { job_title?: string })?.job_title === "manager";
+    if (!profile || (profile.role !== "owner" && !isMgr)) return;
+    const ownerId = effectiveOwnerId(isMgr ? (profile.parent_id ?? profile.id) : profile.id);
+    const floatVal = parseInt(openStoreFloat, 10);
+    if (isNaN(floatVal) || floatVal < 0) { toast.error("Enter a valid store float amount"); return; }
 
-    // Guard: do not create a new session if one is already open
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingOpen } = await (supabase as any).from("store_sessions")
-      .select("id").eq("owner_id", ownerId).is("closed_at", null).limit(1).maybeSingle();
-    if (existingOpen) {
-      setBarToggleBusy(false);
+    setStoreToggleBusy(true);
+    setShowOpenStoreModal(false);
+
+    // Guard: no double-open
+    const { data: existing } = await supabase
+      .from("store_sessions")
+      .select("id")
+      .eq("owner_id", ownerId)
+      .is("closed_at", null)
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      setStoreToggleBusy(false);
       toast.error("Store is already open — close the current session first");
       return;
     }
 
     const now = new Date().toISOString();
-    // 1. Update profiles: set store_session_start, clear store_closed_at, set cashier float
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("profiles")
-      .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
+
+    // 1. Stamp profiles
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        store_session_start: now,
+        store_closed_at: null,
+        cashier_float: floatVal,
+        cashier_float_set_at: now,
+      })
       .eq("id", ownerId);
-    if (error) { setBarToggleBusy(false); toast.error("Failed to open store"); return; }
+    if (error) { setStoreToggleBusy(false); toast.error("Failed to open store: " + error.message); return; }
 
-    // 2. Insert bar_sessions row
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: newSession } = await (supabase as any).from("store_sessions")
+    // 2. Insert store_sessions row
+    const { data: newSession } = await supabase
+      .from("store_sessions")
       .insert({ owner_id: ownerId, opened_at: now })
-      .select("id").single();
+      .select("id")
+      .single();
 
-    // 3. Insert first sub-session for this bar open
+    // 3. Insert store_sub_sessions row
     if (newSession?.id) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from("store_sub_sessions").insert({
+      await supabase.from("store_sub_sessions").insert({
         owner_id: ownerId,
         store_session_id: newSession.id,
         opened_at: now,
-        cashier_float: barFloatVal,
+        cashier_float: floatVal,
       });
     }
 
-    // 4. Set machine float if machines enabled
-    if (hasMachines) {
-      const machineFloatVal = parseFloat(openMachineFloat) || 0;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from("machine_float_sessions").insert({
-        owner_id: ownerId, amount: machineFloatVal, set_at: now,
-      });
-    }
-
-    setBarToggleBusy(false);
-    setBarSessionStart(now);
-    setBarClosedAt(null);
+    setStoreToggleBusy(false);
+    setStoreSessionStart(now);
+    setStoreClosedAt(null);
     toast.success("🟢 Store opened");
   };
 
-  const handleCloseBar = async () => {
-    if (!profile || (profile.role !== "owner" && !(profile.role === "manager" || (profile as any).job_title === "manager"))) return;
-    const isManagerProfile = profile.role === "manager" || (profile as any).job_title === "manager";
-    const ownerId = effectiveOwnerId(isManagerProfile ? (profile.parent_id ?? profile.id) : profile.id);
-    setBarToggleBusy(true);
+  const handleCloseStore = async () => {
+    const isMgr = profile?.role === "manager" || (profile as { job_title?: string })?.job_title === "manager";
+    if (!profile || (profile.role !== "owner" && !isMgr)) return;
+    const ownerId = effectiveOwnerId(isMgr ? (profile.parent_id ?? profile.id) : profile.id);
+
+    setStoreToggleBusy(true);
     const now = new Date().toISOString();
-    // 1. Close any open sub-sessions for this owner
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("store_sub_sessions")
+
+    await supabase.from("store_sub_sessions")
       .update({ closed_at: now })
       .eq("owner_id", ownerId)
       .is("closed_at", null);
-    // 2. Close the open bar_sessions row
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("store_sessions")
+
+    await supabase.from("store_sessions")
       .update({ closed_at: now })
       .eq("owner_id", ownerId)
       .is("closed_at", null);
-    // 3. Stamp store_closed_at on profiles
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("profiles").update({ store_closed_at: now }).eq("id", ownerId);
-    setBarToggleBusy(false);
-    if (error) { toast.error("Failed to close store"); return; }
-    setBarClosedAt(now);
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ store_closed_at: now })
+      .eq("id", ownerId);
+
+    setStoreToggleBusy(false);
+    if (error) { toast.error("Failed to close store: " + error.message); return; }
+    setStoreClosedAt(now);
     toast.success("🔴 Store closed");
   };
-
-  const [managerHasMachinesNav, setManagerHasMachinesNav] = useState(false);
-
-  useEffect(() => {
-    const isMgr = profile?.role === "manager" || (profile as any)?.job_title === "manager";
-    if (!profile || !isMgr) return;
-    const ownerId = effectiveOwnerId(profile.parent_id ?? profile.id);
-    if (!ownerId) return;
-    (supabase as any).from("profiles")
-      .select("machines_addon_active, plan_type")
-      .eq("id", ownerId).single()
-      .then(({ data }: any) => {
-        setManagerHasMachinesNav(!!(data?.machines_addon_active) || data?.plan_type === "premium" || data?.plan_type === "chain");
-      });
-  }, [profile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading || !session || !profile) {
     return (
@@ -256,16 +209,15 @@ function AppLayout() {
 
   const isOwner   = profile.role === "owner";
   const isAdmin   = profile.role === "admin";
-  const isManager = profile.role === "manager" || (profile as any).job_title === "manager";
+  const isManager = profile.role === "manager" || (profile as { job_title?: string }).job_title === "manager";
 
   if (!isAdmin) {
     if (profile.status === "expelled") {
       return <FullScreenStatus icon={UserMinus} title="Account expelled"
-        message="Your account has been expelled. You no longer have access to Bartendaz Pro."
+        message="Your account has been expelled. You no longer have access to P.O.S. Pro."
         onSignOut={() => { signOut(); nav({ to: "/login" }); }} />;
     }
     if (profile.status === "suspended") {
-      // Allow access to /billing so they can submit a renewal payment
       if (loc.pathname === "/billing") return <Outlet />;
       return <FullScreenStatus icon={Ban} title="Account suspended"
         message="Your subscription has expired or your account has been suspended. Please renew your subscription or contact admin."
@@ -283,53 +235,52 @@ function AppLayout() {
     ? [{ to: "/admin", label: "Users", icon: Users }]
     : isManager
     ? [
-        { to: "/products",     label: "Items",        icon: Package       },
-        { to: "/stock-check",  label: "Stock Check",  icon: ClipboardList },
-        { to: "/manager",      label: "Manage",       icon: TrendingDown  },
-        ...(managerHasMachinesNav ? [{ to: "/machines", label: "Machines", icon: Gamepad2 }] : []),
+        { to: "/products",    label: "Items",       icon: Package       },
+        { to: "/stock-check", label: "Stock Check", icon: ClipboardList },
+        { to: "/manager",     label: "Manage",      icon: TrendingDown  },
       ]
     : [
-        { to: "/register",    label: "Cashier",      icon: Wine          },
-        { to: "/credit",      label: "Customers",    icon: Receipt       },
-        { to: "/machines",    label: "Machines",     icon: Gamepad2      },
+        { to: "/register",    label: "Store",       icon: Wine          },
+        { to: "/credit",      label: "Customers",   icon: Receipt       },
         ...(isOwner ? [{ to: "/products",    label: "Items",       icon: Package       }] : []),
         ...(isOwner ? [{ to: "/stock-check", label: "Stock Check", icon: ClipboardList }] : []),
         ...(isOwner ? [{ to: "/cashiers",    label: "Staff",       icon: Users         }] : []),
-        { to: "/wallet",      label: "Wallet",       icon: Wallet        },
+        { to: "/wallet",      label: "Wallet",      icon: Wallet        },
       ];
 
   return (
     <div className="min-h-screen">
-      <header className="bg-background/90 backdrop-blur border-b border-border relative z-50" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
+      <header
+        className="bg-background/90 backdrop-blur border-b border-border relative z-50"
+        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      >
         <div className="max-w-2xl mx-auto px-3 h-11 flex items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "var(--gradient-hero)" }}>
-              <Wine className="h-3.5 w-3.5 text-primary-foreground" />
-            </div>
-            <span className="font-black tracking-tight text-sm">Bartendaz Pro</span>
+          <div className="flex flex-col leading-tight">
+            <span className="font-black tracking-tight text-sm">P.O.S. Pro</span>
+            {profile.username && (
+              <span className="text-[10px] font-medium text-muted-foreground leading-tight truncate max-w-[140px]">
+                {profile.username}
+              </span>
+            )}
           </div>
 
-          {/* Right side: username + bar toggle (owner) + hamburger menu */}
+          {/* Right: store toggle + hamburger */}
           <div className="flex items-center gap-2" ref={menuRef}>
-            <span className="text-xs font-semibold text-muted-foreground truncate max-w-[100px]">
-              {profile.username}
-            </span>
-            {/* Bar open/close toggle — owner and manager, inline with username */}
             {(isOwner || isManager) && (
               <button
                 type="button"
-                disabled={barToggleBusy}
-                onClick={barIsOpen ? () => setShowCloseBarConfirm(true) : handleOpenBar}
+                disabled={storeToggleBusy}
+                onClick={storeIsOpen ? () => setShowCloseStoreConfirm(true) : handleOpenStore}
                 className="h-7 px-2.5 rounded-lg font-black text-[11px] flex items-center gap-1 transition active:scale-95 disabled:opacity-50 shrink-0"
-                style={barIsOpen
+                style={storeIsOpen
                   ? { background: "rgba(134,239,172,0.12)", border: "1px solid #86efac", color: "#86efac" }
                   : { background: "rgba(239,68,68,0.12)", border: "1px solid #f87171", color: "#f87171" }}
               >
-                {barToggleBusy
+                {storeToggleBusy
                   ? <Loader2 className="h-3 w-3 animate-spin" />
-                  : <span className="text-[10px]">{barIsOpen ? "🟢" : "🔴"}</span>}
-                {barIsOpen ? "Open" : "Closed"}
+                  : <span className="text-[10px]">{storeIsOpen ? "🟢" : "🔴"}</span>}
+                {storeIsOpen ? "Open" : "Closed"}
               </button>
             )}
             <button
@@ -341,7 +292,6 @@ function AppLayout() {
               Menu
             </button>
 
-            {/* Dropdown */}
             {menuOpen && (
               <div
                 className="absolute right-0 top-10 w-44 rounded-2xl border border-border shadow-2xl overflow-hidden z-[100]"
@@ -351,25 +301,24 @@ function AppLayout() {
                   const active = loc.pathname.startsWith(it.to);
                   const Icon = it.icon;
                   return (
-                    <Link
+                    <a
                       key={it.to}
-                      to={it.to}
+                      href={`#${it.to}`}
                       className={`flex items-center gap-3 px-4 py-4 text-sm font-bold transition border-b border-border/50 last:border-0 ${
                         active ? "text-primary" : "text-foreground hover:bg-muted/50"
                       }`}
                     >
                       <Icon className="h-5 w-5 shrink-0" />
                       {it.label}
-                    </Link>
+                    </a>
                   );
                 })}
-                {/* Logout last */}
                 <button
                   onClick={() => { signOut(); nav({ to: "/login" }); }}
                   className="w-full flex items-center gap-3 px-4 py-4 text-sm font-bold text-destructive hover:bg-muted/50 transition"
                 >
                   <X className="h-5 w-5 shrink-0" />
-                  Logout / Salir
+                  Logout
                 </button>
               </div>
             )}
@@ -381,8 +330,8 @@ function AppLayout() {
         <Outlet />
       </main>
 
-      {/* ── Close Store Confirm Modal ──────────────────────────────────── */}
-      {showCloseBarConfirm && (
+      {/* ── Close Store Confirm ─────────────────────────────────────────── */}
+      {showCloseStoreConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
             style={{ background: "var(--gradient-card)" }}>
@@ -395,25 +344,24 @@ function AppLayout() {
               <p className="text-sm text-muted-foreground mt-2">This will end the current session. Are you sure?</p>
             </div>
             <div className="px-6 pb-6 pt-4 flex gap-3">
-              <button
-                onClick={() => setShowCloseBarConfirm(false)}
+              <button onClick={() => setShowCloseStoreConfirm(false)}
                 className="flex-1 h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition">
                 Cancel
               </button>
               <button
-                onClick={() => { setShowCloseBarConfirm(false); handleCloseBar(); }}
-                disabled={barToggleBusy}
+                onClick={() => { setShowCloseStoreConfirm(false); handleCloseStore(); }}
+                disabled={storeToggleBusy}
                 className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50"
                 style={{ background: "rgba(239,68,68,0.15)", border: "1.5px solid #f87171", color: "#f87171" }}>
-                {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Close Store"}
+                {storeToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Close Store"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Open Store Modal ───────────────────────────────────────────── */}
-      {showOpenBarModal && (
+      {/* ── Open Store Modal ────────────────────────────────────────────── */}
+      {showOpenStoreModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
             style={{ background: "var(--gradient-card)" }}>
@@ -427,69 +375,46 @@ function AppLayout() {
             </div>
 
             <div className="px-6 pb-6 pt-4 space-y-4">
-              {/* Store Float — hidden for machines-only accounts */}
-              {!isMachinesAccount && (
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Store Float</label>
-                  <div
-                    onClick={() => setActiveOpenBarField(activeOpenBarField === "bar" ? null : "bar")}
-                    className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
-                    style={{ borderColor: activeOpenBarField === "bar" ? "var(--primary)" : "var(--border)" }}
-                  >
-                    <span className={`text-base font-black ${activeOpenBarField === "bar" ? "text-primary" : openBarFloat ? "text-foreground" : "text-muted-foreground"}`}>
-                      {openBarFloat || "0"}
-                    </span>
-                  </div>
+              <div className="space-y-1">
+                <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Store Float</label>
+                <div
+                  className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
+                  style={{ borderColor: "var(--primary)" }}
+                >
+                  <span className={`text-base font-black ${openStoreFloat ? "text-primary" : "text-muted-foreground"}`}>
+                    {openStoreFloat || "0"}
+                  </span>
                 </div>
-              )}
+              </div>
 
-              {/* Machine Float — only if machines enabled */}
-              {hasMachines && (
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Machine Float</label>
-                  <div
-                    onClick={() => setActiveOpenBarField(activeOpenBarField === "machine" ? null : "machine")}
-                    className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
-                    style={{ borderColor: activeOpenBarField === "machine" ? "var(--primary)" : "var(--border)" }}
-                  >
-                    <span className={`text-base font-black ${activeOpenBarField === "machine" ? "text-primary" : openMachineFloat ? "text-foreground" : "text-muted-foreground"}`}>
-                      {openMachineFloat || "0"}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Inline numpad — integers only */}
-              {activeOpenBarField !== null && (
-                <div className="grid grid-cols-3 gap-1.5">
-                  {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k, i) => (
-                    k === "" ? <div key={i} /> :
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => handleOpenBarNumpad(activeOpenBarField, k)}
-                      className={`h-12 rounded-xl font-black text-lg transition active:scale-95 ${
-                        k === "⌫"
-                          ? "bg-destructive/20 text-destructive hover:bg-destructive/30"
-                          : "bg-muted hover:bg-muted/70 text-foreground"
-                      }`}
-                    >{k}</button>
-                  ))}
-                </div>
-              )}
+              {/* Numpad */}
+              <div className="grid grid-cols-3 gap-1.5">
+                {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k, i) => (
+                  k === "" ? <div key={i} /> :
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleStoreFloatNumpad(k)}
+                    className={`h-12 rounded-xl font-black text-lg transition active:scale-95 ${
+                      k === "⌫"
+                        ? "bg-destructive/20 text-destructive hover:bg-destructive/30"
+                        : "bg-muted hover:bg-muted/70 text-foreground"
+                    }`}
+                  >{k}</button>
+                ))}
+              </div>
 
               <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setShowOpenBarModal(false)}
+                <button onClick={() => setShowOpenStoreModal(false)}
                   className="flex-1 h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition">
                   Cancel
                 </button>
                 <button
-                  onClick={confirmOpenBar}
-                  disabled={(!isMachinesAccount && !openBarFloat) || (hasMachines && !openMachineFloat)}
+                  onClick={confirmOpenStore}
+                  disabled={storeToggleBusy || !openStoreFloat}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50"
                   style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
-                  Open Store
+                  {storeToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Open Store"}
                 </button>
               </div>
             </div>
@@ -511,7 +436,7 @@ function FullScreenStatus({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-6"
-      style={{ background: "radial-gradient(circle at 50% 0%, oklch(0.25 0.05 30) 0%, oklch(0.12 0.02 30) 70%)" }}>
+      style={{ background: "radial-gradient(circle at 50% 0%, oklch(0.20 0.08 240) 0%, oklch(0.08 0.04 240) 70%)" }}>
       <div className="max-w-md text-center space-y-6">
         <div className="inline-flex h-20 w-20 items-center justify-center rounded-full bg-destructive/20 border border-destructive/40">
           <Icon className="h-10 w-10 text-destructive" />

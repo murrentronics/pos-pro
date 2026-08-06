@@ -34,7 +34,7 @@ async function replayOp(op: OfflineOp): Promise<boolean> {
   try {
     switch (op.type) {
       case "orders_insert": {
-        const { error } = await (supabase as any).from("orders").insert(op.payload);
+        const { error } = await supabase.from("orders").insert(op.payload);
         if (error) throw new Error(error.message);
         break;
       }
@@ -59,7 +59,7 @@ async function replayOp(op: OfflineOp): Promise<boolean> {
         break;
       }
       case "credit_transactions_insert": {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from("credit_transactions")
           .insert(op.payload);
         if (error) throw new Error(error.message);
