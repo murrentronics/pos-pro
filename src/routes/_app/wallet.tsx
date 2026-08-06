@@ -3145,8 +3145,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
           <div className="flex gap-3 items-stretch">
             <button
               onClick={() => { setFloatInput(""); setShowSetFloat(true); }}
-              disabled={!barIsOpenWallet}
-              className="shrink-0 w-24 rounded-2xl font-black text-[11px] leading-tight active:scale-95 transition flex items-center justify-center text-center px-2 py-3 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="shrink-0 w-24 rounded-2xl font-black text-[11px] leading-tight active:scale-95 transition flex items-center justify-center text-center px-2 py-3"
               style={{ background: "#000000", color: "#3b82f6", border: "1.5px solid #1d4ed8" }}>
               {cashierFloat > 0 ? "Update\nFloat" : "Set\nFloat"}
             </button>

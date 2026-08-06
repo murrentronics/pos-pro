@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+ï»¿import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -40,14 +40,6 @@ type TimeCard = {
 function fmt(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-function monthKey(date: string) {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-function monthLabel(key: string) {
-  const [y, m] = key.split("-");
-  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-GB", { year: "numeric", month: "long" });
-}
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString("en-US", {
     timeZone: "America/Port_of_Spain", hour: "numeric", minute: "2-digit", hour12: true,
@@ -82,7 +74,6 @@ function ManagerMain({
   profile: { id: string; username?: string | null; wallet_balance: number };
   ownerId: string;
 }) {
-  
   const managerName = profile.username ?? profile.id;
 
   const [barSessionStart, setBarSessionStart] = useState<string | null>(null);
@@ -91,11 +82,8 @@ function ManagerMain({
   const [barToggleBusy, setBarToggleBusy] = useState(false);
   const [showOpenBarModal, setShowOpenBarModal] = useState(false);
   const [openBarFloat, setOpenBarFloat] = useState("");
-  const [openMachineFloat, setOpenMachineFloat] = useState("");
-  const [hasMachines, setHasMachines] = useState(false);
-  const [isMachinesAccount, setIsMachinesAccount] = useState(false);
   const [showCloseBarConfirm, setShowCloseBarConfirm] = useState(false);
-  const [activeOpenBarField, setActiveOpenBarField] = useState<"bar" | "machine" | null>(null);
+  const [activeOpenBarField, setActiveOpenBarField] = useState<"bar" | null>(null);
   const barIsOpen = !!barSessionStart && !barClosedAt;
 
   useEffect(() => {
@@ -109,7 +97,6 @@ function ManagerMain({
           setBarStateLoading(false);
         });
     fetchBarState();
-
     const ch = supabase.channel(`mgr-bar-state-${ownerId}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${ownerId}` },
         (payload: any) => {
@@ -117,73 +104,62 @@ function ManagerMain({
           if ("store_session_start" in rec) setBarSessionStart((rec.store_session_start as string | null) ?? null);
           if ("store_closed_at" in rec) setBarClosedAt((rec.store_closed_at as string | null) ?? null);
         }).subscribe();
-
-    // Re-fetch when the tab regains focus (handles page refresh / tab switch)
     const onVisible = () => { if (document.visibilityState === "visible") fetchBarState(); };
     document.addEventListener("visibilitychange", onVisible);
-
-    return () => {
-      supabase.removeChannel(ch);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
+    return () => { supabase.removeChannel(ch); document.removeEventListener("visibilitychange", onVisible); };
   }, [ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleOpenBar = async () => {
-    const { data: ownerProfile } = await supabase.from("profiles")
-      .select("machines_addon_active, plan_type, is_machines_account").eq("id", ownerId).single();
-    setHasMachines(!!(ownerProfile?.machines_addon_active) || ownerProfile?.plan_type === "premium" || ownerProfile?.plan_type === "chain");
-    setIsMachinesAccount(!!(ownerProfile?.is_machines_account));
-    setOpenBarFloat(""); setOpenMachineFloat("");
+  const handleOpenBar = () => {
+    setOpenBarFloat("");
     setActiveOpenBarField(null);
     setShowOpenBarModal(true);
   };
 
   const confirmOpenBar = async () => {
-    const barFloatVal = isMachinesAccount ? 0 : parseInt(openBarFloat, 10);
-    if (!isMachinesAccount && (isNaN(barFloatVal) || barFloatVal < 0)) { toast.error("Enter a valid store float amount"); return; }
-    if (hasMachines) {
-      const mf = parseInt(openMachineFloat, 10);
-      if (isNaN(mf) || mf < 0) { toast.error("Enter a valid machine float amount"); return; }
-    }
+    const barFloatVal = parseInt(openBarFloat, 10);
+    if (isNaN(barFloatVal) || barFloatVal < 0) { toast.error("Enter a valid store float amount"); return; }
     setBarToggleBusy(true); setShowOpenBarModal(false);
-    const { data: existingOpen } = await supabase.from("store_sessions")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: existingOpen } = await (supabase as any).from("store_sessions")
       .select("id").eq("owner_id", ownerId).is("closed_at", null).limit(1).maybeSingle();
     if (existingOpen) { setBarToggleBusy(false); toast.error("Store is already open"); return; }
     const now = new Date().toISOString();
     const { error } = await supabase.from("profiles")
-      .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
+      .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now } as any)
       .eq("id", ownerId);
     if (error) { setBarToggleBusy(false); toast.error("Failed to open store"); return; }
-    const { data: newSession } = await supabase.from("store_sessions")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: newSession } = await (supabase as any).from("store_sessions")
       .insert({ owner_id: ownerId, opened_at: now }).select("id").single();
     if (newSession?.id) {
-      await supabase.from("store_sub_sessions").insert({ owner_id: ownerId, store_session_id: newSession.id, opened_at: now, cashier_float: barFloatVal });
-    }
-    if (hasMachines) {
-      await supabase.from("machine_float_sessions").insert({ owner_id: ownerId, amount: parseInt(openMachineFloat, 10) || 0, set_at: now });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from("store_sub_sessions").insert({
+        owner_id: ownerId, store_session_id: newSession.id, opened_at: now, cashier_float: barFloatVal,
+      });
     }
     setBarToggleBusy(false); setBarSessionStart(now); setBarClosedAt(null);
-    toast.success("?? Store opened");
+    toast.success("ðŸŸ¢ Store opened");
   };
 
   const handleCloseBar = async () => {
     setBarToggleBusy(true);
     const now = new Date().toISOString();
-    // Auto clock-out all open time cards for this owner
-    await supabase.from("time_cards").update({ clocked_out_at: now }).eq("owner_id", ownerId).is("clocked_out_at", null);
-    await supabase.from("store_sub_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
-    await supabase.from("store_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
-    const { error } = await supabase.from("profiles").update({ store_closed_at: now }).eq("id", ownerId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from("time_cards").update({ clocked_out_at: now }).eq("owner_id", ownerId).is("clocked_out_at", null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from("store_sub_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from("store_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
+    const { error } = await supabase.from("profiles").update({ store_closed_at: now } as any).eq("id", ownerId);
     setBarToggleBusy(false);
     if (error) { toast.error("Failed to close store"); return; }
-    setBarClosedAt(now); toast.success("?? Store closed");
+    setBarClosedAt(now); toast.success("ðŸ”´ Store closed");
   };
 
   const [tab, setTab] = useState<"dashboard" | "timecards">("dashboard");
 
   return (
     <div className="py-3 space-y-4 pb-24">
-
       {/* Page header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -202,7 +178,7 @@ function ManagerMain({
             style={barIsOpen
               ? { background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac", color: "#86efac" }
               : { background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171", color: "#f87171" }}>
-            {barToggleBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="text-[11px]">{barIsOpen ? "??" : "??"}</span>}
+            {barToggleBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="text-[11px]">{barIsOpen ? "ðŸŸ¢" : "ðŸ”´"}</span>}
             {barIsOpen ? "Open" : "Closed"}
           </button>
         )}
@@ -233,7 +209,7 @@ function ManagerMain({
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden" style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-6 pb-2 text-center">
               <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171" }}>
-                <span className="text-2xl">??</span>
+                <span className="text-2xl">ðŸ”´</span>
               </div>
               <h2 className="font-black text-xl">Close Store?</h2>
               <p className="text-sm text-muted-foreground mt-2">This will end the current session.</p>
@@ -256,59 +232,34 @@ function ManagerMain({
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden" style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-6 pb-2 text-center">
               <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac" }}>
-                <span className="text-2xl">??</span>
+                <span className="text-2xl">ðŸŸ¢</span>
               </div>
               <h2 className="font-black text-xl">Open Store</h2>
               <p className="text-sm text-muted-foreground mt-1">Set the opening float</p>
             </div>
             <div className="px-6 pb-6 pt-4 space-y-3">
-              {!isMachinesAccount && (
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-widest block">Store Float ($)</label>
-                  <div
-                    onClick={() => setActiveOpenBarField(activeOpenBarField === "bar" ? null : "bar")}
-                    className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
-                    style={{ borderColor: activeOpenBarField === "bar" ? "var(--primary)" : "var(--border)" }}
-                  >
-                    <span className={`text-base font-black ${activeOpenBarField === "bar" ? "text-primary" : openBarFloat ? "text-foreground" : "text-muted-foreground"}`}>
-                      {openBarFloat || "0"}
-                    </span>
-                  </div>
+              <div className="space-y-1">
+                <label className="text-xs font-black text-muted-foreground uppercase tracking-widest block">Store Float ($)</label>
+                <div
+                  onClick={() => setActiveOpenBarField(activeOpenBarField === "bar" ? null : "bar")}
+                  className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
+                  style={{ borderColor: activeOpenBarField === "bar" ? "var(--primary)" : "var(--border)" }}
+                >
+                  <span className={`text-base font-black ${activeOpenBarField === "bar" ? "text-primary" : openBarFloat ? "text-foreground" : "text-muted-foreground"}`}>
+                    {openBarFloat || "0"}
+                  </span>
                 </div>
-              )}
-              {hasMachines && (
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-widest block">Machine Float ($)</label>
-                  <div
-                    onClick={() => setActiveOpenBarField(activeOpenBarField === "machine" ? null : "machine")}
-                    className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
-                    style={{ borderColor: activeOpenBarField === "machine" ? "var(--primary)" : "var(--border)" }}
-                  >
-                    <span className={`text-base font-black ${activeOpenBarField === "machine" ? "text-primary" : openMachineFloat ? "text-foreground" : "text-muted-foreground"}`}>
-                      {openMachineFloat || "0"}
-                    </span>
-                  </div>
-                </div>
-              )}
-              {/* Inline numpad — integers only, no decimal */}
+              </div>
               {activeOpenBarField !== null && (
                 <div className="grid grid-cols-3 gap-1.5 pt-1">
-                  {["1","2","3","4","5","6","7","8","9","","0","?"].map((k, i) => (
+                  {["1","2","3","4","5","6","7","8","9","","0","âŒ«"].map((k, i) => (
                     k === "" ? <div key={i} /> :
-                    <button
-                      key={i}
-                      type="button"
+                    <button key={i} type="button"
                       onClick={() => {
-                        const current = activeOpenBarField === "bar" ? openBarFloat : openMachineFloat;
-                        const setter  = activeOpenBarField === "bar" ? setOpenBarFloat : setOpenMachineFloat;
-                        if (k === "?") { setter(current.slice(0, -1)); return; }
-                        setter(current === "0" || current === "" ? k : current + k);
+                        if (k === "âŒ«") { setOpenBarFloat(v => v.slice(0, -1)); return; }
+                        setOpenBarFloat(v => v === "0" || v === "" ? k : v + k);
                       }}
-                      className={`h-12 rounded-xl font-black text-lg transition active:scale-95 ${
-                        k === "?"
-                          ? "bg-destructive/20 text-destructive hover:bg-destructive/30"
-                          : "bg-muted hover:bg-muted/70 text-foreground"
-                      }`}
+                      className={`h-12 rounded-xl font-black text-lg transition active:scale-95 ${k === "âŒ«" ? "bg-destructive/20 text-destructive" : "bg-muted text-foreground"}`}
                     >{k}</button>
                   ))}
                 </div>
@@ -325,7 +276,6 @@ function ManagerMain({
           </div>
         </div>
       )}
-
     </div>
   );
 }
@@ -338,13 +288,13 @@ function DashboardTab({
   ownerId: string; managerName: string;
   barIsOpen: boolean; barStateLoading: boolean; barSessionStart: string | null;
 }) {
-  
   const tag = `[Manager: ${managerName}]`;
 
-  // -- Bar float (live) -------------------------------------------------------
+  // -- Store float (live) ----------------------------------------------------
   const [floatBalance, setFloatBalance] = useState<number>(0);
   const loadFloat = useCallback(async () => {
-    const { data } = await supabase.from("profiles").select("cashier_float").eq("id", ownerId).single();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any).from("profiles").select("cashier_float").eq("id", ownerId).single();
     setFloatBalance(Number(data?.cashier_float ?? 0));
   }, [ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadFloat(); }, [loadFloat]);
@@ -358,71 +308,39 @@ function DashboardTab({
     return () => { supabase.removeChannel(ch); };
   }, [ownerId]);
 
-  // -- Dashboard data (floats, sales, machine) --------------------------------
-  const [barFloatSet,          setBarFloatSet]          = useState<number>(0);
-  const [machineFloatSet,      setMachineFloatSet]      = useState<number>(0);
-  const [machineFloatBal,      setMachineFloatBal]      = useState<number>(0);
-  const [machineFloatAnchor,   setMachineFloatAnchor]   = useState<string | null>(null);
-  const [sessionBarSales,      setSessionBarSales]      = useState<number>(0);
-  const [sessionMachineIn,     setSessionMachineIn]     = useState<number>(0);
-  const [sessionMachinePayout, setSessionMachinePayout] = useState<number>(0);
-  const [hasMachinesEnabled,   setHasMachinesEnabled]   = useState(false);
+  // -- Dashboard data --------------------------------------------------------
+  const [barFloatSet,     setBarFloatSet]     = useState<number>(0);
+  const [sessionBarSales, setSessionBarSales] = useState<number>(0);
 
   const loadDashboard = useCallback(async () => {
-    const { data: ownerRow } = await supabase.from("profiles")
-      .select("cashier_float, machines_addon_active, plan_type, is_machines_account")
-      .eq("id", ownerId).single();
-    const hasMach = !!(ownerRow?.machines_addon_active) || ownerRow?.plan_type === "premium" || ownerRow?.plan_type === "chain";
-    setHasMachinesEnabled(hasMach);
-
-    // "Amount Set" = the float value from the latest sub-session (original set amount)
-    // "Remaining"  = live cashier_float (updated by all deductions in realtime)
-    const { data: lastSubSession } = await supabase.from("store_sub_sessions")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: ownerRow } = await (supabase as any).from("profiles")
+      .select("cashier_float").eq("id", ownerId).single();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: lastSubSession } = await (supabase as any).from("store_sub_sessions")
       .select("cashier_float").eq("owner_id", ownerId)
       .order("opened_at", { ascending: false }).limit(1).maybeSingle();
     setBarFloatSet(Number(lastSubSession?.cashier_float ?? ownerRow?.cashier_float ?? 0));
-
     if (barSessionStart) {
       const { data: orders } = await supabase.from("orders")
         .select("total").eq("owner_id", ownerId).gte("created_at", barSessionStart);
       setSessionBarSales((orders ?? []).reduce((s: number, o: { total: number }) => s + Number(o.total), 0));
     } else { setSessionBarSales(0); }
-
-    if (hasMach) {
-      const { data: floatSess } = await supabase.from("machine_float_sessions")
-        .select("amount, set_at").eq("owner_id", ownerId)
-        .order("set_at", { ascending: false }).limit(1).maybeSingle();
-      const mfAmt = Number(floatSess?.amount ?? 0);
-      const mfAnchor: string | null = floatSess?.set_at ?? null;
-      setMachineFloatSet(mfAmt); setMachineFloatAnchor(mfAnchor);
-      if (mfAnchor) {
-        const { data: entries } = await supabase.from("machine_entries")
-          .select("type, amount").eq("owner_id", ownerId).gte("created_at", mfAnchor);
-        const rows = (entries ?? []) as { type: string; amount: number }[];
-        const mIn  = rows.filter(e => e.type === "income").reduce((s, e) => s + Number(e.amount), 0);
-        const mOut = rows.filter(e => e.type === "payout" || e.type === "expense").reduce((s, e) => s + Number(e.amount), 0);
-        setSessionMachineIn(mIn); setSessionMachinePayout(mOut);
-        setMachineFloatBal(Math.max(0, mfAmt - mOut));
-      } else { setSessionMachineIn(0); setSessionMachinePayout(0); setMachineFloatBal(0); }
-    }
   }, [ownerId, barSessionStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadDashboard(); }, [loadDashboard]);
   useEffect(() => {
     const ch = supabase.channel(`mgr-dash-${ownerId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `owner_id=eq.${ownerId}` }, () => loadDashboard())
-      .on("postgres_changes", { event: "*", schema: "public", table: "machine_entries", filter: `owner_id=eq.${ownerId}` }, () => loadDashboard())
-      .on("postgres_changes", { event: "*", schema: "public", table: "machine_float_sessions", filter: `owner_id=eq.${ownerId}` }, () => loadDashboard())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [ownerId, loadDashboard]);
 
-  // -- Set float modal state --------------------------------------------------
-  const [showSetBarFloat,  setShowSetBarFloat]  = useState(false);
-  const [showSetMachFloat, setShowSetMachFloat] = useState(false);
-  const [setFloatInput,    setSetFloatInput]    = useState("");
-  const [setFloatBusy,     setSetFloatBusy]     = useState(false);
-  const [barFloatMode,     setBarFloatMode]     = useState<"same" | "new">("new");
+  // -- Set float modal -------------------------------------------------------
+  const [showSetBarFloat, setShowSetBarFloat] = useState(false);
+  const [setFloatInput,   setSetFloatInput]   = useState("");
+  const [setFloatBusy,    setSetFloatBusy]    = useState(false);
+  const [barFloatMode,    setBarFloatMode]    = useState<"same" | "new">("new");
 
   const handleSetBarFloat = async () => {
     const val = parseFloat(setFloatInput);
@@ -430,42 +348,33 @@ function DashboardTab({
     setSetFloatBusy(true);
     const now = new Date().toISOString();
     if (barFloatMode === "same") {
-      // Same session: add to current float, keep cashier_float_set_at unchanged
       const newTotal = barFloatSet + val;
-      await supabase.from("profiles").update({ cashier_float: newTotal }).eq("id", ownerId);
+      await supabase.from("profiles").update({ cashier_float: newTotal } as any).eq("id", ownerId);
       setFloatBalance(newTotal); setBarFloatSet(newTotal);
-      toast.success(`Float topped up by $${val.toFixed(2)} — total $${newTotal.toFixed(2)}`);
+      toast.success(`Float topped up â€” total $${newTotal.toFixed(2)}`);
     } else {
-      // New session: close current sub-session, open new one, reset float anchor
-      const { data: openBarSession } = await supabase.from("store_sessions")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: openSession } = await (supabase as any).from("store_sessions")
         .select("id").eq("owner_id", ownerId).is("closed_at", null)
         .order("opened_at", { ascending: false }).limit(1).maybeSingle();
-      if (openBarSession?.id) {
-        await supabase.from("store_sub_sessions").update({ closed_at: now })
-          .eq("owner_id", ownerId).eq("bar_session_id", openBarSession.id).is("closed_at", null);
-        await supabase.from("store_sub_sessions").insert({
-          owner_id: ownerId, store_session_id: openBarSession.id, opened_at: now, cashier_float: val,
+      if (openSession?.id) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from("store_sub_sessions").update({ closed_at: now })
+          .eq("owner_id", ownerId).eq("store_session_id", openSession.id).is("closed_at", null);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from("store_sub_sessions").insert({
+          owner_id: ownerId, store_session_id: openSession.id, opened_at: now, cashier_float: val,
         });
       }
-      await supabase.from("profiles").update({ cashier_float: val, cashier_float_set_at: now }).eq("id", ownerId);
+      await supabase.from("profiles").update({ cashier_float: val, cashier_float_set_at: now } as any).eq("id", ownerId);
       setFloatBalance(val); setBarFloatSet(val);
-      toast.success(`New session started — float set to $${val.toFixed(2)}`);
+      toast.success(`New session â€” float set to $${val.toFixed(2)}`);
     }
     setSetFloatBusy(false); setShowSetBarFloat(false); setSetFloatInput(""); setBarFloatMode("new");
     loadDashboard();
   };
 
-  const handleSetMachFloat = async () => {
-    const val = parseFloat(setFloatInput);
-    if (isNaN(val) || val < 0) { toast.error("Enter a valid amount"); return; }
-    setSetFloatBusy(true);
-    await supabase.from("machine_float_sessions").insert({ owner_id: ownerId, amount: val, set_at: new Date().toISOString() });
-    setSetFloatBusy(false); setShowSetMachFloat(false); setSetFloatInput("");
-    toast.success(`Machine float set to $${val.toFixed(2)}`);
-    loadDashboard();
-  };
-
-  // -- Expenses state ---------------------------------------------------------
+  // -- Expenses state --------------------------------------------------------
   const [expenses,  setExpenses]  = useState<Expense[]>([]);
   const [loading,   setLoading]   = useState(true);
 
@@ -481,7 +390,6 @@ function DashboardTab({
   }, [ownerId, managerName, barSessionStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadExpenses(); }, [loadExpenses]);
-  // Reload when bar opens or closes
   useEffect(() => { loadExpenses(); }, [barSessionStart]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const ch = supabase.channel(`mgr-expenses-${profile.id}`)
@@ -490,12 +398,11 @@ function DashboardTab({
     return () => { supabase.removeChannel(ch); };
   }, [ownerId, profile.id, loadExpenses]);
 
-  const totalAllTime = expenses.reduce((s, e) => s + Number(e.amount), 0);
   const sessionExpenses = expenses
     .filter((e) => barSessionStart && new Date(e.created_at) >= new Date(barSessionStart))
     .reduce((s, e) => s + Number(e.amount), 0);
 
-  // -- Add expense form -------------------------------------------------------
+  // -- Add expense form ------------------------------------------------------
   const [showForm,   setShowForm]   = useState(false);
   const [lines,      setLines]      = useState<{ description: string; amount: string }[]>([{ description: "", amount: "" }]);
   const [saving,     setSaving]     = useState(false);
@@ -506,7 +413,7 @@ function DashboardTab({
     const valid = lines.filter((l) => l.description.trim() && parseFloat(l.amount) > 0);
     if (!valid.length) { toast.error("Add at least one item with a description and amount"); return; }
     const total = valid.reduce((s, l) => s + parseFloat(l.amount), 0);
-    if (total > floatBalance) { toast.error(`Insufficient float — balance is $${fmt(floatBalance)}`); return; }
+    if (total > floatBalance) { toast.error(`Insufficient float â€” balance is $${fmt(floatBalance)}`); return; }
     setSaving(true);
     const today = trinidadDate();
     const description = valid.length === 1
@@ -516,21 +423,22 @@ function DashboardTab({
       const { error: expErr } = await supabase.from("owner_expenses").insert({ owner_id: ownerId, amount: total, description, expense_date: today });
       if (expErr) { toast.error(expErr.message); return; }
       const newFloat = Math.max(0, floatBalance - total);
-      await supabase.from("profiles").update({ cashier_float: newFloat }).eq("id", ownerId);
+      await supabase.from("profiles").update({ cashier_float: newFloat } as any).eq("id", ownerId);
       setFloatBalance(newFloat);
       const note = valid.length === 1 ? `Expense: ${valid[0].description.trim()}` : `Bulk Expense (${valid.length} items)`;
-      await supabase.from("wallet_transactions").insert({ profile_id: profile.id, amount: total, type: "cashier_expense", note });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from("wallet_transactions").insert({ profile_id: profile.id, amount: total, type: "cashier_expense", note });
       toast.success("Expense saved");
       setLines([{ description: "", amount: "" }]); setShowForm(false); setConfirming(false);
       loadExpenses();
     } finally { setSaving(false); }
   };
 
-  const [editingId,      setEditingId]      = useState<string | null>(null);
-  const [editLines,      setEditLines]      = useState<{ description: string; amount: string }[]>([]);
-  const [editSaving,     setEditSaving]     = useState(false);
+  const [editingId,       setEditingId]       = useState<string | null>(null);
+  const [editLines,       setEditLines]       = useState<{ description: string; amount: string }[]>([]);
+  const [editSaving,      setEditSaving]      = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [deleting,       setDeleting]       = useState(false);
+  const [deleting,        setDeleting]        = useState(false);
   const lastExpenseId = expenses.length > 0 ? expenses[0].id : null;
 
   const startEdit = (e: Expense) => {
@@ -550,17 +458,17 @@ function DashboardTab({
     setEditSaving(true);
     const newTotal = valid.reduce((s, l) => s + parseFloat(l.amount), 0);
     const diff = newTotal - Number(e.amount);
-    if (diff > 0 && diff > floatBalance) { setEditSaving(false); toast.error(`Insufficient float — balance is $${fmt(floatBalance)}`); return; }
+    if (diff > 0 && diff > floatBalance) { setEditSaving(false); toast.error(`Insufficient float â€” balance is $${fmt(floatBalance)}`); return; }
     const description = valid.length === 1
       ? `Non-Stock Expense\n${valid[0].description.trim()} = $${parseFloat(valid[0].amount).toFixed(2)} ${tag}`
       : `Non-Stock Expense\n${valid.map((l) => `${l.description.trim()} = $${parseFloat(l.amount).toFixed(2)}`).join("\n")}\n${tag}`;
     try {
       const { data: updated, error: upErr } = await supabase.from("owner_expenses").update({ amount: newTotal, description }).eq("id", e.id).select("id");
       if (upErr) { toast.error(upErr.message); return; }
-      if (!updated || updated.length === 0) { toast.error("Could not update expense — permission denied"); return; }
+      if (!updated || updated.length === 0) { toast.error("Could not update expense â€” permission denied"); return; }
       if (diff !== 0) {
         const newFloat = Math.max(0, floatBalance - diff);
-        await supabase.from("profiles").update({ cashier_float: newFloat }).eq("id", ownerId);
+        await supabase.from("profiles").update({ cashier_float: newFloat } as any).eq("id", ownerId);
         setFloatBalance(newFloat);
       }
       toast.success("Expense updated"); setEditingId(null); loadExpenses();
@@ -572,9 +480,9 @@ function DashboardTab({
     try {
       const { data: deleted, error: delErr } = await supabase.from("owner_expenses").delete().eq("id", e.id).select("id");
       if (delErr) { toast.error(delErr.message); return; }
-      if (!deleted || deleted.length === 0) { toast.error("Could not delete expense — permission denied"); return; }
+      if (!deleted || deleted.length === 0) { toast.error("Could not delete expense â€” permission denied"); return; }
       const newFloat = floatBalance + Number(e.amount);
-      await supabase.from("profiles").update({ cashier_float: newFloat }).eq("id", ownerId);
+      await supabase.from("profiles").update({ cashier_float: newFloat } as any).eq("id", ownerId);
       setFloatBalance(newFloat);
       toast.success("Expense deleted and float refunded"); setDeleteConfirmId(null); loadExpenses();
     } finally { setDeleting(false); }
@@ -584,17 +492,16 @@ function DashboardTab({
 
   return (
     <div className="space-y-4">
-
       {/* Store closed banner */}
       {!barStateLoading && !barIsOpen && (
         <div className="rounded-2xl px-4 py-3 flex items-center gap-3"
           style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}>
           <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-          <span className="text-sm font-semibold text-red-400">Store is closed — expenses cannot be added, edited, or deleted.</span>
+          <span className="text-sm font-semibold text-red-400">Store is closed â€” expenses cannot be added, edited, or deleted.</span>
         </div>
       )}
 
-      {/* -- Hero 1: Floats -- */}
+      {/* -- Hero 1: Store Float -- */}
       <div className="rounded-3xl p-4 space-y-3 relative overflow-hidden"
         style={{ background: "var(--gradient-hero)", boxShadow: "var(--shadow-glow)" }}>
         <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
@@ -605,7 +512,7 @@ function DashboardTab({
               onClick={() => { setSetFloatInput(String(barFloatSet)); setShowSetBarFloat(true); }}
               className="rounded-2xl p-2.5 flex flex-col items-center justify-center gap-0.5 font-black text-xs transition active:scale-95"
               style={{ background: "oklch(0.18 0.02 60)", border: "1.5px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.85)" }}>
-              <span className="text-base">??</span>
+              <span className="text-base">ðŸ’µ</span>
               <span>{barFloatSet > 0 ? "Update" : "Set"} Float</span>
             </button>
             <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "oklch(0.18 0.02 60)" }}>
@@ -618,28 +525,6 @@ function DashboardTab({
             </div>
           </div>
         </div>
-        {hasMachinesEnabled && (
-          <div className="relative space-y-1.5">
-            <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "rgba(0,0,0,0.55)" }}>Machine Float</p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={() => { setSetFloatInput(String(machineFloatSet)); setShowSetMachFloat(true); }}
-                className="rounded-2xl p-2.5 flex flex-col items-center justify-center gap-0.5 font-black text-xs transition active:scale-95"
-                style={{ background: "oklch(0.18 0.02 60)", border: "1.5px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.85)" }}>
-                <span className="text-base">??</span>
-                <span>{machineFloatSet > 0 ? "Update" : "Set"} Float</span>
-              </button>
-              <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "oklch(0.18 0.02 60)" }}>
-                <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>Amount Set</div>
-                <div className="font-black text-sm" style={{ color: "#86efac" }}>{machineFloatSet > 0 ? `$${fmt(machineFloatSet)}` : "$0"}</div>
-              </div>
-              <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "oklch(0.18 0.02 60)" }}>
-                <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>Remaining</div>
-                <div className="font-black text-sm" style={{ color: machineFloatSet > 0 && machineFloatBal < 10 ? "#fde68a" : "#86efac" }}>{machineFloatSet > 0 ? `$${fmt(machineFloatBal)}` : "$0"}</div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* -- Hero 2: Session -- */}
@@ -647,34 +532,18 @@ function DashboardTab({
         style={{ background: "oklch(0.18 0.02 60)", border: "1px solid rgba(255,255,255,0.07)" }}>
         <div className="absolute -left-10 -bottom-10 h-40 w-40 rounded-full bg-white/5 blur-2xl" />
         <p className="text-[10px] font-black uppercase tracking-widest relative" style={{ color: "rgba(255,255,255,0.4)" }}>Session</p>
-        <div className="relative space-y-1.5">
-          <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.3)" }}>Bar</p>
+        <div className="relative">
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
               <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Cash Sales</div>
-              <div className="font-black text-sm" style={{ color: "#86efac" }}>{barIsOpen ? `$${fmt(sessionBarSales)}` : "—"}</div>
+              <div className="font-black text-sm" style={{ color: "#86efac" }}>{barIsOpen ? `$${fmt(sessionBarSales)}` : "â€”"}</div>
             </div>
             <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
               <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Store Expenses</div>
-              <div className="font-black text-sm" style={{ color: "#fca5a5" }}>{barIsOpen ? `$${fmt(sessionExpenses)}` : "—"}</div>
+              <div className="font-black text-sm" style={{ color: "#fca5a5" }}>{barIsOpen ? `$${fmt(sessionExpenses)}` : "â€”"}</div>
             </div>
           </div>
         </div>
-        {hasMachinesEnabled && (
-          <div className="relative space-y-1.5">
-            <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.3)" }}>Machines</p>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Cash in Machine</div>
-                <div className="font-black text-sm" style={{ color: "#86efac" }}>{machineFloatAnchor ? `$${fmt(sessionMachineIn)}` : "—"}</div>
-              </div>
-              <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Machines Payout</div>
-                <div className="font-black text-sm" style={{ color: "#fca5a5" }}>{machineFloatAnchor ? `$${fmt(sessionMachinePayout)}` : "—"}</div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Add Expense */}
@@ -685,7 +554,7 @@ function DashboardTab({
             style={showForm
               ? { background: "var(--gradient-hero)", color: "var(--primary-foreground)", borderColor: "transparent" }
               : { background: "var(--gradient-card)", borderColor: "var(--border)", color: "var(--primary)" }}>
-            {showForm ? "? Cancel" : "+ Add Expense"}
+            {showForm ? "âœ• Cancel" : "+ Add Expense"}
           </button>
           {showForm && (
             <div className="rounded-2xl border border-border p-4 space-y-3" style={{ background: "var(--gradient-card)" }}>
@@ -754,7 +623,6 @@ function DashboardTab({
             <p className="text-center text-xs font-semibold" style={{ color: "oklch(0.65 0.15 65)" }}>
               {barFloatSet > 0 ? "Update Store Float" : "Set Store Float"}
             </p>
-            {/* Same / New session selector — only when a float is already set */}
             {barFloatSet > 0 && (
               <>
                 <div className="grid grid-cols-2 gap-2">
@@ -770,18 +638,16 @@ function DashboardTab({
                 </div>
                 <p className="text-center text-[11px]" style={{ color: "oklch(0.55 0.10 65)" }}>
                   {barFloatMode === "same"
-                    ? "Adds to current float — used amount unchanged"
-                    : "Starts fresh — used amount resets to $0"}
+                    ? "Adds to current float â€” used amount unchanged"
+                    : "Starts fresh â€” used amount resets to $0"}
                 </p>
               </>
             )}
-            {/* Display */}
             <div className="rounded-2xl px-5 py-4 text-right" style={{ background: "oklch(0.18 0.04 60)", border: "1px solid oklch(0.28 0.08 60)" }}>
               <span className="font-black text-4xl" style={{ color: "oklch(0.82 0.18 65)" }}>
                 ${setFloatInput === "" ? "0" : setFloatInput}
               </span>
             </div>
-            {/* Keys */}
             <div className="grid grid-cols-3 gap-2">
               {["7","8","9","4","5","6","1","2","3"].map(k => (
                 <button key={k} onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + k; })}
@@ -792,48 +658,12 @@ function DashboardTab({
               <button onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + "0"; })}
                 className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>0</button>
               <button onClick={() => setSetFloatInput(v => v.slice(0, -1))}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>?</button>
+                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>âŒ«</button>
             </div>
             <button onClick={handleSetBarFloat} disabled={setFloatBusy || !setFloatInput}
               className="w-full py-4 rounded-2xl text-base font-black active:scale-95 transition disabled:opacity-50"
               style={{ background: "oklch(0.60 0.18 65)", color: "#000" }}>
-              {setFloatBusy ? "Saving…" : barFloatSet > 0 ? "Update Float" : "Set Float"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* -- Set Machine Float Modal -- */}
-      {showSetMachFloat && (
-        <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => { setShowSetMachFloat(false); setSetFloatInput(""); }}>
-          <div className="w-full max-w-sm rounded-t-3xl pb-8 pt-4 px-4 space-y-3"
-            style={{ background: "oklch(0.13 0.03 60)", border: "1px solid oklch(0.3 0.08 60)" }}
-            onClick={e => e.stopPropagation()}>
-            <p className="text-center text-xs font-semibold" style={{ color: "oklch(0.65 0.15 65)" }}>
-              {machineFloatSet > 0 ? "Update Machine Float" : "Set Machine Float"}
-            </p>
-            <div className="rounded-2xl px-5 py-4 text-right" style={{ background: "oklch(0.18 0.04 60)", border: "1px solid oklch(0.28 0.08 60)" }}>
-              <span className="font-black text-4xl" style={{ color: "oklch(0.82 0.18 65)" }}>
-                ${setFloatInput === "" ? "0" : setFloatInput}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {["7","8","9","4","5","6","1","2","3"].map(k => (
-                <button key={k} onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + k; })}
-                  className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>{k}</button>
-              ))}
-              <button onClick={() => setSetFloatInput(v => v.includes(".") ? v : v + ".")}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>.</button>
-              <button onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + "0"; })}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>0</button>
-              <button onClick={() => setSetFloatInput(v => v.slice(0, -1))}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>?</button>
-            </div>
-            <button onClick={handleSetMachFloat} disabled={setFloatBusy || !setFloatInput}
-              className="w-full py-4 rounded-2xl text-base font-black active:scale-95 transition disabled:opacity-50"
-              style={{ background: "oklch(0.60 0.18 65)", color: "#000" }}>
-              {setFloatBusy ? "Saving…" : machineFloatSet > 0 ? "Update Float" : "Set Float"}
+              {setFloatBusy ? "Savingâ€¦" : barFloatSet > 0 ? "Update Float" : "Set Float"}
             </button>
           </div>
         </div>
@@ -943,99 +773,6 @@ function DashboardTab({
           </div>
         )}
       </div>
-
-      {/* -- Set Store Float Modal -- */}
-      {showSetBarFloat && (
-        <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => { setShowSetBarFloat(false); setSetFloatInput(""); setBarFloatMode("new"); }}>
-          <div className="w-full max-w-sm rounded-t-3xl pb-8 pt-4 px-4 space-y-3"
-            style={{ background: "oklch(0.13 0.03 60)", border: "1px solid oklch(0.3 0.08 60)" }}
-            onClick={e => e.stopPropagation()}>
-            <p className="text-center text-xs font-semibold" style={{ color: "oklch(0.65 0.15 65)" }}>
-              {barFloatSet > 0 ? "Update Store Float" : "Set Store Float"}
-            </p>
-            {barFloatSet > 0 && (
-              <>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["same", "new"] as const).map(mode => (
-                    <button key={mode} type="button" onClick={() => setBarFloatMode(mode)}
-                      className="h-12 rounded-2xl font-black text-sm transition active:scale-95"
-                      style={barFloatMode === mode
-                        ? { background: "oklch(0.60 0.18 65)", color: "#000" }
-                        : { background: "oklch(0.20 0.05 60)", color: "oklch(0.65 0.15 65)", border: "1.5px solid oklch(0.35 0.10 60)" }}>
-                      {mode === "same" ? "Same Session" : "New Session"}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-center text-[11px]" style={{ color: "oklch(0.55 0.10 65)" }}>
-                  {barFloatMode === "same"
-                    ? "Adds to current float — used amount unchanged"
-                    : "Starts fresh — used amount resets to $0"}
-                </p>
-              </>
-            )}
-            <div className="rounded-2xl px-5 py-4 text-right" style={{ background: "oklch(0.18 0.04 60)", border: "1px solid oklch(0.28 0.08 60)" }}>
-              <span className="font-black text-4xl" style={{ color: "oklch(0.82 0.18 65)" }}>
-                ${setFloatInput === "" ? "0" : setFloatInput}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {["7","8","9","4","5","6","1","2","3"].map(k => (
-                <button key={k} onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + k; })}
-                  className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>{k}</button>
-              ))}
-              <button onClick={() => setSetFloatInput(v => v.includes(".") ? v : v + ".")}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>.</button>
-              <button onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + "0"; })}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>0</button>
-              <button onClick={() => setSetFloatInput(v => v.slice(0, -1))}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>?</button>
-            </div>
-            <button onClick={handleSetBarFloat} disabled={setFloatBusy || !setFloatInput}
-              className="w-full py-4 rounded-2xl text-base font-black active:scale-95 transition disabled:opacity-50"
-              style={{ background: "oklch(0.60 0.18 65)", color: "#000" }}>
-              {setFloatBusy ? "Saving…" : barFloatSet > 0 ? "Update Float" : "Set Float"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* -- Set Machine Float Modal -- */}
-      {showSetMachFloat && (
-        <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => { setShowSetMachFloat(false); setSetFloatInput(""); }}>
-          <div className="w-full max-w-sm rounded-t-3xl pb-8 pt-4 px-4 space-y-3"
-            style={{ background: "oklch(0.13 0.03 60)", border: "1px solid oklch(0.3 0.08 60)" }}
-            onClick={e => e.stopPropagation()}>
-            <p className="text-center text-xs font-semibold" style={{ color: "oklch(0.65 0.15 65)" }}>
-              {machineFloatSet > 0 ? "Update Machine Float" : "Set Machine Float"}
-            </p>
-            <div className="rounded-2xl px-5 py-4 text-right" style={{ background: "oklch(0.18 0.04 60)", border: "1px solid oklch(0.28 0.08 60)" }}>
-              <span className="font-black text-4xl" style={{ color: "oklch(0.82 0.18 65)" }}>
-                ${setFloatInput === "" ? "0" : setFloatInput}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {["7","8","9","4","5","6","1","2","3"].map(k => (
-                <button key={k} onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + k; })}
-                  className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>{k}</button>
-              ))}
-              <button onClick={() => setSetFloatInput(v => v.includes(".") ? v : v + ".")}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>.</button>
-              <button onClick={() => setSetFloatInput(v => { const parts = v.split("."); if (parts[1] !== undefined && parts[1].length >= 2) return v; return v + "0"; })}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "#fff" }}>0</button>
-              <button onClick={() => setSetFloatInput(v => v.slice(0, -1))}
-                className="rounded-2xl py-4 text-xl font-black active:scale-95 transition" style={{ background: "oklch(0.20 0.05 60)", color: "oklch(0.75 0.15 65)" }}>?</button>
-            </div>
-            <button onClick={handleSetMachFloat} disabled={setFloatBusy || !setFloatInput}
-              className="w-full py-4 rounded-2xl text-base font-black active:scale-95 transition disabled:opacity-50"
-              style={{ background: "oklch(0.60 0.18 65)", color: "#000" }}>
-              {setFloatBusy ? "Saving…" : machineFloatSet > 0 ? "Update Float" : "Set Float"}
-            </button>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
@@ -1095,7 +832,7 @@ function MgrCalendar({ workedDates, selectedDate, onSelect }: {
       </div>
       {selectedDate && (
         <button onClick={() => onSelect(null)} className="mt-2 w-full text-[11px] font-black text-muted-foreground hover:text-foreground transition text-center">
-          Show all dates ?
+          Show all dates Ã—
         </button>
       )}
     </div>
@@ -1115,7 +852,6 @@ async function downloadTimesheetPdf(
   const generated = new Date().toLocaleString("en-US", { timeZone: "America/Port_of_Spain", dateStyle: "medium", timeStyle: "short" });
   let y = await drawHeader(doc, businessName, "Timesheet Report", periodLabel, generated);
 
-  // Group by employee then by date
   const byEmp: Record<string, { name: string; cards: TimeCard[] }> = {};
   cards.forEach(tc => {
     if (!byEmp[tc.employee_id]) byEmp[tc.employee_id] = { name: tc.employee_name, cards: [] };
@@ -1125,9 +861,7 @@ async function downloadTimesheetPdf(
   const BRAND = [232, 146, 42] as [number, number, number];
 
   for (const { name, cards: empCards } of Object.values(byEmp)) {
-    // Employee header
     if (y + 10 > CONTENT_BOTTOM) { doc.addPage(); y = 20; }
-    doc.setFillColor(232, 146, 42, 0.15);
     doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...BRAND);
     doc.text(name.toUpperCase(), LM, y + 4);
     y += 8;
@@ -1146,7 +880,6 @@ async function downloadTimesheetPdf(
       doc.setDrawColor(220, 220, 220); doc.line(LM, y + 6, RM, y + 6);
       y += 7;
     }
-    // Employee total
     const totalH = Math.floor(empTotalMins / 60); const totalM = empTotalMins % 60;
     const totalStr = empTotalMins < 60 ? `${empTotalMins}m` : `${totalH}h ${totalM}m`;
     doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...BRAND);
@@ -1164,7 +897,6 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
   profile: { id: string; username?: string | null; wallet_balance: number };
   ownerId: string; managerName: string; barIsOpen: boolean;
 }) {
-  
   const [tcSubTab, setTcSubTab] = useState<"clock" | "timesheets">("clock");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [empLoading, setEmpLoading] = useState(true);
@@ -1188,7 +920,8 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
 
   const loadTimeCards = useCallback(async () => {
     setTcLoading(true);
-    const { data } = await supabase.from("time_cards").select("*").eq("owner_id", ownerId)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any).from("time_cards").select("*").eq("owner_id", ownerId)
       .order("clocked_in_at", { ascending: false });
     setTimeCards((data ?? []) as TimeCard[]);
     setTcLoading(false);
@@ -1202,7 +935,6 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
     return () => { supabase.removeChannel(ch); };
   }, [ownerId, loadTimeCards]);
 
-  // Clock sub-tab state
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [clockBusy, setClockBusy] = useState(false);
   const [openDate, setOpenDate] = useState<string | null>(null);
@@ -1220,7 +952,8 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
   const handleClockIn = async () => {
     if (!selectedEmp) return;
     setClockBusy(true);
-    const { error } = await supabase.from("time_cards").insert({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).from("time_cards").insert({
       owner_id: ownerId, employee_id: selectedEmp.id,
       employee_name: selectedEmp.username, clocked_in_at: new Date().toISOString(), work_date: trinidadDate(),
     });
@@ -1228,24 +961,26 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
     if (error) { toast.error(error.message); return; }
     toast.success(`${selectedEmp.username} clocked in`); loadTimeCards();
   };
+
   const handleClockOut = async () => {
     if (!openCard) return;
     setClockBusy(true);
-    const { error } = await supabase.from("time_cards").update({ clocked_out_at: new Date().toISOString() }).eq("id", openCard.id);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).from("time_cards").update({ clocked_out_at: new Date().toISOString() }).eq("id", openCard.id);
     setClockBusy(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`${openCard.employee_name} clocked out`); loadTimeCards();
   };
+
   function roleLabel(emp: Employee) {
     if (emp.role === "manager") return "Manager";
     if (emp.role === "custom" && emp.job_title) return emp.job_title;
     return "Cashier";
   }
 
-  // -- Timesheets filter helpers ----------------------------------------------
   function getTsFilteredCards(): TimeCard[] {
     const base = (tsStaffEmp ? timeCards.filter(tc => tc.employee_id === tsStaffEmp.id) : timeCards)
-      .filter(tc => !!tc.clocked_out_at); // timesheets only shows completed shifts
+      .filter(tc => !!tc.clocked_out_at);
     if (!tsSelectedDate) return base;
     const ref = new Date(tsSelectedDate + "T12:00:00");
     if (tsPeriod === "day") return base.filter(tc => tc.work_date === tsSelectedDate);
@@ -1260,6 +995,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
     if (tsPeriod === "year")  { const yr = tsSelectedDate.slice(0, 4); return base.filter(tc => tc.work_date.startsWith(yr)); }
     return base;
   }
+
   function getTsPeriodLabel(): string {
     if (!tsSelectedDate) return "All Time";
     const ref = new Date(tsSelectedDate + "T12:00:00");
@@ -1268,12 +1004,13 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
       const dow = ref.getDay();
       const start = new Date(ref); start.setDate(ref.getDate() - dow);
       const end   = new Date(ref); end.setDate(ref.getDate() + (6 - dow));
-      return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+      return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} â€“ ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
     }
     if (tsPeriod === "month") return ref.toLocaleDateString("en-US", { month: "long", year: "numeric" });
     if (tsPeriod === "year")  return String(ref.getFullYear());
     return "All Time";
   }
+
   const tsFilteredCards = getTsFilteredCards();
   const tsPeriodLabel   = getTsPeriodLabel();
   const tsByDate: Record<string, TimeCard[]> = {};
@@ -1293,7 +1030,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
         ))}
       </div>
 
-      {/* -- CLOCK TAB ------------------------------------------------------ */}
+      {/* -- CLOCK TAB -- */}
       {tcSubTab === "clock" && (
         <div className="space-y-3">
           {empLoading
@@ -1317,7 +1054,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                       <div className="flex-1 min-w-0">
                         <p className="font-black text-sm truncate">{emp.username}</p>
                         <p className="text-xs text-muted-foreground">{roleLabel(emp)}</p>
-                        {isSel && empOpen && <p className="text-[10px] mt-0.5" style={{ color: "rgba(134,239,172,0.8)" }}>Since {fmtTime(empOpen.clocked_in_at)} · {fmtDuration(empOpen.clocked_in_at, null)} on shift</p>}
+                        {isSel && empOpen && <p className="text-[10px] mt-0.5" style={{ color: "rgba(134,239,172,0.8)" }}>Since {fmtTime(empOpen.clocked_in_at)} Â· {fmtDuration(empOpen.clocked_in_at, null)} on shift</p>}
                       </div>
                       {empOpen
                         ? <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.4)" }}>Clocked In</span>
@@ -1341,7 +1078,6 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                 );
               })}
 
-          {/* -- Active workers flat list -- */}
           {(() => {
             const activeCards = timeCards.filter(tc => !tc.clocked_out_at);
             if (activeCards.length === 0) return null;
@@ -1358,7 +1094,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                     <div className="flex-1 min-w-0">
                       <p className="font-black text-sm truncate">{tc.employee_name}</p>
                       <p className="text-xs mt-0.5" style={{ color: "rgba(134,239,172,0.8)" }}>
-                        Since {fmtTime(tc.clocked_in_at)} · {fmtDuration(tc.clocked_in_at, null)} on shift
+                        Since {fmtTime(tc.clocked_in_at)} Â· {fmtDuration(tc.clocked_in_at, null)} on shift
                       </p>
                     </div>
                     <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0"
@@ -1371,10 +1107,9 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
         </div>
       )}
 
-      {/* -- TIMESHEETS TAB ------------------------------------------------- */}
+      {/* -- TIMESHEETS TAB -- */}
       {tcSubTab === "timesheets" && (
         <div className="space-y-3">
-          {/* Filter row: date picker + staff picker + PDF button */}
           <div className="flex gap-2 items-center">
             <button onClick={() => setTsShowCal(v => !v)}
               className="flex-1 h-10 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 border transition active:scale-[0.98] truncate"
@@ -1407,18 +1142,16 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
             </button>
           </div>
 
-          {/* Calendar popup */}
           {tsShowCal && (
             <MgrCalendar workedDates={workedDates} selectedDate={tsSelectedDate}
               onSelect={d => { setTsSelectedDate(d); setTsShowCal(false); }} />
           )}
 
-          {/* Staff picker popup */}
           {tsShowStaffPicker && (
             <div className="rounded-2xl border border-border overflow-hidden" style={{ background: "var(--gradient-card)" }}>
               <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
                 <p className="font-black text-xs text-muted-foreground uppercase tracking-widest">Select Staff</p>
-                <button onClick={() => setTsShowStaffPicker(false)} className="text-xs font-black text-muted-foreground hover:text-foreground">?</button>
+                <button onClick={() => setTsShowStaffPicker(false)} className="text-xs font-black text-muted-foreground hover:text-foreground">Ã—</button>
               </div>
               <div className="divide-y divide-border/50">
                 <button onClick={() => { setTsStaffEmp(null); setTsShowStaffPicker(false); }}
@@ -1448,7 +1181,6 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
             </div>
           )}
 
-          {/* Week / Month / Year / Day period pickers — only shown when a date is selected */}
           {tsSelectedDate && (
             <div className="flex gap-1.5">
               {(["day","week","month","year"] as const).map(p => (
@@ -1463,7 +1195,6 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
             </div>
           )}
 
-          {/* Active filter badges */}
           {(tsSelectedDate || tsStaffEmp) && (
             <div className="flex items-center gap-2 flex-wrap">
               {tsSelectedDate && (
@@ -1477,17 +1208,15 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                 </span>
               )}
               <button onClick={() => { setTsSelectedDate(null); setTsStaffEmp(null); setTsPeriod("day"); setTsShowCal(false); }}
-                className="text-[11px] font-black text-muted-foreground hover:text-foreground transition">Clear ?</button>
+                className="text-[11px] font-black text-muted-foreground hover:text-foreground transition">Clear Ã—</button>
             </div>
           )}
 
-          {/* Records — Month accordion ? Day rows ? Employee entries */}
           {tcLoading
             ? <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="rounded-xl h-14 bg-muted/30 animate-pulse" />)}</div>
             : tsSortedDates.length === 0
             ? <div className="text-center py-12 text-muted-foreground text-sm">No records match these filters.</div>
             : (() => {
-                // Group days into months
                 const byMonth: Record<string, string[]> = {};
                 tsSortedDates.forEach(d => {
                   const mk = d.slice(0, 7);
@@ -1502,19 +1231,18 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                     const out = tc.clocked_out_at ? new Date(tc.clocked_out_at) : new Date();
                     return ss + Math.max(0, Math.round((out.getTime() - new Date(tc.clocked_in_at).getTime()) / 60000));
                   }, 0), 0);
-                  const mHM    = mMins < 60 ? `${mMins}m` : `${Math.floor(mMins / 60)}h ${mMins % 60}m`;
-                  const mOpen  = openMonth === mk;
+                  const mHM   = mMins < 60 ? `${mMins}m` : `${Math.floor(mMins / 60)}h ${mMins % 60}m`;
+                  const mOpen = openMonth === mk;
                   const mActive = mDays.some(d => tsByDate[d].some(tc => !tc.clocked_out_at));
                   return (
                     <div key={mk} className="rounded-2xl border border-border overflow-hidden" style={{ background: "var(--gradient-card)" }}>
-                      {/* Month header */}
                       <button type="button" onClick={() => setOpenMonth(mOpen ? null : mk)}
                         className="w-full flex items-center justify-between px-4 py-3 transition hover:bg-muted/20">
                         <div className="text-left">
                           <p className="font-black text-sm">{mLabel}</p>
                           <p className="text-xs text-muted-foreground">
                             {mDays.length} day{mDays.length !== 1 ? "s" : ""}
-                            {mActive && <span className="text-green-400 ml-1">· active</span>}
+                            {mActive && <span className="text-green-400 ml-1">Â· active</span>}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1522,15 +1250,14 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                           <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${mOpen ? "rotate-180" : ""}`} />
                         </div>
                       </button>
-                      {/* Day rows inside month */}
                       {mOpen && (
                         <div className="border-t border-border/60 divide-y divide-border/30">
                           {mDays.map(d => {
-                            const cards  = tsByDate[d];
-                            const dOpen  = openDate === d;
+                            const cards   = tsByDate[d];
+                            const dOpen   = openDate === d;
                             const dActive = cards.filter(c => !c.clocked_out_at).length;
-                            const dl     = new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-                            const dMins  = cards.reduce((s, tc) => {
+                            const dl      = new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+                            const dMins   = cards.reduce((s, tc) => {
                               const out = tc.clocked_out_at ? new Date(tc.clocked_out_at) : new Date();
                               return s + Math.max(0, Math.round((out.getTime() - new Date(tc.clocked_in_at).getTime()) / 60000));
                             }, 0);
@@ -1541,7 +1268,10 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                                   className="w-full flex items-center justify-between px-4 py-2.5 transition hover:bg-muted/20 pl-6">
                                   <div className="text-left">
                                     <p className="font-black text-xs">{dl}</p>
-                                    <p className="text-[10px] text-muted-foreground">{cards.length} record{cards.length !== 1 ? "s" : ""}{dActive > 0 && <span className="text-green-400 ml-1">· {dActive} active</span>}</p>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      {cards.length} record{cards.length !== 1 ? "s" : ""}
+                                      {dActive > 0 && <span className="text-green-400 ml-1">Â· {dActive} active</span>}
+                                    </p>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <span className="font-black text-[11px]" style={{ color: "var(--primary)" }}>{dHM}</span>
@@ -1561,8 +1291,8 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                                             <LogIn className="h-3 w-3 text-green-400 shrink-0" />
                                             <span className="text-green-400 font-bold">{fmtTime(tc.clocked_in_at)}</span>
                                             {tc.clocked_out_at
-                                              ? <><span className="text-muted-foreground/40">?</span><LogOut className="h-3 w-3 text-red-400 shrink-0" /><span className="text-red-400 font-bold">{fmtTime(tc.clocked_out_at)}</span><span className="text-muted-foreground ml-1">· {fmtDuration(tc.clocked_in_at, tc.clocked_out_at)}</span></>
-                                              : <span className="text-green-400 font-semibold">· Still on shift</span>}
+                                              ? <><span className="text-muted-foreground/40">â†’</span><LogOut className="h-3 w-3 text-red-400 shrink-0" /><span className="text-red-400 font-bold">{fmtTime(tc.clocked_out_at)}</span><span className="text-muted-foreground ml-1">Â· {fmtDuration(tc.clocked_in_at, tc.clocked_out_at)}</span></>
+                                              : <span className="text-green-400 font-semibold">Â· Still on shift</span>}
                                           </div>
                                         </div>
                                         {!tc.clocked_out_at && <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.35)" }}>Active</span>}

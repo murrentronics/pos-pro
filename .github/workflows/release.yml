@@ -167,11 +167,12 @@ jobs:
         run: |
           mkdir -p dist/download
           cp public/download.html dist/download/index.html
+          cp public/version.json  dist/download/version.json
           # Copy assets needed by the download page
           cp -r public/assets dist/download/assets 2>/dev/null || true
           cp public/logo.svg dist/download/logo.svg 2>/dev/null || true
-          # _redirects: serve index.html for all routes
-          echo "/* /index.html 200" > dist/download/_redirects
+          # _redirects: version.json must be served directly, not rewritten
+          printf '/version.json /version.json 200\n/* /index.html 200\n' > dist/download/_redirects
 
       - name: Deploy to Cloudflare Pages (pos-pro download)
         uses: cloudflare/wrangler-action@v3

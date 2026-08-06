@@ -33,11 +33,11 @@ export default function SwitchBarPage() {
     <div className="px-1 py-4 space-y-6">
       {/* Header */}
       <div className="space-y-1">
-        <h1 className="text-2xl font-black">{t("your_bars", "Your Bars")}</h1>
+        <h1 className="text-2xl font-black">{t("your_bars", "Your Stores")}</h1>
         <p className="text-sm text-muted-foreground">
           {isDemoAccount
             ? t("select_bar_switch", "Select an account to manage.")
-            : t("select_bar_manage", "Select a bar to manage, or add a new one.")}
+            : t("select_bar_manage", "Select a store to manage, or add a new one.")}
         </p>
       </div>
 
@@ -66,10 +66,10 @@ export default function SwitchBarPage() {
                 <Wine className="h-8 w-8 text-muted-foreground" />
               </div>
               <p className="text-muted-foreground text-sm font-semibold">
-                {t("no_bars_yet", "No bars yet")}
+                {t("no_bars_yet", "No stores yet")}
               </p>
               <p className="text-xs text-muted-foreground">
-                {t("add_first_bar", "Add your first bar to get started.")}
+                {t("add_first_bar", "Add your first store to get started.")}
               </p>
             </div>
           )}

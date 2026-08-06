@@ -301,7 +301,8 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
 
   const loadCards = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from("time_cards").select("*").eq("owner_id", ownerId)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any).from("time_cards").select("*").eq("owner_id", ownerId)
       .order("clocked_in_at", { ascending: false });
     setTimeCards((data ?? []) as TimeCardRow[]);
     setLoading(false);
@@ -321,7 +322,8 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
 
   const handleClockIn = async () => {
     if (!selectedEmp) return; setClockBusy(true);
-    const { error } = await supabase.from("time_cards").insert({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).from("time_cards").insert({
       owner_id: ownerId, employee_id: selectedEmp.id,
       employee_name: selectedEmp.username, clocked_in_at: new Date().toISOString(), work_date: tzNow().toLocaleDateString("en-CA"),
     });
@@ -331,7 +333,8 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
   };
   const handleClockOut = async () => {
     if (!openCard) return; setClockBusy(true);
-    const { error } = await supabase.from("time_cards").update({ clocked_out_at: new Date().toISOString() }).eq("id", openCard.id);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).from("time_cards").update({ clocked_out_at: new Date().toISOString() }).eq("id", openCard.id);
     setClockBusy(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`${openCard.employee_name} clocked out`); loadCards();
@@ -1951,37 +1954,20 @@ export default function CashiersPage() {
               <p className="text-xs text-muted-foreground mt-1">Set float before starting the session</p>
             </div>
             <div className="px-6 pb-6 pt-4 space-y-4">
-              {/* Bar Float — hidden for machines-only accounts */}
-              {!isMachinesAccount && (
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Store Float</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="e.g. 500.00"
-                    value={floatBarAmount}
-                    onChange={e => setFloatBarAmount(e.target.value)}
-                    className="w-full h-11 rounded-xl border border-border bg-background px-4 text-base font-black outline-none focus:ring-1 focus:ring-primary"
-                    autoFocus
-                  />
-                </div>
-              )}
-              {/* Machine Float — only if machines addon active */}
-              {hasMachinesAddon && (
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Machine Float</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="e.g. 200.00"
-                    value={floatMachineAmount}
-                    onChange={e => setFloatMachineAmount(e.target.value)}
-                    className="w-full h-11 rounded-xl border border-border bg-background px-4 text-base font-black outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-              )}
+              {/* Store Float */}
+              <div className="space-y-1">
+                <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Store Float</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="e.g. 500.00"
+                  value={floatBarAmount}
+                  onChange={e => setFloatBarAmount(e.target.value)}
+                  className="w-full h-11 rounded-xl border border-border bg-background px-4 text-base font-black outline-none focus:ring-1 focus:ring-primary"
+                  autoFocus
+                />
+              </div>
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setShowFloatModal(false)}
@@ -1990,7 +1976,7 @@ export default function CashiersPage() {
                 </button>
                 <button
                   onClick={confirmOpenBarWithFloat}
-                  disabled={barToggleBusy || (!isMachinesAccount && !floatBarAmount) || (hasMachinesAddon && !floatMachineAmount)}
+                  disabled={barToggleBusy || !floatBarAmount}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                   style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
                   {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open Store"}
@@ -2066,7 +2052,7 @@ export default function CashiersPage() {
                   <div className="h-12 w-12 rounded-xl flex items-center justify-center text-2xl"
                     style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.15)" }}>💰</div>
                   <span className="font-black text-sm">{t("role_cashier", "Cashier")}</span>
-                  <span className="text-[10px] text-muted-foreground text-center leading-tight">{t("cashier_desc", "Full bar access, requires login")}</span>
+                  <span className="text-[10px] text-muted-foreground text-center leading-tight">{t("cashier_desc", "Full store access, requires login")}</span>
                 </button>
                 {/* Manager */}
                 <button type="button" onClick={() => setSelectedRole("manager")}
@@ -2075,7 +2061,7 @@ export default function CashiersPage() {
                   <div className="h-12 w-12 rounded-xl flex items-center justify-center text-2xl"
                     style={{ background: "rgba(134,239,172,0.15)" }}>👔</div>
                   <span className="font-black text-sm">{t("role_manager_label", "Manager")}</span>
-                  <span className="text-[10px] text-muted-foreground text-center leading-tight">{t("manager_desc", "Items, Wallet & Machines only")}</span>
+                  <span className="text-[10px] text-muted-foreground text-center leading-tight">{t("manager_desc", "Items, Wallet & Management only")}</span>
                 </button>
                 {/* Custom */}
                 <button type="button" onClick={() => setSelectedRole("custom")}

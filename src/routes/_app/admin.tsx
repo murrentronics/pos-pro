@@ -1842,13 +1842,13 @@ export default function AdminPage() {
                             <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">
                               <GitBranch className="h-2.5 w-2.5" />
                               {(r.chain_bar_count ?? 0) <= 1
-                                ? "Multi-store · 1 additional"
-                                : `Chain · ${r.chain_bar_count ?? 0} bars`}
+                                ? "1 Additional Store"
+                                : `Multi-store · ${(r.chain_bar_count ?? 1) - 1} additional`}
                             </span>
                           )}
                           {r.is_bar_account && (
                             <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                              Sub-bar
+                              Sub-store
                             </span>
                           )}
                         </div>
