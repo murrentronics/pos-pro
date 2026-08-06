@@ -19,7 +19,6 @@ import BillingPage from "@/pages/BillingPage";
 import AdminBankingPage from "@/pages/AdminBankingPage";
 import AdminBillingManagementPage from "@/pages/AdminBillingManagementPage";
 import ProfilePage from "@/pages/ProfilePage";
-import MusicPage from "@/pages/MusicPage";
 import CreditPage from "@/pages/CreditPage";
 import LanguagePage from "@/pages/LanguagePage";
 import SpecialsPage from "@/pages/SpecialsPage";
@@ -30,8 +29,6 @@ import StockCheckPage from "@/pages/StockCheckPage";
 import ManualPage from "@/pages/ManualPage";
 import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
 import TermsPage from "@/pages/TermsPage";
-import { MusicPlayerProvider } from "@/lib/MusicPlayerContext";
-import { YouTubeProvider } from "@/lib/YouTubeContext";
 import { ChainProvider } from "@/lib/ChainContext";
 
 // ── Offline status banner ─────────────────────────────────────────────────────
@@ -95,7 +92,6 @@ function AppWithUpdateCheck() {
             <Route path="cashiers" element={<CashiersPage />} />
             <Route path="billing" element={<BillingPage />} />
             <Route path="profile" element={<ProfilePage />} />
-            <Route path="music" element={<MusicPage />} />
             <Route path="credit" element={<CreditPage />} />
             <Route path="language" element={<LanguagePage />} />
             <Route path="specials" element={<SpecialsPage />} />
@@ -179,11 +175,7 @@ export default function App() {
         <OfflineProvider>
           {!splashDone && <SplashScreen onDone={() => setSplashDone(true)} businessName={splashBusinessName} />}
           <ChainProvider>
-            <MusicPlayerProvider>
-              <YouTubeProvider>
-                <AppWithUpdateCheck />
-              </YouTubeProvider>
-            </MusicPlayerProvider>
+            <AppWithUpdateCheck />
           </ChainProvider>
         </OfflineProvider>
       </I18nProvider>

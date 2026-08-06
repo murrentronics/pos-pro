@@ -1,12 +1,12 @@
 // Browser-side admin operations using authenticated user + admin RLS/RPCs.
-// No service role needed.
+// No service role needed — all service-role work is done in edge functions.
 import { supabase } from "@/integrations/supabase/client";
 
 export type AdminProfileRow = {
   id: string;
   username: string;
   email: string;
-  role: "admin" | "owner" | "cashier";
+  role: "admin" | "owner" | "cashier" | "manager";
   status: "pending" | "approved" | "suspended" | "expelled";
   wallet_balance: number;
   created_at: string;
@@ -14,9 +14,16 @@ export type AdminProfileRow = {
   phone: string | null;
   address: string | null;
   plan_type?: string;
+  billing_status?: string;
+  subscription_end_date?: string;
+  chain_addon_active?: boolean;
   chain_bar_count?: number;
   is_bar_account?: boolean;
+  addon_bar_count?: number;
+  is_multi_bar?: boolean;
 };
+
+// ── List all owner profiles (admin RPC) ──────────────────────────────────────
 
 export async function listAllProfiles(): Promise<AdminProfileRow[]> {
   const { data, error } = await supabase.rpc("admin_list_profiles");
@@ -24,38 +31,32 @@ export async function listAllProfiles(): Promise<AdminProfileRow[]> {
   return (data ?? []) as AdminProfileRow[];
 }
 
+// ── Set user status ──────────────────────────────────────────────────────────
+
 export async function setUserStatus(
   user_id: string,
   status: AdminProfileRow["status"]
 ): Promise<void> {
-  // Only reset billing fields when sending an OWNER back to pending.
-  // Managers and cashiers have parent_id set — never touch billing fields on them.
   let extraFields: Record<string, unknown> = {};
+
   if (status === "pending") {
-    // Fetch role first to guard against non-owner profiles
     const { data: target } = await supabase
       .from("profiles")
       .select("role, parent_id")
       .eq("id", user_id)
       .single();
+
     const isOwner = target?.role === "owner" && !target?.parent_id;
     if (isOwner) {
       extraFields = {
-        billing_status:                  "pending_setup",
-        plan_type:                       "basic",
-        subscription_start_date:         null,
-        subscription_end_date:           null,
-        premium_subscription_start_date: null,
-        premium_subscription_end_date:   null,
-        machines_addon_active:           false,
-        machines_addon_start_date:       null,
-        machines_addon_end_date:         null,
-        bar_addon_active:                false,
-        chain_addon_active:              false,
-        chain_bar_count:                 0,
-        addon_bar_count:                 0,
-        is_multi_bar:                    false,
-        
+        billing_status:          "pending_setup",
+        plan_type:               "basic",
+        subscription_start_date: null,
+        subscription_end_date:   null,
+        chain_addon_active:      false,
+        chain_bar_count:         0,
+        addon_bar_count:         0,
+        is_multi_bar:            false,
       };
     }
   }
@@ -64,112 +65,241 @@ export async function setUserStatus(
     .from("profiles")
     .update({ status, ...extraFields })
     .eq("id", user_id);
+
   if (error) throw new Error(error.message);
 }
+
+// ── Delete user (admin RPC) ──────────────────────────────────────────────────
 
 export async function adminDeleteUser(user_id: string): Promise<void> {
   const { error } = await supabase.rpc("admin_delete_user", { _user_id: user_id });
   if (error) throw new Error(error.message);
 }
 
-// ─── Revoke Subscription ──────────────────────────────────────────────────────
+// ── Revoke subscription (calls edge function) ────────────────────────────────
 //
-// Rules:
-//  • If the owner has ANY addon active (machines, bar_addon, chain, music) they
-//    CANNOT revoke the base plan — they must close the account and re-register.
-//  • If no addons are active, revoke wipes all billing fields, sets status back
-//    to "pending", deletes all billing_payments records for that owner, and
-//    removes all cashier/manager sub-accounts.
-//
+// Returns:
+//   { ok: true }
+//   { ok: false, reason: "has_addons", addons: string[] }
+//   { ok: false, reason: "error", message: string }
+
 export type RevokeResult =
   | { ok: true }
   | { ok: false; reason: "has_addons"; addons: string[] }
   | { ok: false; reason: "error"; message: string };
 
-export async function revokeSubscription(owner_id: string): Promise<RevokeResult> {
-  // 1. Fetch full profile to check addon state
-  const { data: profile, error: profileErr } = await supabase
-    .from("profiles")
-    .select(
-      "role, parent_id, plan_type, machines_addon_active, bar_addon_active, chain_addon_active, music_addon"
-    )
-    .eq("id", owner_id)
-    .single();
+export async function revokeSubscription(
+  owner_id: string,
+  force = false
+): Promise<RevokeResult> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  const { data: { session } } = await supabase.auth.getSession();
 
-  if (profileErr || !profile) {
-    return { ok: false, reason: "error", message: profileErr?.message ?? "Profile not found" };
+  // We use the owner_id directly (not a payment_id) for admin-initiated revokes
+  let res: Response;
+  try {
+    res = await fetch(`${supabaseUrl}/functions/v1/admin-revoke-plan`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session?.access_token}`,
+        "apikey": supabaseKey,
+      },
+      body: JSON.stringify({ owner_id, force }),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Network error";
+    return { ok: false, reason: "error", message: msg };
   }
 
-  // Guard: only apply to real owner accounts (no parent)
-  if (profile.role !== "owner" || profile.parent_id) {
-    return { ok: false, reason: "error", message: "Can only revoke subscriptions for owner accounts" };
-  }
-
-  // Guard: block if any addon is active — user must close account and re-register
-  const activeAddons: string[] = [];
-  if (profile.machines_addon_active) activeAddons.push("Machines addon");
-  if (profile.bar_addon_active)       activeAddons.push("Bar addon");
-  if (profile.chain_addon_active)     activeAddons.push("Chain addon");
-  if (profile.music_addon)            activeAddons.push("Music addon");
-
-  if (activeAddons.length > 0) {
-    return { ok: false, reason: "has_addons", addons: activeAddons };
-  }
-
-  // 2. Remove all cashier + manager sub-accounts for this owner
-  const { data: subAccounts } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("parent_id", owner_id)
-    .in("role", ["cashier", "manager"]);
-
-  for (const sub of subAccounts ?? []) {
-    // Reassign any credit transactions so FK constraint doesn't block delete
-    await supabase
-      .from("credit_transactions")
-      .update({ cashier_id: owner_id })
-      .eq("cashier_id", sub.id);
-    await supabase.from("profiles").delete().eq("id", sub.id);
-  }
-
-  // 3. Delete all billing_payments for this owner
-  const { error: paymentsErr } = await supabase
-    .from("billing_payments")
-    .delete()
-    .eq("owner_id", owner_id);
-
-  if (paymentsErr) {
-    return { ok: false, reason: "error", message: "Failed to delete payments: " + paymentsErr.message };
-  }
-
-  // 4. Full profile reset — status → pending, all billing fields cleared
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: updateErr } = await (supabase as any)
-    .from("profiles")
-    .update({
-      status:                              "pending",
-      billing_status:                      "pending_setup",
-      plan_type:                           "basic",
-      subscription_start_date:             null,
-      subscription_end_date:               null,
-      premium_subscription_start_date:     null,
-      premium_subscription_end_date:       null,
-      machines_addon_active:               false,
-      machines_addon_start_date:           null,
-      machines_addon_end_date:             null,
-      bar_addon_active:                    false,
-      chain_addon_active:                  false,
-      chain_bar_count:                     0,
-      addon_bar_count:                     0,
-      is_multi_bar:                        false,
-      
-      wallet_balance:                      0,
-    })
-    .eq("id", owner_id);
-
-  if (updateErr) {
-    return { ok: false, reason: "error", message: "Failed to reset profile: " + updateErr.message };
-  }
-
+  const json = await res.json();
+  if (json.has_addons) return { ok: false, reason: "has_addons", addons: json.addons };
+  if (!res.ok) return { ok: false, reason: "error", message: json.error ?? "Unknown error" };
   return { ok: true };
+}
+
+// ── Admin set plan directly (no payment required) ────────────────────────────
+
+export type PlanType = "basic" | "premium" | "premium_20" | "chain";
+
+export async function adminSetPlan(
+  owner_id: string,
+  plan_type: PlanType,
+  duration_months: number
+): Promise<void> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  const { data: { session } } = await supabase.auth.getSession();
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/admin-set-plan`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session?.access_token}`,
+      "apikey": supabaseKey,
+    },
+    body: JSON.stringify({ owner_id, plan_type, duration_months }),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Failed to set plan");
+}
+
+// ── Admin create owner account ───────────────────────────────────────────────
+
+export async function adminCreateOwner(params: {
+  username: string;
+  email: string;
+  password: string;
+  phone?: string;
+  address?: string;
+  plan_type?: PlanType;
+}): Promise<{ id: string }> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  const { data: { session } } = await supabase.auth.getSession();
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/admin-create-owner`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session?.access_token}`,
+      "apikey": supabaseKey,
+    },
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Failed to create owner");
+  return { id: json.id };
+}
+
+// ── Create cashier / manager / custom staff ──────────────────────────────────
+
+export async function createStaffMember(params: {
+  owner_id: string;
+  username: string;
+  password: string;
+  role: "cashier" | "manager" | "custom";
+  job_title?: string;
+  bar_owner_id?: string;
+}): Promise<{ id: string }> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  const { data: { session } } = await supabase.auth.getSession();
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/create-cashier`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session?.access_token}`,
+      "apikey": supabaseKey,
+    },
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Failed to create staff member");
+  return { id: json.id };
+}
+
+// ── Delete cashier / manager / staff ─────────────────────────────────────────
+
+export async function deleteStaffMember(staff_id: string): Promise<void> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  const { data: { session } } = await supabase.auth.getSession();
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/delete-cashier`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session?.access_token}`,
+      "apikey": supabaseKey,
+    },
+    body: JSON.stringify({ cashier_id: staff_id }),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Failed to delete staff member");
+}
+
+// ── Reset staff password ─────────────────────────────────────────────────────
+
+export async function resetStaffPassword(
+  staff_id: string,
+  new_password: string
+): Promise<void> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  const { data: { session } } = await supabase.auth.getSession();
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/reset-cashier-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session?.access_token}`,
+      "apikey": supabaseKey,
+    },
+    body: JSON.stringify({ cashier_id: staff_id, new_password }),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Failed to reset password");
+}
+
+// ── Create chain store ────────────────────────────────────────────────────────
+
+export async function createStore(params: {
+  owner_id: string;
+  store_name: string;
+  location?: string;
+}): Promise<{ id: string }> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  const { data: { session } } = await supabase.auth.getSession();
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/create-store`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session?.access_token}`,
+      "apikey": supabaseKey,
+    },
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Failed to create store");
+  return { id: json.id };
+}
+
+// ── Delete chain store ────────────────────────────────────────────────────────
+
+export async function deleteStore(store_id: string, owner_id: string): Promise<void> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  const { data: { session } } = await supabase.auth.getSession();
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/delete-store`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session?.access_token}`,
+      "apikey": supabaseKey,
+    },
+    body: JSON.stringify({ store_id, owner_id }),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Failed to delete store");
 }

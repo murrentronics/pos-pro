@@ -1,152 +1,80 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const corsHeaders = {
+const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   try {
-    const supabaseClient = createClient(
+    const svc = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
+      { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Get the authorization header from the request
-    const authHeader = req.headers.get("Authorization")!;
-    
-    // Verify the caller is authenticated and is an owner
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
+    // ── Auth ──────────────────────────────────────────────────────────────────
+    const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
+    const { data: { user }, error: authErr } = await svc.auth.getUser(token);
+    if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Check if user is an owner
-    const { data: profile } = await supabaseClient
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile || profile.role !== "owner") {
-      return new Response(
-        JSON.stringify({ error: "Only owners can delete cashiers" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const { data: callerProfile } = await svc
+      .from("profiles").select("role").eq("id", user.id).single();
+    const isOwner = callerProfile?.role === "owner";
+    const isAdmin = callerProfile?.role === "admin";
+    if (!isOwner && !isAdmin) return json({ error: "Only owners or admins can delete staff" }, 403);
 
     const { cashier_id } = await req.json();
+    if (!cashier_id) return json({ error: "cashier_id required" }, 400);
 
-    if (!cashier_id) {
-      return new Response(
-        JSON.stringify({ error: "Cashier ID is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Verify the cashier belongs to this owner directly OR via a bar sub-account
-    const { data: cashierProfile } = await supabaseClient
+    // ── Verify ownership ──────────────────────────────────────────────────────
+    const { data: staffProfile } = await svc
       .from("profiles")
-      .select("parent_id, wallet_balance")
+      .select("id, parent_id, role, wallet_balance")
       .eq("id", cashier_id)
-      .eq("role", "cashier")
       .single();
 
-    if (!cashierProfile) {
-      return new Response(
-        JSON.stringify({ error: "Cashier not found or does not belong to you" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (!staffProfile) return json({ error: "Staff member not found" }, 404);
+
+    // Owner can only delete their own staff; admin can delete anyone's staff
+    if (isOwner && staffProfile.parent_id !== user.id) {
+      return json({ error: "Not authorized to delete this staff member" }, 403);
     }
 
-    // Direct ownership: cashier.parent_id = caller
-    // Chain ownership: cashier.parent_id = bar_sub_account whose parent_id = caller
-    const directOwner = cashierProfile.parent_id === user.id;
-    let chainOwner = false;
-    if (!directOwner) {
-      const { data: barProfile } = await supabaseClient
-        .from("profiles")
-        .select("parent_id, is_bar_account")
-        .eq("id", cashierProfile.parent_id)
-        .single();
-      chainOwner = barProfile?.parent_id === user.id && barProfile?.is_bar_account === true;
+    const ownerId = isAdmin ? (staffProfile.parent_id ?? user.id) : user.id;
+
+    // ── Transfer wallet balance to owner before deleting ──────────────────────
+    if ((staffProfile.wallet_balance ?? 0) > 0) {
+      await svc.from("profiles").update({
+        wallet_balance: (staffProfile.wallet_balance ?? 0),
+      }).eq("id", ownerId); // will be added below via increment
+
+      // Use RPC to safely increment
+      await svc.rpc("transfer_cashier_to_owner", { _cashier_id: cashier_id });
     }
 
-    if (!directOwner && !chainOwner) {
-      return new Response(
-        JSON.stringify({ error: "Cashier not found or does not belong to you" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Transfer cashier balance to owner before deletion
-    if (cashierProfile.wallet_balance > 0) {
-      const { error: transferError } = await supabaseClient.rpc("transfer_cashier_to_owner", {
-        _cashier_id: cashier_id,
-      });
-
-      if (transferError) {
-        return new Response(
-          JSON.stringify({ error: `Failed to transfer balance: ${transferError.message}` }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-    }
-
-    // Reassign credit_transactions cashier_id to the bar owner before deletion
-    // (credit_transactions.cashier_id has NOT NULL constraint — can't cascade to null)
-    const parentId = cashierProfile.parent_id;
-    await supabaseClient
-      .from("credit_transactions")
-      .update({ cashier_id: parentId })
+    // ── Reassign credit transactions so FK doesn't block delete ──────────────
+    await svc.from("credit_transactions")
+      .update({ cashier_id: ownerId })
       .eq("cashier_id", cashier_id);
 
-    // Delete the cashier profile (cascade will handle related records)
-    const { error: deleteProfileError } = await supabaseClient
-      .from("profiles")
-      .delete()
-      .eq("id", cashier_id);
+    // ── Delete profile then auth user ─────────────────────────────────────────
+    await svc.from("profiles").delete().eq("id", cashier_id);
+    await svc.auth.admin.deleteUser(cashier_id);
 
-    if (deleteProfileError) {
-      return new Response(
-        JSON.stringify({ error: deleteProfileError.message }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    return json({ ok: true }, 200);
 
-    // Delete the auth user
-    const { error: deleteAuthError } = await supabaseClient.auth.admin.deleteUser(cashier_id);
-
-    if (deleteAuthError) {
-      // Profile is already deleted, but log the auth deletion error
-      console.error("Failed to delete auth user:", deleteAuthError);
-    }
-
-    return new Response(
-      JSON.stringify({ ok: true }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  } catch (error) {
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  } catch (err: unknown) {
+    return json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
 });
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...cors, "Content-Type": "application/json" },
+  });
+}

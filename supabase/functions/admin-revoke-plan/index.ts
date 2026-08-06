@@ -1,184 +1,130 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const corsHeaders = {
+const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   try {
-    const serviceClient = createClient(
+    const svc = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Verify caller is admin
-    const authHeader = req.headers.get("Authorization") ?? "";
-    const { data: { user }, error: authErr } = await serviceClient.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
+    // ── Auth: must be admin ───────────────────────────────────────────────────
+    const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
+    const { data: { user }, error: authErr } = await svc.auth.getUser(token);
     if (authErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Unauthorized" }, 401);
     }
-    const { data: callerProfile } = await serviceClient
-      .from("profiles").select("role").eq("id", user.id).single();
-    if (callerProfile?.role !== "admin") {
-      return new Response(JSON.stringify({ error: "Admin access required" }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const { data: caller } = await svc.from("profiles").select("role").eq("id", user.id).single();
+    if (caller?.role !== "admin") return json({ error: "Admin only" }, 403);
 
     const body = await req.json();
+    // Accepts either owner_id (admin-initiated) or payment_id (billing-flow)
+    const owner_id: string | undefined  = body.owner_id;
     const payment_id: string | undefined = body.payment_id;
-    // force=true means admin acknowledged the addon warning and wants the full wipe
     const force: boolean = body.force === true;
 
-    if (!payment_id) {
-      return new Response(JSON.stringify({ error: "payment_id required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!owner_id && !payment_id) {
+      return json({ error: "owner_id or payment_id required" }, 400);
     }
 
-    // Fetch payment + plan type
-    const { data: payment, error: payErr } = await serviceClient
-      .from("billing_payments")
-      .select("owner_id, billing_plans(plan_type)")
-      .eq("id", payment_id)
-      .single();
-    if (payErr || !payment) {
-      return new Response(JSON.stringify({ error: "Payment not found" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let ownerId = owner_id ?? "";
+
+    // Resolve owner from payment if payment_id was provided
+    if (payment_id && !owner_id) {
+      const { data: pay, error: payErr } = await svc
+        .from("billing_payments")
+        .select("owner_id")
+        .eq("id", payment_id)
+        .single();
+      if (payErr || !pay) return json({ error: "Payment not found" }, 404);
+      ownerId = pay.owner_id;
     }
 
-    const ownerId: string = payment.owner_id;
-    const planType: string = (payment.billing_plans as any)?.plan_type ?? "basic";
-
-    // ── Addon guard for base/main plan revokes ───────────────────────────────
-    // If revoking a main plan (full reset), check whether the owner has addons.
-    // - If they asked admin to remove the base and KEEP addons → block entirely
-    //   (they must close their account and re-register for the plan they want).
-    // - If they want everything wiped (force=true) → proceed with full reset.
-    // - If addons are active but force is not set → return has_addons so the UI
-    //   can show a warning confirmation before proceeding.
-    const fullResetTypes = [
-      "basic", "machines_only", "machines_only_20", "chain", "premium", "premium_20",
-    ];
-
-    if (fullResetTypes.includes(planType) && !force) {
-      const { data: ownerRow } = await serviceClient
+    // ── Addon guard ───────────────────────────────────────────────────────────
+    // For P.O.S. Pro the only active addons are chain and multi-bar.
+    // If addons are active and force is not set, warn the admin first.
+    if (!force) {
+      const { data: ownerRow } = await svc
         .from("profiles")
-        .select("machines_addon_active, bar_addon_active, chain_addon_active, music_addon")
+        .select("chain_addon_active, is_multi_bar, addon_bar_count")
         .eq("id", ownerId)
         .single();
 
       const activeAddons: string[] = [];
-      if (ownerRow?.machines_addon_active) activeAddons.push("Machines");
-      if (ownerRow?.bar_addon_active)       activeAddons.push("Bar add-on");
-      if (ownerRow?.chain_addon_active)     activeAddons.push("Chain add-on");
-      if (ownerRow?.music_addon)            activeAddons.push("Music add-on");
+      if (ownerRow?.chain_addon_active)               activeAddons.push("Chain of Stores");
+      if (ownerRow?.is_multi_bar && (ownerRow?.addon_bar_count ?? 0) > 0)
+                                                       activeAddons.push("Extra Store addon");
 
       if (activeAddons.length > 0) {
-        // Return a special response — UI uses this to show the right warning
-        return new Response(
-          JSON.stringify({ has_addons: true, addons: activeAddons }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return json({ has_addons: true, addons: activeAddons }, 200);
       }
     }
 
-    // ── 1. Delete all cashiers AND managers belonging to this owner ──────────
-    const { data: subAccounts } = await serviceClient
+    // ── 1. Delete all staff (cashiers / managers / custom) ───────────────────
+    const { data: staff } = await svc
       .from("profiles")
       .select("id")
       .eq("parent_id", ownerId)
-      .in("role", ["cashier", "manager"]);
+      .in("role", ["cashier", "manager", "custom"]);
 
-    for (const account of (subAccounts ?? [])) {
-      await serviceClient
-        .from("credit_transactions")
-        .update({ cashier_id: ownerId })
-        .eq("cashier_id", account.id);
-      await serviceClient.from("profiles").delete().eq("id", account.id);
-      await serviceClient.auth.admin.deleteUser(account.id);
+    for (const s of staff ?? []) {
+      await svc.from("credit_transactions").update({ cashier_id: ownerId }).eq("cashier_id", s.id);
+      await svc.from("profiles").delete().eq("id", s.id);
+      await svc.auth.admin.deleteUser(s.id);
     }
 
-    // ── 2. Reset owner profile based on plan being revoked ───────────────────
-    //
-    // FULL RESET plans — owner returns to pending with no active plan
-    // Covers: basic, machines_only, machines_only_20, chain, premium, premium_20
-    //
-    // PARTIAL RESET plans — only strip the specific addon; base plan stays
-    // Covers: bar_only_addon, machines_bar_addon, machines_bar_addon_20,
-    //         premium_addon, premium_addon_20, machines_addon
+    // ── 2. Delete all child store accounts (chain / multi-bar) ───────────────
+    const { data: stores } = await svc
+      .from("profiles")
+      .select("id")
+      .eq("parent_id", ownerId)
+      .eq("is_bar_account", true);
 
-    if (fullResetTypes.includes(planType)) {
-      await serviceClient.from("profiles").update({
-        status:                              "pending",
-        billing_status:                      "pending_setup",
-        plan_type:                           "basic",
-        subscription_start_date:             null,
-        subscription_end_date:               null,
-        premium_subscription_start_date:     null,
-        premium_subscription_end_date:       null,
-        machines_addon_active:               false,
-        machines_addon_start_date:           null,
-        machines_addon_end_date:             null,
-        bar_addon_active:                    false,
-        chain_addon_active:                  false,
-        chain_bar_count:                     0,
-        addon_bar_count:                     0,
-        is_multi_bar:                        false,
-        music_addon:                         false,
-        wallet_balance:                      0,
-      }).eq("id", ownerId);
-
-    } else if (planType === "machines_addon") {
-      // Legacy addon type — just strip machines
-      await serviceClient.from("profiles").update({
-        machines_addon_active:     false,
-        machines_addon_start_date: null,
-        machines_addon_end_date:   null,
-      }).eq("id", ownerId);
-
-    } else if (
-      planType === "bar_only_addon" ||
-      planType === "machines_bar_addon" ||
-      planType === "machines_bar_addon_20" ||
-      planType === "premium_addon" ||
-      planType === "premium_addon_20"
-    ) {
-      // Extra account addon — decrement addon_bar_count by 1 (min 0)
-      const { data: ownerRow } = await serviceClient
-        .from("profiles")
-        .select("addon_bar_count")
-        .eq("id", ownerId)
-        .single();
-      const newCount = Math.max(0, (ownerRow?.addon_bar_count ?? 1) - 1);
-      await serviceClient.from("profiles").update({
-        addon_bar_count: newCount,
-        is_multi_bar:    newCount > 0,
-      }).eq("id", ownerId);
+    for (const store of stores ?? []) {
+      await svc.from("profiles").delete().eq("id", store.id);
+      await svc.auth.admin.deleteUser(store.id);
     }
 
-    // ── 3. Delete the payment record ─────────────────────────────────────────
-    await serviceClient.from("billing_payments").delete().eq("id", payment_id);
+    // ── 3. Delete all billing payments for this owner ─────────────────────────
+    if (payment_id) {
+      await svc.from("billing_payments").delete().eq("id", payment_id);
+    } else {
+      await svc.from("billing_payments").delete().eq("owner_id", ownerId);
+    }
 
-    return new Response(JSON.stringify({ ok: true, plan_type: planType }), {
-      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // ── 4. Full profile reset ─────────────────────────────────────────────────
+    await svc.from("profiles").update({
+      status:                  "pending",
+      billing_status:          "pending_setup",
+      plan_type:               "basic",
+      subscription_start_date: null,
+      subscription_end_date:   null,
+      chain_addon_active:      false,
+      chain_bar_count:         0,
+      addon_bar_count:         0,
+      is_multi_bar:            false,
+      wallet_balance:          0,
+    }).eq("id", ownerId);
 
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ ok: true }, 200);
+
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return json({ error: msg }, 500);
   }
 });
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...cors, "Content-Type": "application/json" },
+  });
+}

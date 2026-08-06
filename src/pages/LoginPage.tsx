@@ -425,11 +425,11 @@ function ForgotPasswordFlow({ onBack }: { onBack: () => void }) {
 
 // ── Inline terms content for the signup popup ──────────────────────────────
 function TermsConditionsContent() {
-  const p: React.CSSProperties = { fontSize: "0.82rem", color: "#c8b090", lineHeight: 1.7, margin: "0 0 10px" };
-  const h: React.CSSProperties = { fontSize: "0.85rem", fontWeight: 900, color: "#F0A030", margin: "18px 0 6px" };
-  const li: React.CSSProperties = { fontSize: "0.82rem", color: "#c8b090", lineHeight: 1.7, marginBottom: 3 };
+  const p: React.CSSProperties = { fontSize: "0.82rem", color: "var(--muted-foreground)", lineHeight: 1.7, margin: "0 0 10px" };
+  const h: React.CSSProperties = { fontSize: "0.85rem", fontWeight: 900, color: "#00b4ff", margin: "18px 0 6px" };
+  const li: React.CSSProperties = { fontSize: "0.82rem", color: "var(--muted-foreground)", lineHeight: 1.7, marginBottom: 3 };
   return (
-    <div style={{ color: "#e8d5b0" }}>
+    <div style={{ color: "var(--foreground)" }}>
       <p style={{ ...p, marginBottom: 16 }}>Last updated: August 2026. By creating an account you agree to these Terms.</p>
       <p style={h}>1. Account Registration</p>
       <ul style={{ paddingLeft: 18, margin: "0 0 10px" }}>
@@ -462,11 +462,11 @@ function TermsConditionsContent() {
 }
 
 function TermsOfUseContent() {
-  const p: React.CSSProperties = { fontSize: "0.82rem", color: "#c8b090", lineHeight: 1.7, margin: "0 0 10px" };
-  const h: React.CSSProperties = { fontSize: "0.85rem", fontWeight: 900, color: "#F0A030", margin: "18px 0 6px" };
-  const li: React.CSSProperties = { fontSize: "0.82rem", color: "#c8b090", lineHeight: 1.7, marginBottom: 3 };
+  const p: React.CSSProperties = { fontSize: "0.82rem", color: "var(--muted-foreground)", lineHeight: 1.7, margin: "0 0 10px" };
+  const h: React.CSSProperties = { fontSize: "0.85rem", fontWeight: 900, color: "#00b4ff", margin: "18px 0 6px" };
+  const li: React.CSSProperties = { fontSize: "0.82rem", color: "var(--muted-foreground)", lineHeight: 1.7, marginBottom: 3 };
   return (
-    <div style={{ color: "#e8d5b0" }}>
+    <div style={{ color: "var(--foreground)" }}>
       <p style={{ ...p, marginBottom: 16 }}>Last updated: August 2026. These Terms govern your day-to-day use of P.O.S. Pro.</p>
       <p style={h}>1. Acceptable Use</p>
       <ul style={{ paddingLeft: 18, margin: "0 0 10px" }}>
@@ -679,7 +679,7 @@ function SignUpForm() {
           >
             Terms of Use
           </button>
-          {" "}of Bartendaz Pro.
+          {" "}of P.O.S. Pro.
         </p>
       </div>
 
@@ -688,13 +688,13 @@ function SignUpForm() {
         <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4">
           <div
             className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl border border-border shadow-2xl flex flex-col overflow-hidden"
-            style={{ background: "#0f0a04", maxHeight: "88dvh" }}
+            style={{ background: "var(--gradient-card)", maxHeight: "88dvh" }}
           >
             {/* Popup header */}
             <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border/40 shrink-0">
               <div className="flex items-center gap-2">
                 <FileText className="h-5 w-5" style={{ color: "var(--primary)" }} />
-                <span className="font-black text-base" style={{ color: "#e8d5b0" }}>
+                <span className="font-black text-base" style={{ color: "var(--foreground)" }}>
                   {termsTab === "conditions" ? "Terms & Conditions" : "Terms of Use"}
                 </span>
               </div>
@@ -716,8 +716,8 @@ function SignUpForm() {
                   onClick={() => setTermsTab(tab)}
                   className="flex-1 h-9 rounded-xl font-black text-xs transition active:scale-95"
                   style={termsTab === tab
-                    ? { background: "linear-gradient(135deg, #F0A030, #C0441A)", color: "#fff", border: "none" }
-                    : { background: "rgba(255,255,255,0.06)", color: "#a08060", border: "none" }}
+                    ? { background: "var(--gradient-hero)", color: "#fff", border: "none" }
+                    : { background: "rgba(255,255,255,0.06)", color: "var(--muted-foreground)", border: "none" }}
                 >
                   {tab === "conditions" ? "Terms & Conditions" : "Terms of Use"}
                 </button>
@@ -735,7 +735,7 @@ function SignUpForm() {
                 type="button"
                 onClick={() => { setAgreedToTerms(true); setShowTermsPopup(false); }}
                 className="w-full h-12 rounded-2xl font-black text-sm transition active:scale-95"
-                style={{ background: "linear-gradient(135deg, #F0A030, #C0441A)", color: "#fff", border: "none" }}
+                style={{ background: "var(--gradient-hero)", color: "#fff", border: "none" }}
               >
                 I Agree — Close
               </button>
