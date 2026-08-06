@@ -67,15 +67,39 @@ const newGradle = gradleContent
 fs.writeFileSync(GRADLE_FILE, newGradle, "utf8");
 
 // ── 5. Write public/version.json ─────────────────────────────────────────────
+const today = new Date().toISOString().slice(0, 10);
 const versionJson = JSON.stringify({
   version: newVersion,
   apkUrl: `https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk`,
   downloadPage: "https://pos-pro.pages.dev",
   releaseNotes: `Version ${newVersion} — latest build`,
-  releaseDate: new Date().toISOString().slice(0, 10),
+  releaseDate: today,
 }, null, 2);
 fs.writeFileSync(path.join(ROOT, "public", "version.json"), versionJson, "utf8");
+console.log(`✅  public/version.json written (v${newVersion})`);
 
-// ── 6. Done ───────────────────────────────────────────────────────────────────
+// ── 6. Inject version into download.html button text ─────────────────────────
+const dlHtmlPath = path.join(ROOT, "public", "download.html");
+if (fs.existsSync(dlHtmlPath)) {
+  let dlHtml = fs.readFileSync(dlHtmlPath, "utf8");
+
+  // Replace the static "Download APK" text with versioned text
+  // Matches: >Download APK< or >Download APK  v1.x.x<
+  dlHtml = dlHtml.replace(
+    />Download APK(\s+v[\d.]+)?</g,
+    `>Download APK  v${newVersion}<`
+  );
+
+  // Update the dl-note span if present
+  dlHtml = dlHtml.replace(
+    /Android 7\.0\+.*?No Play Store required/g,
+    `Android 7.0+  \u2022  v${newVersion}  \u2022  No Play Store required`
+  );
+
+  fs.writeFileSync(dlHtmlPath, dlHtml, "utf8");
+  console.log(`✅  download.html version text updated → v${newVersion}`);
+}
+
+// ── 7. Done ───────────────────────────────────────────────────────────────────
 console.log(`✅  Version bumped: ${currentVersion} → ${newVersion}  (versionCode ${newVersionCode})`);
 console.log(`🏷️   GitHub Release tag to use: v${newVersion}`);
