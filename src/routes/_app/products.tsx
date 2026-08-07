@@ -22,10 +22,23 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+// Marketplace-style variation: one group (e.g. "Size") with multiple options (e.g. "3lbs - $20")
+type VarOption = {
+  id: string;   // local uuid for React key
+  label: string; // e.g. "Blue" or "3lbs"
+  price: number; // selling price for this option
+};
+type VarGroup = {
+  id: string;    // local uuid for React key
+  name: string;  // e.g. "Color", "Size", "Weight"
+  options: VarOption[];
+};
+
+// Keep BottleVariation for backward-compat with existing DB rows
 type BottleVariation = {
   key: string;
   label: string;
-  units_consumed: number; // how many bottle-units this variation uses
+  units_consumed: number;
   price: number;
 };
 
@@ -2097,161 +2110,134 @@ export default function ProductsPage() {
 }
 
 // ─── Add Item Dialog ──────────────────────────────────────────────────────────
+// ─── helpers ──────────────────────────────────────────────────────────────────
+function newGroup(name = ""): VarGroup {
+  return { id: crypto.randomUUID(), name, options: [{ id: crypto.randomUUID(), label: "", price: 0 }] };
+}
+function varGroupsFromProduct(bv: BottleVariation[] | null): VarGroup[] {
+  if (!bv || bv.length === 0) return [];
+  // New format: stored as { _type:"vargroups", groups:[...] } in key field
+  if (bv.length === 1 && (bv[0] as any)._type === "vargroups") {
+    return (bv[0] as any).groups as VarGroup[];
+  }
+  // Legacy bar format — convert to a single "Options" group
+  return [{
+    id: crypto.randomUUID(),
+    name: "Options",
+    options: bv.map((v) => ({ id: crypto.randomUUID(), label: v.label, price: v.price })),
+  }];
+}
+function varGroupsToSave(groups: VarGroup[]): BottleVariation[] | null {
+  const clean = groups.filter((g) => g.name.trim() && g.options.some((o) => o.label.trim()));
+  if (clean.length === 0) return null;
+  // Pack into a single sentinel entry so the JSONB column stores our new format
+  return [{ key: "_vargroups", label: "_vargroups", units_consumed: 0, price: 0, _type: "vargroups", groups: clean } as any];
+}
+
 function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: { onDone: () => void; onSaved: (product: Product) => void; onBulkSelect?: (templates: { url: string; label: string; category: string }[]) => void; ownerId: string; editProduct?: Product | null }) {
   const { profile } = useAuth();
   const { t } = useTranslation();
   const isEdit = !!editProduct;
-  const [name, setName] = useState(editProduct?.name ?? "");
-  const [price, setPrice] = useState(editProduct ? String(editProduct.price) : "");
+
+  const [name,      setName]      = useState(editProduct?.name ?? "");
+  const [price,     setPrice]     = useState(editProduct ? String(editProduct.price) : "");
   const [costPrice, setCostPrice] = useState(editProduct ? String(editProduct.cost_price ?? "") : "");
-  const [unitsPerItem, setUnitsPerItem] = useState(editProduct ? String(editProduct.units_per_item || "") : "");
-  const [shotPricePerUnit, setShotPricePerUnit] = useState(() => {
-    const shotVar = editProduct?.bottle_variations?.find((v) => v.key === "shot");
-    return shotVar ? String(shotVar.price) : "";
-  });
-  const [bottleVariations, setBottleVariations] = useState<BottleVariation[]>(
-    (editProduct?.bottle_variations ?? []).filter((v) => v.key !== "shot")
-  );
-  // Cigarette special offer
-  const [cigSpecialQty,   setCigSpecialQty]   = useState(() => {
-    const sv = editProduct?.bottle_variations?.find((v) => v.key === "special");
-    return sv ? String(sv.units_consumed) : "";
-  });
-  const [cigSpecialPrice, setCigSpecialPrice] = useState(() => {
-    const sv = editProduct?.bottle_variations?.find((v) => v.key === "special");
-    return sv ? String(sv.price) : "";
-  });
-  // Cigarette retail sale price (per cigarette sold individually)
-  const [cigRetailPrice, setCigRetailPrice] = useState(() => {
-    const rv = editProduct?.bottle_variations?.find((v) => v.key === "retail");
-    return rv ? String(rv.price) : "";
-  });
-  const [category, setCategory] = useState<string>(editProduct?.category ?? "beers");
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(editProduct?.image_url ?? null);
+  const [category,  setCategory]  = useState<string>(editProduct?.category ?? "miscellaneous");
+  const [varGroups, setVarGroups] = useState<VarGroup[]>(() => varGroupsFromProduct(editProduct?.bottle_variations ?? null));
+
+  const [file,        setFile]        = useState<File | null>(null);
+  const [preview,     setPreview]     = useState<string | null>(editProduct?.image_url ?? null);
   const [templateUrl, setTemplateUrl] = useState<string | null>(editProduct?.image_url ?? null);
-  const [busy, setBusy] = useState(false);
+  const [busy,        setBusy]        = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
-  // which field the numpad is for: "selling" | "cost" | "units" | "shotprice" | "var_{i}_shots" | "var_{i}_price" | null
-  const [activeNumpad, setActiveNumpad] = useState<string | null>(null);
-  // which category tab is active inside the template picker
-  const [templateCat, setTemplateCat] = useState<string>("beers");
+  const [activeNumpad,  setActiveNumpad]  = useState<string | null>(null);
+  const [templateCat,   setTemplateCat]   = useState<string>("miscellaneous");
   const [templateSearch, setTemplateSearch] = useState("");
-  // multi-select: map url → {label, category}
   const [selectedTemplates, setSelectedTemplates] = useState<Map<string, { label: string; category: string }>>(new Map());
   const fileRef = useRef<HTMLInputElement>(null);
-  const camRef = useRef<HTMLInputElement>(null);
-  // Tracks whether the current submit should skip opening the stock numpad
+  const camRef  = useRef<HTMLInputElement>(null);
   const skipStockRef = useRef(false);
-  // Scroll the numpad into view when it opens
-  const numpadRef = useRef<HTMLDivElement>(null);
+  const numpadRef    = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (activeNumpad && numpadRef.current) {
       setTimeout(() => numpadRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
     }
   }, [activeNumpad]);
 
-  // Inline numpad rendered directly under its field
+  // ── numpad ───────────────────────────────────────────────────────────────
+  // activeNumpad keys: "cost" | "selling" | "opt_{groupId}_{optId}"
+  const handleNumpad = (k: string) => {
+    if (activeNumpad?.startsWith("opt_")) {
+      const [, gid, oid] = activeNumpad.split("_");
+      setVarGroups((gs) => gs.map((g) => g.id !== gid ? g : {
+        ...g,
+        options: g.options.map((o) => {
+          if (o.id !== oid) return o;
+          const cur = String(o.price || "");
+          let next: string;
+          if (k === "⌫") { next = cur.slice(0, -1); }
+          else if (k === ".") { next = cur.includes(".") ? cur : cur + "."; }
+          else {
+            const dotIdx = cur.indexOf(".");
+            if (dotIdx !== -1 && cur.length - dotIdx > 2) return o;
+            next = cur === "0" ? k : cur + k;
+          }
+          return { ...o, price: parseFloat(next) || 0 };
+        }),
+      }));
+      return;
+    }
+    const setter  = activeNumpad === "cost" ? setCostPrice : setPrice;
+    const current = activeNumpad === "cost" ? costPrice    : price;
+    if (k === "⌫") { setter(current.slice(0, -1)); return; }
+    if (k === ".") { if (!current.includes(".")) setter(current + "."); return; }
+    const dotIdx = current.indexOf(".");
+    if (dotIdx !== -1 && current.length - dotIdx > 2) return;
+    setter(current === "0" ? k : current + k);
+  };
+
   const InlineNumpad = ({ forField }: { forField: string }) => {
     if (activeNumpad !== forField) return null;
     return (
       <div ref={numpadRef} className="grid grid-cols-3 gap-1.5 mt-2">
         {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => handleNumpad(k)}
-            className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${
-              k === "⌫" ? "bg-destructive/20 text-destructive hover:bg-destructive/30" : "bg-muted hover:bg-muted/70 text-foreground"
-            }`}
+          <button key={k} type="button" onClick={() => handleNumpad(k)}
+            className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
           >{k}</button>
         ))}
       </div>
     );
   };
 
-  /**
-   * Process a product image: remove background, tight-crop, center on 500×500
-   * transparent canvas, sharpen — mirrors the Bartendaz Pro Bottle-Only Toolkit.
-   * Falls back to simple resize if the pipeline fails.
-   */
+  // ── variation helpers ────────────────────────────────────────────────────
+  const addGroup = () => setVarGroups((g) => [...g, newGroup()]);
+  const removeGroup = (gid: string) => setVarGroups((g) => g.filter((x) => x.id !== gid));
+  const updateGroupName = (gid: string, name: string) =>
+    setVarGroups((g) => g.map((x) => x.id === gid ? { ...x, name } : x));
+  const addOption = (gid: string) =>
+    setVarGroups((g) => g.map((x) => x.id === gid ? { ...x, options: [...x.options, { id: crypto.randomUUID(), label: "", price: 0 }] } : x));
+  const removeOption = (gid: string, oid: string) =>
+    setVarGroups((g) => g.map((x) => x.id === gid ? { ...x, options: x.options.filter((o) => o.id !== oid) } : x));
+  const updateOptionLabel = (gid: string, oid: string, label: string) =>
+    setVarGroups((g) => g.map((x) => x.id === gid ? { ...x, options: x.options.map((o) => o.id === oid ? { ...o, label } : o) } : x));
+
+  // ── image helpers ─────────────────────────────────────────────────────────
   const compressImage = async (f: File): Promise<File> => {
     const { processProductImage } = await import("@/lib/processProductImage");
     return processProductImage(f, { removeBg: true });
   };
-
   const onPick = (f: File | undefined | null) => {
-    if (!f) return;
-    setFile(f);
-    setTemplateUrl(null);
-    setPreview(URL.createObjectURL(f));
+    if (!f) return; setFile(f); setTemplateUrl(null); setPreview(URL.createObjectURL(f));
   };
-
   const onTemplateSelect = (url: string, label: string, templateCategory: string) => {
-    setTemplateUrl(url);
-    setFile(null);
-    setPreview(url);
-    setName(label);  // always update name from the selected template
-    setCategory(templateCategory);
-    setShowTemplates(false);
-    setTemplateSearch("");
+    setTemplateUrl(url); setFile(null); setPreview(url);
+    setName(label); setCategory(templateCategory);
+    setShowTemplates(false); setTemplateSearch("");
   };
-
   const clearImage = () => { setFile(null); setTemplateUrl(null); setPreview(null); };
 
-  const handleNumpad = (k: string) => {
-    // Handle variation fields: "var_{i}_shots" or "var_{i}_price"
-    if (activeNumpad?.startsWith("var_")) {
-      const parts = activeNumpad.split("_"); // ["var", i, "shots"|"price"]
-      const idx = parseInt(parts[1]);
-      const field = parts[2] as "shots" | "price";
-      const isInt = field === "shots";
-      setBottleVariations(bv => bv.map((x, j) => {
-        if (j !== idx) return x;
-        const cur = isInt ? String(x.units_consumed || "") : String(x.price || "");
-        let next: string;
-        if (k === "⌫") {
-          next = cur.slice(0, -1);
-        } else if (!isInt && k === ".") {
-          next = cur.includes(".") ? cur : cur + ".";
-        } else {
-          // Block extra decimal places
-          if (!isInt) {
-            const dotIdx = cur.indexOf(".");
-            if (dotIdx !== -1 && cur.length - dotIdx > 2) return x;
-          } else if (k === ".") {
-            return x; // no decimals for shot count
-          }
-          next = cur === "0" ? k : cur + k;
-        }
-        return isInt
-          ? { ...x, units_consumed: parseInt(next) || 0 }
-          : { ...x, price: parseFloat(next) || 0 };
-      }));
-      return;
-    }
-
-    const setter = activeNumpad === "cost" ? setCostPrice
-      : activeNumpad === "units" ? setUnitsPerItem
-      : activeNumpad === "shotprice" ? setShotPricePerUnit
-      : activeNumpad === "cigretail" ? setCigRetailPrice
-      : setPrice;
-    const current = activeNumpad === "cost" ? costPrice
-      : activeNumpad === "units" ? unitsPerItem
-      : activeNumpad === "shotprice" ? shotPricePerUnit
-      : activeNumpad === "cigretail" ? cigRetailPrice
-      : price;
-    if (k === "⌫") { setter(current.slice(0, -1)); return; }
-    if (activeNumpad !== "units") {
-      if (k === ".") { if (!current.includes(".")) setter(current + "."); return; }
-      const dotIdx = current.indexOf(".");
-      if (dotIdx !== -1 && current.length - dotIdx > 2) return;
-    } else {
-      if (k === ".") return;
-    }
-    setter(current === "0" ? k : current + k);
-  };
-
+  // ── submit ────────────────────────────────────────────────────────────────
   const submit = async () => {
     if (!profile || !name || !price) return;
     setBusy(true);
@@ -2266,62 +2252,35 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
       if (upErr) { toast.error(upErr.message); setBusy(false); return; }
       image_url = supabase.storage.from("product-images").getPublicUrl(path).data.publicUrl;
     } else if (isEdit) {
-      // keep the existing image if no new one was picked
       image_url = editProduct?.image_url ?? null;
     }
 
-    const costVal = parseFloat(costPrice) || 0;
-    const unitsVal = parseInt(unitsPerItem, 10) || 0;
-    const variationsVal = category === "liquor" ? [
-      ...(unitsVal > 0 && parseFloat(shotPricePerUnit) > 0
-        ? [{ key: "shot", label: "Drink", units_consumed: 1, price: parseFloat(shotPricePerUnit) }]
-        : []),
-      ...bottleVariations.filter((v) => v.key !== "shot" && v.label && v.units_consumed > 0),
-    ] : category === "cigarettes" ? [
-      ...(parseFloat(cigRetailPrice) > 0
-        ? [{ key: "retail", label: "Retail", units_consumed: 1, price: parseFloat(cigRetailPrice) }]
-        : []),
-      ...(parseInt(cigSpecialQty) > 0 && parseFloat(cigSpecialPrice) > 0
-        ? [{ key: "special", label: `${cigSpecialQty} for $${parseFloat(cigSpecialPrice).toFixed(2)}`, units_consumed: parseInt(cigSpecialQty), price: parseFloat(cigSpecialPrice) }]
-        : []),
-    ] : null;
+    const costVal      = parseFloat(costPrice) || 0;
+    const variationsVal = varGroupsToSave(varGroups);
 
     if (isEdit && editProduct) {
       const { data: updated, error } = await supabase
         .from("products")
-        .update({
-          name: name.trim(),
-          price: Number(price),
-          cost_price: costVal,
-          units_per_item: unitsVal,
-          bottle_variations: variationsVal,
-          image_url,
-          category,
-        })
-        .eq("id", editProduct.id)
-        .select("*")
-        .single();
+        .update({ name: name.trim(), price: Number(price), cost_price: costVal, bottle_variations: variationsVal, image_url, category })
+        .eq("id", editProduct.id).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
       toast.success("Item updated");
       onDone();
-      if (!skipStockRef.current) {
+      if (!skipStockRef.current)
         onSaved({ ...updated, units_per_item: updated.units_per_item ?? 0, bottle_variations: (updated.bottle_variations ?? null) as any });
-      }
     } else {
-      // ── INSERT new product ───────────────────────────────────────────────
       const { data: inserted, error } = await supabase.from("products").insert({
         owner_id: ownerId, name: name.trim(), price: Number(price), cost_price: costVal,
-        units_per_item: unitsVal, bottle_variations: variationsVal, image_url, category,
+        bottle_variations: variationsVal, image_url, category,
       }).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
       toast.success("Item added");
-      setName(""); setPrice(""); setCostPrice(""); setUnitsPerItem(""); setShotPricePerUnit(""); setCigSpecialQty(""); setCigSpecialPrice(""); setCigRetailPrice(""); setBottleVariations([]); setCategory("beers"); setFile(null); setPreview(null); setTemplateUrl(null);
+      setName(""); setPrice(""); setCostPrice(""); setCategory("miscellaneous"); setVarGroups([]); setFile(null); setPreview(null); setTemplateUrl(null);
       onDone();
-      if (!skipStockRef.current) {
+      if (!skipStockRef.current)
         onSaved({ ...inserted, units_per_item: inserted.units_per_item ?? 0, bottle_variations: (inserted.bottle_variations ?? null) as any });
-      }
     }
   };
 
@@ -2425,7 +2384,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
             />
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {/* Image area */}
             <div className="flex gap-3 items-stretch">
               <div className="relative w-1/2 aspect-[3/4] rounded-xl border-2 border-dashed border-border overflow-hidden shrink-0" style={{ background: "var(--gradient-card)" }}>
@@ -2443,246 +2402,150 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
               </div>
               <div className="flex flex-col gap-2 flex-1 justify-center">
                 <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => setShowTemplates(true)}>
-                  <LayoutGrid className="h-5 w-5 mr-2" /> {t("template_btn", "Template")}
+                  <LayoutGrid className="h-5 w-5 mr-2" /> Template
                 </Button>
                 <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => camRef.current?.click()}>
-                  <Camera className="h-5 w-5 mr-2" /> {t("take_photo_btn", "Take Photo")}
+                  <Camera className="h-5 w-5 mr-2" /> Take Photo
                 </Button>
                 <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => fileRef.current?.click()}>
-                  <ImagePlus className="h-5 w-5 mr-2" /> {t("upload_btn", "Upload")}
+                  <ImagePlus className="h-5 w-5 mr-2" /> Upload
                 </Button>
               </div>
             </div>
             <p className="text-[10px] text-muted-foreground/70 leading-snug">
-              💡 {t("best_results_tip", "For best results, upload a")} <span className="font-bold text-amber-400">{t("png_transparent", "PNG with transparent background")}</span>.
+              💡 For best results, upload a <span className="font-bold text-amber-400">PNG with transparent background</span>.
             </p>
 
             {/* Name */}
             <div>
-              <Label className="text-xs">{t("item_name", "Name")}</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Heineken 330ml" className="h-9" />
+              <Label className="text-xs">Item Name</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Fresh Tomatoes" className="h-9 mt-1" />
             </div>
 
-            {/* Category + Cost Price + Bottle Price */}
-            <div className="space-y-0">
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Label className="text-xs">{t("category_label", "Category")}</Label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="mt-1 h-9 w-full rounded-lg border border-border bg-muted px-2 text-sm font-bold outline-none cursor-pointer"
-                  >
-                    {CATEGORIES.map((cat) => (
-                      <option key={cat.value} value={cat.value}>{cat.icon} {t(categoryKey(cat.value), cat.label)}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex-1">
-                  <Label className="text-xs">{t("cost_price_label", "Cost Price")}</Label>
-                  <div
-                    className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
-                    onClick={() => setActiveNumpad(activeNumpad === "cost" ? null : "cost")}
-                  >
-                    <span className={`text-base font-black ${activeNumpad === "cost" ? "text-primary" : "text-muted-foreground"}`}>
-                      ${costPrice || "0.00"}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <Label className="text-xs">{category === "cigarettes" ? t("sell_price_label", "Sell Price") + " (Pack)" : category === "liquor" ? "Bottle Price" : t("sell_price_label", "Sell Price")}</Label>
-                  <div
-                    className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
-                    onClick={() => setActiveNumpad(activeNumpad === "selling" ? null : "selling")}
-                  >
-                    <span className={`text-base font-black ${activeNumpad === "selling" ? "text-primary" : "text-muted-foreground"}`}>
-                      ${price || "0.00"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <InlineNumpad forField="cost" />
-              <InlineNumpad forField="selling" />
-            </div>
-
-            {/* Shots per Bottle + Shot Price — side by side, liquor only */}
-            {category === "liquor" && (
-              <div className="space-y-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label className="text-xs">🍾 Drinks per Bottle</Label>
-                    <div
-                      className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
-                      onClick={() => setActiveNumpad(activeNumpad === "units" ? null : "units")}
-                    >
-                      <span className={`text-base font-black ${activeNumpad === "units" ? "text-primary" : "text-muted-foreground"}`}>
-                        {unitsPerItem || "0"} drinks
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-xs">Drink Price ($)</Label>
-                    <div
-                      className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
-                      onClick={() => setActiveNumpad(activeNumpad === "shotprice" ? null : "shotprice")}
-                    >
-                      <span className={`text-base font-black ${activeNumpad === "shotprice" ? "text-primary" : "text-muted-foreground"}`}>
-                        ${shotPricePerUnit || "0.00"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <InlineNumpad forField="units" />
-                <InlineNumpad forField="shotprice" />
-                {unitsPerItem && parseInt(unitsPerItem) > 0 && parseFloat(costPrice) > 0 && (
-                  <p className="text-xs" style={{ color: "var(--primary)" }}>
-                    Cost per shot: ${(parseFloat(costPrice) / parseInt(unitsPerItem)).toFixed(2)}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Units per pack — cigarettes only */}
-            {category === "cigarettes" && (
-              <div className="space-y-3">
-                <div>
-                  <Label className="text-xs">🚬 Units per Pack</Label>
-                  <div
-                    className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
-                    onClick={() => setActiveNumpad(activeNumpad === "units" ? null : "units")}
-                  >
-                    <span className={`text-base font-black ${activeNumpad === "units" ? "text-primary" : "text-muted-foreground"}`}>
-                      {unitsPerItem || "0"} per pack
-                    </span>
-                  </div>
-                  <InlineNumpad forField="units" />
-                  {unitsPerItem && parseInt(unitsPerItem) > 0 && parseFloat(costPrice) > 0 && (
-                    <p className="text-xs mt-1" style={{ color: "var(--primary)" }}>
-                      Cost per unit: ${(parseFloat(costPrice) / parseInt(unitsPerItem)).toFixed(2)}
-                    </p>
-                  )}
-                </div>
-                {/* Retail Sale Price per cigarette */}
-                <div>
-                  <Label className="text-xs">Retail Sale Price (per cigarette)</Label>
-                  <div
-                    className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
-                    onClick={() => setActiveNumpad(activeNumpad === "cigretail" ? null : "cigretail")}
-                  >
-                    <span className={`text-base font-black ${activeNumpad === "cigretail" ? "text-primary" : "text-muted-foreground"}`}>
-                      ${cigRetailPrice || "0.00"}
-                    </span>
-                  </div>
-                  <InlineNumpad forField="cigretail" />
-                  {cigRetailPrice && parseFloat(cigRetailPrice) > 0 && unitsPerItem && parseInt(unitsPerItem) > 0 && (
-                    <p className="text-xs mt-1" style={{ color: "var(--primary)" }}>
-                      Full pack retail value: ${(parseFloat(cigRetailPrice) * parseInt(unitsPerItem)).toFixed(2)}
-                    </p>
-                  )}
-                </div>
-                {/* Special offer */}
-                <div className="rounded-xl border border-border p-3 space-y-2" style={{ background: "var(--gradient-card)" }}>
-                  <Label className="text-xs">🎁 Special Offer (optional)</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <p className="text-[10px] text-muted-foreground mb-0.5">Qty in deal</p>
-                      <input type="number" min="2" step="1"
-                        value={cigSpecialQty}
-                        onChange={(e) => setCigSpecialQty(e.target.value)}
-                        className="w-full h-9 rounded-lg border border-border bg-background px-2 text-sm font-bold outline-none"
-                        placeholder="e.g. 3" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-muted-foreground mb-0.5">Deal price ($)</p>
-                      <input type="number" min="0.01" step="0.01"
-                        value={cigSpecialPrice}
-                        onChange={(e) => setCigSpecialPrice(e.target.value)}
-                        className="w-full h-9 rounded-lg border border-border bg-background px-2 text-sm font-bold outline-none"
-                        placeholder="e.g. 5.00" />
-                    </div>
-                  </div>
-                  {cigSpecialQty && cigSpecialPrice && parseInt(cigSpecialQty) > 0 && parseFloat(cigSpecialPrice) > 0 && (
-                    <p className="text-xs" style={{ color: "#86efac" }}>
-                      {cigSpecialQty} for ${parseFloat(cigSpecialPrice).toFixed(2)} · ${(parseFloat(cigSpecialPrice) / parseInt(cigSpecialQty)).toFixed(2)} each
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Bottle variations (Half, Nip, PQ etc) — liquor only, no Shot row */}
-            {category === "liquor" && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs">🥃 Bottle Variations</Label>
-                  <p className="text-[10px] text-muted-foreground">Drinks used from bottle</p>
-                </div>
-                {bottleVariations.length === 0 && (
-                  <button type="button"
-                    onClick={() => setBottleVariations([
-                      { key: "half", label: "Half Bottle", units_consumed: 0, price: 0 },
-                      { key: "nip",  label: "Nip",         units_consumed: 0, price: 0 },
-                      { key: "pq",   label: "PQ",          units_consumed: 0, price: 0 },
-                    ])}
-                    className="w-full h-9 rounded-lg border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
-                    + Set up variations
-                  </button>
-                )}
-                {bottleVariations.filter((v) => v.key !== "shot").map((v, i) => (
-                  <div key={v.key} className="rounded-xl border border-border p-2 space-y-1.5" style={{ background: "var(--gradient-card)" }}>
-                    <div className="flex items-center justify-between gap-2">
-                      <input type="text" value={v.label}
-                        onChange={(e) => setBottleVariations(bv => bv.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
-                        className="flex-1 h-8 rounded-lg border border-border bg-background px-2 text-xs font-bold outline-none"
-                        placeholder="e.g. Half Bottle" />
-                      <button type="button"
-                        onClick={() => setBottleVariations(bv => bv.filter((_, j) => j !== i))}
-                        className="h-8 w-8 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/10 transition">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-[10px] text-muted-foreground mb-0.5">Drinks used</p>
-                        <div
-                          className="h-8 rounded-lg border border-border bg-muted/30 flex items-center px-2 cursor-pointer active:bg-muted/50 transition"
-                          onClick={() => setActiveNumpad(activeNumpad === `var_${i}_shots` ? null : `var_${i}_shots`)}
-                        >
-                          <span className={`text-xs font-black ${activeNumpad === `var_${i}_shots` ? "text-primary" : "text-muted-foreground"}`}>
-                            {v.units_consumed || "0"}
-                          </span>
-                        </div>
-                        <InlineNumpad forField={`var_${i}_shots`} />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-muted-foreground mb-0.5">Price ($)</p>
-                        <div
-                          className="h-8 rounded-lg border border-border bg-muted/30 flex items-center px-2 cursor-pointer active:bg-muted/50 transition"
-                          onClick={() => setActiveNumpad(activeNumpad === `var_${i}_price` ? null : `var_${i}_price`)}
-                        >
-                          <span className={`text-xs font-black ${activeNumpad === `var_${i}_price` ? "text-primary" : "text-muted-foreground"}`}>
-                            ${v.price ? v.price.toFixed(2) : "0.00"}
-                          </span>
-                        </div>
-                        <InlineNumpad forField={`var_${i}_price`} />
-                      </div>
-                    </div>
-                    {v.units_consumed > 0 && parseInt(unitsPerItem) > 0 && (
-                      <p className="text-[10px]" style={{ color: "var(--primary)" }}>
-                        = {Math.floor(parseInt(unitsPerItem) / v.units_consumed)} per bottle
-                      </p>
-                    )}
-                  </div>
+            {/* Category */}
+            <div>
+              <Label className="text-xs">Category</Label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="mt-1 h-9 w-full rounded-lg border border-border bg-muted px-2 text-sm font-bold outline-none cursor-pointer"
+              >
+                {CATEGORIES.map((cat) => (
+                  <option key={cat.value} value={cat.value}>{cat.icon} {t(categoryKey(cat.value), cat.label)}</option>
                 ))}
-                {bottleVariations.length > 0 && (
-                  <button type="button"
-                    onClick={() => setBottleVariations(bv => [...bv, { key: `var_${Date.now()}`, label: "", units_consumed: 1, price: 0 }])}
-                    className="w-full h-8 rounded-lg border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
-                    + Add variation
-                  </button>
-                )}
+              </select>
+            </div>
+
+            {/* Cost Price + Base Selling Price */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Cost Price</Label>
+                <div
+                  className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
+                  onClick={() => setActiveNumpad(activeNumpad === "cost" ? null : "cost")}
+                >
+                  <span className={`text-base font-black ${activeNumpad === "cost" ? "text-primary" : "text-muted-foreground"}`}>
+                    ${costPrice || "0.00"}
+                  </span>
+                </div>
+                <InlineNumpad forField="cost" />
               </div>
-            )}
+              <div>
+                <Label className="text-xs">Base Selling Price</Label>
+                <div
+                  className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
+                  onClick={() => setActiveNumpad(activeNumpad === "selling" ? null : "selling")}
+                >
+                  <span className={`text-base font-black ${activeNumpad === "selling" ? "text-primary" : "text-muted-foreground"}`}>
+                    ${price || "0.00"}
+                  </span>
+                </div>
+                <InlineNumpad forField="selling" />
+              </div>
+            </div>
+
+            {/* ── Variations ────────────────────────────────────────────────────── */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Variations <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <button
+                  type="button"
+                  onClick={addGroup}
+                  className="h-7 px-3 rounded-lg text-xs font-black flex items-center gap-1 transition active:scale-95"
+                  style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+                >
+                  <Plus className="h-3 w-3" /> Add Variation
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground -mt-1">
+                e.g. Color → Blue / Red / Black &nbsp;·&nbsp; Size → Small $5 / Large $8 &nbsp;·&nbsp; Weight → 3lbs $20
+              </p>
+
+              {varGroups.map((group) => (
+                <div key={group.id} className="rounded-2xl border border-border p-3 space-y-3" style={{ background: "var(--gradient-card)" }}>
+                  {/* Group name */}
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={group.name}
+                      onChange={(e) => updateGroupName(group.id, e.target.value)}
+                      placeholder="Variation name (e.g. Color, Size, Weight)"
+                      className="h-8 text-sm font-bold flex-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeGroup(group.id)}
+                      className="h-8 w-8 rounded-lg flex items-center justify-center text-destructive hover:bg-destructive/10 transition shrink-0"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Options */}
+                  <div className="space-y-2">
+                    {group.options.map((opt) => (
+                      <div key={opt.id} className="flex items-center gap-2">
+                        <Input
+                          value={opt.label}
+                          onChange={(e) => updateOptionLabel(group.id, opt.id, e.target.value)}
+                          placeholder="Option (e.g. Blue, 3lbs, Small)"
+                          className="h-8 text-sm flex-1"
+                        />
+                        {/* Price tap-to-open numpad */}
+                        <div
+                          className={`h-8 w-24 rounded-lg border flex items-center justify-center px-2 cursor-pointer transition shrink-0 ${
+                            activeNumpad === `opt_${group.id}_${opt.id}` ? "border-primary bg-muted/50" : "border-border bg-muted/30"
+                          }`}
+                          onClick={() => setActiveNumpad(activeNumpad === `opt_${group.id}_${opt.id}` ? null : `opt_${group.id}_${opt.id}`)}
+                        >
+                          <span className={`text-sm font-black ${activeNumpad === `opt_${group.id}_${opt.id}` ? "text-primary" : "text-muted-foreground"}`}>
+                            ${opt.price > 0 ? opt.price.toFixed(2) : "0.00"}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeOption(group.id, opt.id)}
+                          className="h-8 w-8 rounded-lg flex items-center justify-center text-destructive hover:bg-destructive/10 transition shrink-0"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {/* Inline numpad for whichever option is active */}
+                    {group.options.map((opt) => (
+                      <InlineNumpad key={`np-${opt.id}`} forField={`opt_${group.id}_${opt.id}`} />
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => addOption(group.id)}
+                    className="w-full h-7 rounded-lg border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition"
+                  >
+                    + Add Option
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

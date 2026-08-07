@@ -145,6 +145,223 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
   );
 });
 
+// ─── Item Modal ───────────────────────────────────────────────────────────────
+// Opens when cashier taps any product. Each variation option is a card — tap to
+// increment its own qty, tap again to go higher, −/+ controls on selected cards.
+// Multiple different options can be selected simultaneously (e.g. 2x "1lb" + 1x "10lb").
+// "Add to Order" commits all selected options to the cart as separate line items.
+type ItemModalLine = { cartKey: string; name: string; price: number; qty: number };
+function ItemModal({
+  product, onClose, onAddToOrder,
+}: {
+  product: Product;
+  onClose: () => void;
+  onAddToOrder: (lines: ItemModalLine[]) => void;
+}) {
+  const bv = product.bottle_variations ?? [];
+  const groups: Array<{ id: string; name: string; options: Array<{ id: string; label: string; price: number }> }> =
+    bv.length === 1 && (bv[0] as any)._type === "vargroups"
+      ? (bv[0] as any).groups
+      : [];
+  const hasVars = groups.length > 0 && groups.some((g) => g.options.some((o) => o.label.trim()));
+
+  // counts: cartKey → qty selected in this session
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  // no-variation qty stepper
+  const [baseQty, setBaseQty] = useState(1);
+
+  const stock = product.stock_qty ?? Infinity;
+  const totalSelected = Object.values(counts).reduce((s, n) => s + n, 0);
+  const imgSrc = product.image_url ? productImageUrl(product.image_url) : null;
+
+  const incOption = (cartKey: string) => {
+    const cur = counts[cartKey] ?? 0;
+    if (totalSelected >= stock) { toast.error(`Only ${stock} in stock`); return; }
+    setCounts((c) => ({ ...c, [cartKey]: cur + 1 }));
+  };
+  const decOption = (cartKey: string) => {
+    const cur = counts[cartKey] ?? 0;
+    if (cur <= 1) { setCounts((c) => { const n = { ...c }; delete n[cartKey]; return n; }); return; }
+    setCounts((c) => ({ ...c, [cartKey]: cur - 1 }));
+  };
+
+  const handleAdd = () => {
+    if (hasVars) {
+      const lines: ItemModalLine[] = [];
+      for (const g of groups) {
+        for (const opt of g.options.filter((o) => o.label.trim())) {
+          const cartKey = `${product.id}__${g.id}__${opt.id}`;
+          const qty = counts[cartKey] ?? 0;
+          if (qty > 0) {
+            lines.push({
+              cartKey,
+              name: `${product.name} — ${opt.label}`,
+              price: opt.price > 0 ? opt.price : product.price,
+              qty,
+            });
+          }
+        }
+      }
+      if (lines.length === 0) { toast.error("Select at least one option"); return; }
+      onAddToOrder(lines);
+    } else {
+      onAddToOrder([{ cartKey: product.id, name: product.name, price: product.price, qty: baseQty }]);
+    }
+  };
+
+  const hasSelection = hasVars ? totalSelected > 0 : baseQty > 0;
+  const orderTotal = hasVars
+    ? groups.reduce((s, g) => s + g.options.reduce((gs, opt) => {
+        const cartKey = `${product.id}__${g.id}__${opt.id}`;
+        const qty = counts[cartKey] ?? 0;
+        return gs + qty * (opt.price > 0 ? opt.price : product.price);
+      }, 0), 0)
+    : baseQty * product.price;
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-md mx-auto rounded-t-3xl border border-border shadow-2xl flex flex-col max-h-[88dvh]"
+        style={{ background: "var(--gradient-card)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex gap-3 px-4 pt-5 pb-3 items-center">
+          <div className="w-16 h-16 rounded-2xl overflow-hidden border border-border shrink-0 flex items-center justify-center text-3xl"
+            style={{ background: "rgba(255,255,255,0.04)" }}>
+            {imgSrc
+              ? <img src={imgSrc} className="w-full h-full object-contain" alt="" />
+              : <span>{categoryIcon(product.category ?? "miscellaneous")}</span>}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-black text-base leading-tight">{product.name}</p>
+            <p className="font-black text-sm mt-0.5" style={{ color: "#86efac" }}>${Number(product.price).toFixed(2)}</p>
+            {product.stock_qty !== undefined && (
+              <p className="text-[11px] text-muted-foreground">{product.stock_qty} in stock</p>
+            )}
+          </div>
+          <button onClick={onClose}
+            className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-4 pb-3 space-y-4">
+          {hasVars ? (
+            groups.map((group) => (
+              <div key={group.id} className="space-y-2">
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-wider">{group.name}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {group.options.filter((o) => o.label.trim()).map((opt) => {
+                    const cartKey = `${product.id}__${group.id}__${opt.id}`;
+                    const qty = counts[cartKey] ?? 0;
+                    const isSelected = qty > 0;
+                    const optPrice = opt.price > 0 ? opt.price : product.price;
+                    return (
+                      <div
+                        key={opt.id}
+                        className="rounded-2xl border-2 overflow-hidden transition"
+                        style={{
+                          borderColor: isSelected ? "var(--primary)" : "rgba(255,255,255,0.12)",
+                          background: isSelected ? "rgba(var(--primary-rgb,251 146 60)/0.10)" : "rgba(255,255,255,0.04)",
+                        }}
+                      >
+                        {/* Tap the card to increment */}
+                        <button
+                          type="button"
+                          onClick={() => incOption(cartKey)}
+                          className="w-full p-3 flex flex-col items-center gap-0.5 active:bg-white/5 transition"
+                        >
+                          <span className="font-black text-sm text-center leading-tight">{opt.label}</span>
+                          <span className="font-black text-base mt-0.5" style={{ color: isSelected ? "var(--primary)" : "#86efac" }}>
+                            ${optPrice.toFixed(2)}
+                          </span>
+                          {isSelected && (
+                            <span className="text-[11px] font-black mt-0.5" style={{ color: "var(--primary)" }}>
+                              ${(optPrice * qty).toFixed(2)} total
+                            </span>
+                          )}
+                        </button>
+                        {/* −/qty/+ controls when selected */}
+                        {isSelected && (
+                          <div className="flex items-center justify-between px-3 pb-2.5 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => decOption(cartKey)}
+                              className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
+                              style={{ background: "#ef4444" }}
+                            >−</button>
+                            <span className="font-black text-lg" style={{ color: "var(--primary)" }}>{qty}</span>
+                            <button
+                              type="button"
+                              onClick={() => incOption(cartKey)}
+                              className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
+                              style={{ background: "var(--gradient-hero)" }}
+                            >+</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          ) : (
+            /* No variations — just a qty stepper */
+            <div className="flex items-center justify-between py-4">
+              <p className="font-black text-muted-foreground text-sm uppercase tracking-wider">Quantity</p>
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  disabled={baseQty <= 1}
+                  onClick={() => setBaseQty((q) => Math.max(1, q - 1))}
+                  className="h-11 w-11 rounded-full flex items-center justify-center font-black text-xl active:scale-90 transition disabled:opacity-30"
+                  style={{ background: "#ef4444" }}
+                >−</button>
+                <span className="font-black text-3xl w-12 text-center">{baseQty}</span>
+                <button
+                  type="button"
+                  disabled={baseQty >= stock}
+                  onClick={() => setBaseQty((q) => q + 1)}
+                  className="h-11 w-11 rounded-full flex items-center justify-center font-black text-xl active:scale-90 transition disabled:opacity-30"
+                  style={{ background: "var(--gradient-hero)" }}
+                >+</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Order total */}
+        {orderTotal > 0 && (
+          <div className="mx-4 rounded-xl px-4 py-2.5 flex items-center justify-between mb-2"
+            style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.08)" }}>
+            <span className="text-sm font-bold text-muted-foreground">Order Total</span>
+            <span className="font-black text-lg" style={{ color: "var(--primary)" }}>${orderTotal.toFixed(2)}</span>
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="px-4 pb-6 pt-1 flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 h-12 rounded-2xl font-black text-base border border-border transition active:scale-[0.98]"
+            style={{ background: "rgba(255,255,255,0.04)" }}
+          >Cancel</button>
+          <button
+            type="button"
+            disabled={!hasSelection}
+            onClick={handleAdd}
+            className="flex-1 h-12 rounded-2xl font-black text-base text-primary-foreground transition active:scale-[0.98] disabled:opacity-40"
+            style={{ background: "var(--gradient-hero)" }}
+          >Add to Order</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type ProductGridProps = {
   barOrdered: Product[];
   cartQtyMap: Record<string, number>; // productId → qty in cart (0 = not in cart)
@@ -678,19 +895,8 @@ export default function RegisterPage() {
       toast.error(`${p.name} has no cost price set. Ask the owner to update it in Items.`);
       return;
     }
-    setCart((c) => {
-      const ex = c.find((i) => i.id === p.id);
-      const currentQty = ex?.qty ?? 0;
-      const availableStock = p.stock_qty ?? Infinity;
-      
-      // Don't add if we've already reached the stock limit
-      if (currentQty >= availableStock) {
-        toast.error(`Only ${availableStock} in stock`);
-        return c;
-      }
-      
-      return ex ? c.map((i) => (i.id === p.id ? { ...i, qty: i.qty + 1 } : i)) : [...c, { ...p, qty: 1 }];
-    });
+    // Always open the item modal so the cashier can choose qty / variations
+    setVarPickerProduct(p);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dec = useCallback((id: string) =>
@@ -698,7 +904,10 @@ export default function RegisterPage() {
 
   const removeItem = useCallback((id: string) => setCart((c) => c.filter((i) => i.id !== id)), []);
 
-  // ΓöÇΓöÇ Opened Bottles state ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Item detail modal (opens for every product tap) ─────────────────────
+  const [varPickerProduct, setVarPickerProduct] = useState<Product | null>(null);
+
+  // ── Opened Bottles state ──────────────────────────────────────────────────
   const [openedBottles, setOpenedBottles]       = useState<OpenedBottle[]>([]);
   const [bottlesModalOpen, setBottlesModalOpen] = useState(false);
   const [shotModalOpen, setShotModalOpen]       = useState(false);
@@ -1698,6 +1907,29 @@ export default function RegisterPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Item Detail Modal ─────────────────────────────────────────────── */}
+      {varPickerProduct && (
+        <ItemModal
+          product={varPickerProduct}
+          onClose={() => setVarPickerProduct(null)}
+          onAddToOrder={(lines) => {
+            setCart((c) => {
+              let next = [...c];
+              for (const line of lines) {
+                const ex = next.find((i) => (i as any)._varKey === line.cartKey);
+                if (ex) {
+                  next = next.map((i) => (i as any)._varKey === line.cartKey ? { ...i, qty: i.qty + line.qty } : i);
+                } else {
+                  next = [...next, { ...varPickerProduct, id: line.cartKey, name: line.name, price: line.price, qty: line.qty, _varKey: line.cartKey } as CartItem & { _varKey: string }];
+                }
+              }
+              return next;
+            });
+            setVarPickerProduct(null);
+          }}
+        />
       )}
 
       {/* ── Shot Step 2: Variation picker (buffer — modal stays open) ── */}
