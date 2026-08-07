@@ -37,3 +37,7 @@ keystore-base64.txt
 # Android signing keystores — never commit
 *.jks
 *.b64
+
+pospro.jks
+android/app/pospro.jks
+pospro_base64.txt
