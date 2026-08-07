@@ -15,7 +15,7 @@ const DEMO_EMAILS = ["isabel@gmail.com", "renard.sankersingh@gmail.com"];
 
 export default function AppLayout() {
   const { session, profile, loading, signOut } = useAuth();
-  const { isChainOwner, isMultiBarOwner, activeBarId, activeBar } = useChain();
+  const { isChainOwner, isMultiBarOwner, activeBarId, activeBar, chainBars } = useChain();
   const hasMultipleBars = isChainOwner || isMultiBarOwner;
   const nav = useNavigate();
   const loc = useLocation();
@@ -53,11 +53,11 @@ export default function AppLayout() {
       nav("/billing", { replace: true });
     }
     // Multi-bar owner or chain owner with no bar selected → force them to pick a bar first
-    // Allow billing page so they can manage subscriptions
-    if (!loading && hasMultipleBars && !activeBarId && loc.pathname !== "/switch-bar" && loc.pathname !== "/billing") {
+    // Only redirect if bars have loaded and there are actually bars to pick from
+    if (!loading && hasMultipleBars && !activeBarId && chainBars.length > 0 && loc.pathname !== "/switch-bar" && loc.pathname !== "/billing") {
       nav("/switch-bar", { replace: true });
     }
-  }, [loading, profile, loc.pathname, nav, isChainOwner, activeBarId, ownerEmail]);
+  }, [loading, profile, loc.pathname, nav, isChainOwner, activeBarId, ownerEmail, chainBars]);
 
   // Close menu on outside click
   useEffect(() => {
