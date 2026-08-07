@@ -98,6 +98,16 @@ jobs:
             base64 -w 0 android/app/pospro.jks
           fi
 
+      # ── 10b. Verify keystore ───────────────────────────────────────────────
+      - name: Verify keystore aliases
+        run: |
+          echo "=== Keystore aliases ==="
+          keytool -list -keystore android/app/pospro.jks -storepass "${{ secrets.KEYSTORE_PASSWORD }}" 2>&1 || true
+          echo "=== KEY_ALIAS env value length: ${#KEY_ALIAS} ==="
+          echo "=== KEY_ALIAS first char: ${KEY_ALIAS:0:1} ==="
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+
       # ── 11. Make gradlew executable ───────────────────────────────────────
       - name: Make gradlew executable
         run: chmod +x android/gradlew

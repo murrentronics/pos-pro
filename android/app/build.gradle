@@ -20,7 +20,7 @@ android {
         release {
             storeFile file("pospro.jks")
             storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
-            keyAlias System.getenv("KEY_ALIAS") ?: ""
+            keyAlias "pospro"
             keyPassword System.getenv("KEY_PASSWORD") ?: ""
         }
     }
