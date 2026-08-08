@@ -41,7 +41,7 @@ export interface OfflineOp {
   groupId: string;
 }
 
-const DB_NAME = "bartap-offline";
+const DB_NAME = "pospro-offline";
 const STORE = "ops";
 const DB_VERSION = 1;
 

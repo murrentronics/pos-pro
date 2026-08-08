@@ -14,7 +14,7 @@
 
 import { openDB, type IDBPDatabase } from "idb";
 
-const DB_NAME    = "bartap-data-cache";
+const DB_NAME    = "pospro-data-cache";
 const DB_VERSION = 2;
 
 // ── Typed records ─────────────────────────────────────────────────────────────

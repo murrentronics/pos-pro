@@ -732,7 +732,7 @@ export default function RegisterPage() {
     if (!pid) return;
     const { data } = await supabase
       .from("bar_sort_order").select("order_json").eq("owner_id", pid).maybeSingle();
-    const arr: string[] = data?.order_json && Array.isArray(data.order_json) ? data.order_json : [];
+    const arr: string[] = data?.order_json && Array.isArray(data.order_json) ? (data.order_json as string[]) : [];
     const map: Record<string, number> = {};
     arr.forEach((id: string, i: number) => { map[id] = i; });
     barSortMapRef.current = map;
@@ -753,7 +753,7 @@ export default function RegisterPage() {
     supabase.from("bar_sort_order").upsert(
       { owner_id: pid, order_json: allIds, updated_at: new Date().toISOString() },
       { onConflict: "owner_id" }
-    ).then(() => {}).catch(() => {});
+    ).then(() => {});
   };
 
   function applyBarSort(prods: Product[], cat: string, map: Record<string, number>) {
@@ -815,7 +815,7 @@ export default function RegisterPage() {
         .select("*")
         .eq("owner_id", id)
         .eq("active", true);
-      setActiveSpecials((data ?? []) as Special[]);
+      setActiveSpecials((data ?? []) as unknown as Special[]);
     };
     loadSpecials();
     // Refresh when specials change for this owner
@@ -1708,7 +1708,7 @@ export default function RegisterPage() {
           onDec={dec}
           onAdd={addToCart}
           onRemove={removeItem}
-          onClearCart={() => { setCart([]); localStorage.removeItem(`bartap-cart-${ownerId}`); revertPendingPacks(); }}
+          onClearCart={() => { setCart([]); localStorage.removeItem(`pospro-cart-${ownerId}`); revertPendingPacks(); }}
           onClose={() => { setCashOpen(false); revertPendingPacks(); }}
           ownerId={ownerId}
           onSuccess={async (paidAmt, changeAmt) => {
@@ -1734,7 +1734,7 @@ export default function RegisterPage() {
             closeFullPacksAfterOrder(cart);
             setBottlesPendingCancel([]);
             setCart([]);
-            localStorage.removeItem(`bartap-cart-${ownerId}`);
+            localStorage.removeItem(`pospro-cart-${ownerId}`);
             setCashOpen(false);
             refreshProfile();
             fetchOpenedBottles();
