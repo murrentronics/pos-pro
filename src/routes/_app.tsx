@@ -212,11 +212,6 @@ function AppLayout() {
   const isManager = profile.role === "manager" || (profile as { job_title?: string }).job_title === "manager";
 
   if (!isAdmin) {
-    if (profile.status === "expelled") {
-      return <FullScreenStatus icon={UserMinus} title="Account expelled"
-        message="Your account has been expelled. You no longer have access to P.O.S. Pro."
-        onSignOut={() => { signOut(); nav({ to: "/login" }); }} />;
-    }
     if (profile.status === "rejected") {
       return <FullScreenStatus icon={Ban} title="Account rejected"
         message="Your payment was rejected by admin. Contact admin to have your account reinstated."

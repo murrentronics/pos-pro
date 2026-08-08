@@ -8,7 +8,7 @@ import { usePushNotifications } from "@/lib/usePushNotifications";
 import { useTranslation } from "@/lib/i18n";
 import { useOffline } from "@/lib/OfflineProvider";
 import { OfflinePageGuard } from "@/components/OfflinePageGuard";
-import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, UserMinus, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid } from "lucide-react";
+import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const DEMO_EMAILS = ["isabel@gmail.com", "renard.sankersingh@gmail.com"];
@@ -114,17 +114,6 @@ export default function AppLayout() {
   const isSuspended = !isAdmin && !isCashier && !isManager && !isDemo && profile.status === "suspended";
   const isRejected  = !isAdmin && !isCashier && !isManager && !isDemo && profile.status === "rejected";
 
-
-  if (!isAdmin && !isCashier && profile.status === "expelled") {
-    return (
-      <FullScreenStatus
-        icon={UserMinus}
-        title="Account expelled"
-        message="Your account has been expelled. You no longer have access to P.O.S. Pro."
-        onSignOut={() => { signOut(); nav("/login"); }}
-      />
-    );
-  }
 
   if (isRejected) {
     return (

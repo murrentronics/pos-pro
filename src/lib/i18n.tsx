@@ -77,7 +77,6 @@ const ES: Record<string, string> = {
   "pending":          "PENDIENTE",
   "overdue":          "VENCIDO",
   "suspended":        "SUSPENDIDO",
-  "expelled":         "EXPULSADO",
   "paid":             "PAGADO",
   "rejected":         "RECHAZADO",
   "approved":         "APROBADO",
@@ -330,12 +329,10 @@ const ES: Record<string, string> = {
   "reset_confirm":    "¿Estás seguro? Esta acción no se puede deshacer.",
 
   // ── Account status screens ────────────────────────────────────────────────
-  "account_expelled": "Cuenta expulsada",
   "account_suspended":"Cuenta suspendida",
   "awaiting_approval":"Esperando aprobación",
   "account_pending_msg": "Tu cuenta está pendiente de aprobación del administrador.",
   "billing_setup_msg":"Completa tu configuración de facturación para activar tu cuenta.",
-  "expelled_msg":     "Tu cuenta ha sido expulsada. Ya no tienes acceso a Bartendaz Pro.",
   "suspended_msg":    "Tu suscripción ha vencido o tu cuenta ha sido suspendida. Renueva tu suscripción o contacta al admin.",
 
   // ── Errors / toasts ───────────────────────────────────────────────────────

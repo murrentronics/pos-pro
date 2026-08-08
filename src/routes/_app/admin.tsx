@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Check, X, Ban, UserMinus, RotateCw, RotateCcw, Trash2, Loader2,
+  Check, X, Ban, RotateCw, RotateCcw, Trash2, Loader2,
   ShieldAlert, Search, ImagePlus, Link as LinkIcon, LayoutGrid, CalendarClock, AlertCircle,
   Youtube, Key, BarChart3, RefreshCw, CheckCircle2, XCircle, Zap, Camera, Plus, GitBranch,
   DollarSign, TrendingUp, Calendar, History,
@@ -39,7 +39,7 @@ type Row = {
   username: string;
   email: string;
   role: string;
-  status: "pending" | "approved" | "suspended" | "expelled" | "rejected";
+  status: "pending" | "approved" | "suspended" | "rejected";
   wallet_balance: number;
   created_at: string;
   phone: string | null;
@@ -397,7 +397,6 @@ export default function AdminPage() {
       // Master account always appears in approved list
       approved: filtered.filter((r) => (r.status === "approved" || MASTER_ACCOUNT_EMAILS.includes(r.email)) && !r.is_bar_account),
       suspended: filtered.filter((r) => r.status === "suspended" && !r.is_bar_account && !MASTER_ACCOUNT_EMAILS.includes(r.email)),
-      expelled: filtered.filter((r) => r.status === "expelled"),
       rejected: filtered.filter((r) => r.status === "rejected"),
     };
   }, [rows, q]);
@@ -646,7 +645,7 @@ export default function AdminPage() {
           </div>
 
           <Tabs defaultValue="pending">
-            <TabsList className="grid grid-cols-5 w-full">
+            <TabsList className="grid grid-cols-4 w-full">
               <TabsTrigger value="pending" className="gap-1 sm:gap-2 relative">
                 <span className="hidden sm:inline">Pending</span>
                 <span className="sm:hidden text-lg">⏳</span>
@@ -674,10 +673,6 @@ export default function AdminPage() {
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="expelled" className="gap-1 sm:gap-2">
-                <span className="hidden sm:inline">Expelled</span>
-                <span className="sm:hidden text-lg">🚫</span>
-              </TabsTrigger>
               <TabsTrigger value="rejected" className="gap-1 sm:gap-2">
                 <span className="hidden sm:inline">Rejected</span>
                 <span className="sm:hidden text-lg">✖</span>
@@ -689,7 +684,7 @@ export default function AdminPage() {
               </TabsTrigger>
             </TabsList>
 
-            {(["pending", "approved", "suspended", "expelled", "rejected"] as const).map((k) => (
+            {(["pending", "approved", "suspended", "rejected"] as const).map((k) => (
               <TabsContent key={k} value={k} className="mt-4 space-y-3">
                 {buckets[k].length === 0 && (
                   <p className="text-sm text-muted-foreground py-8 text-center">No {k} users</p>
@@ -778,9 +773,6 @@ export default function AdminPage() {
                             <Button size="sm" variant="outline" onClick={() => act(() => setUserStatus(r.id, "suspended"), "Suspended")}>
                               <Ban className="h-4 w-4 mr-1" /> Suspend
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => act(() => setUserStatus(r.id, "expelled"), "Expelled")}>
-                              <UserMinus className="h-4 w-4 mr-1" /> Expel
-                            </Button>
                             <Button size="sm" variant="destructive" onClick={async () => {
                               const ok = await confirm({
                                 title: `Delete ${r.username}?`,
@@ -803,9 +795,6 @@ export default function AdminPage() {
                               title="Clear subscription and send back to pending">
                               <RotateCcw className="h-4 w-4 mr-1" /> Send to Pending
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => act(() => setUserStatus(r.id, "expelled"), "Expelled")}>
-                              <UserMinus className="h-4 w-4 mr-1" /> Expel
-                            </Button>
                             <Button size="sm" variant="destructive" onClick={async () => {
                               const ok = await confirm({
                                 title: `Delete ${r.username}?`,
@@ -818,9 +807,6 @@ export default function AdminPage() {
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </>
-                        )}
-                        {k === "expelled" && (
-                          <span className="text-xs text-muted-foreground">Account expelled - no actions available</span>
                         )}
                         {k === "rejected" && (
                           <>
