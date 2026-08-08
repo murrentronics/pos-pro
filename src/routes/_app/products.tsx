@@ -1896,6 +1896,11 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   });
   const [category, setCategory] = useState<string>(editProduct?.category ?? "");
   const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
+  // Base unit for the selling price (e.g. "1 lb", "1 each") — applies to all non-liquor/cigarette categories
+  const UNIT_OPTIONS = ["each","lb","lbs","oz","kg","g","bag","bunch","bundle","lot","box","pack","case","dozen","pallet"];
+  const baseUnitEntry = editProduct?.bottle_variations?.find((v) => v.key === "_baseunit");
+  const [baseUnitQty,  setBaseUnitQty]  = useState(baseUnitEntry ? String(baseUnitEntry.units_consumed) : "1");
+  const [baseUnit,     setBaseUnit]     = useState(baseUnitEntry?.label ?? "each");
   // Generic product variations (eBay-style: qty + unit + price) — for all categories
   type ProdVar = { id?: string; name: string; price: string; qty: string };
   const [prodVars, setProdVars] = useState<ProdVar[]>(() => {
@@ -1954,8 +1959,11 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
 
   // ── numpad ───────────────────────────────────────────────────────────────
   const handleNumpad = (k: string) => {
-    const setter  = activeNumpad === "cost" ? setCostPrice : setPrice;
-    const current = activeNumpad === "cost" ? costPrice    : price;
+    let setter: (v: string) => void;
+    let current: string;
+    if (activeNumpad === "cost")         { setter = setCostPrice;    current = costPrice; }
+    else if (activeNumpad === "baseunitqty") { setter = setBaseUnitQty; current = baseUnitQty; }
+    else                                 { setter = setPrice;        current = price; }
     if (k === "⌫") { setter(current.slice(0, -1)); return; }
     if (k === ".") { if (!current.includes(".")) setter(current + "."); return; }
     const dotIdx = current.indexOf(".");
@@ -2009,11 +2017,20 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
     }
 
     const costVal = parseFloat(costPrice) || 0;
+    // Build the _baseunit entry for bottle_variations (only for non-liquor/cigarette categories)
+    const isLiquorOrCig = category === "liquor" || category === "cigarettes";
+    const buildBaseUnitEntry = () =>
+      !isLiquorOrCig && baseUnit && baseUnitQty
+        ? [{ key: "_baseunit", label: baseUnit, units_consumed: parseFloat(baseUnitQty) || 1, price: 0 }]
+        : [];
 
     if (isEdit && editProduct) {
+      // Preserve existing bottle_variations (shot/special/etc.) and replace _baseunit
+      const existingBv = (editProduct.bottle_variations ?? []).filter((v) => v.key !== "_baseunit");
+      const newBv = [...buildBaseUnitEntry(), ...existingBv];
       const { data: updated, error } = await supabase
         .from("products")
-        .update({ name: name.trim(), price: Number(price), cost_price: costVal, image_url, category })
+        .update({ name: name.trim(), price: Number(price), cost_price: costVal, image_url, category, bottle_variations: newBv.length ? newBv : null })
         .eq("id", editProduct.id).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
@@ -2030,9 +2047,10 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
       if (!skipStockRef.current)
         onSaved({ ...updated, units_per_item: updated.units_per_item ?? 0, bottle_variations: (updated.bottle_variations ?? null) as any });
     } else {
+      const newBv = buildBaseUnitEntry();
       const { data: inserted, error } = await supabase.from("products").insert({
         owner_id: ownerId, name: name.trim(), price: Number(price), cost_price: costVal,
-        bottle_variations: null, image_url, category,
+        bottle_variations: newBv.length ? newBv : null, image_url, category,
       }).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
@@ -2044,7 +2062,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
         if (rows.length > 0) await supabase.from("product_variations").insert(rows);
       }
       toast.success("Item added");
-      setName(""); setPrice(""); setCostPrice(""); setCategory(""); setFile(null); setPreview(null); setTemplateUrl(null); setProdVars([]);
+      setName(""); setPrice(""); setCostPrice(""); setCategory(""); setFile(null); setPreview(null); setTemplateUrl(null); setProdVars([]); setBaseUnitQty("1"); setBaseUnit("each");
       onDone();
       if (!skipStockRef.current)
         onSaved({ ...inserted, units_per_item: inserted.units_per_item ?? 0, bottle_variations: (inserted.bottle_variations ?? null) as any });
@@ -2140,6 +2158,45 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
               <InlineNumpad forField="cost" />
               <InlineNumpad forField="selling" />
             </div>
+
+            {/* Base unit — how much do you get for the sell price above? (non-liquor, non-cigarette) */}
+            {category !== "liquor" && category !== "cigarettes" && (
+              <div className="rounded-xl border border-border p-3 space-y-2" style={{ background: "var(--gradient-card)" }}>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black">📦 Sell price is per</span>
+                  <span className="text-[10px] text-muted-foreground">(defines the base unit for variations)</span>
+                </div>
+                <div className="flex gap-2 items-center">
+                  {/* Qty tap-to-numpad */}
+                  <div
+                    className={`h-9 w-20 rounded-lg border flex items-center justify-center px-3 cursor-pointer transition font-black text-sm ${activeNumpad === "baseunitqty" ? "border-primary bg-muted/50 text-primary" : "border-border bg-muted/30 text-muted-foreground"}`}
+                    onClick={() => setActiveNumpad(activeNumpad === "baseunitqty" ? null : "baseunitqty")}
+                  >
+                    {baseUnitQty || "1"}
+                  </div>
+                  {/* Unit dropdown */}
+                  <select
+                    value={baseUnit}
+                    onChange={(e) => setBaseUnit(e.target.value)}
+                    className="flex-1 h-9 rounded-lg border border-border bg-muted px-2 text-sm font-bold outline-none cursor-pointer"
+                  >
+                    {UNIT_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                  {/* Preview */}
+                  {price && (
+                    <span className="text-xs font-black shrink-0" style={{ color: "var(--primary)" }}>
+                      = ${parseFloat(price || "0").toFixed(2)}
+                    </span>
+                  )}
+                </div>
+                <InlineNumpad forField="baseunitqty" />
+                {baseUnitQty && parseFloat(baseUnitQty) > 1 && price && parseFloat(price) > 0 && (
+                  <p className="text-[10px]" style={{ color: "#86efac" }}>
+                    ${(parseFloat(price) / parseFloat(baseUnitQty)).toFixed(2)} per single {baseUnit}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Shots per Bottle + Shot Price — side by side, liquor only */}
             {category === "liquor" && (

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
+﻿import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
@@ -23,17 +23,9 @@ import {
   type CachedProduct,
 } from "@/lib/offlineCache";
 
-type BottleVariation = { key: string; label: string; units_consumed: number; price: number };
 type ProdVariation = { id: string; name: string; price: number; sort_order: number };
-type Product = { id: string; name: string; price: number; cost_price?: number; image_url: string | null; category?: string; stock_qty?: number; units_per_item?: number; bottle_variations?: BottleVariation[] | null; product_variations?: ProdVariation[] | null };
+type Product = { id: string; name: string; price: number; cost_price?: number; image_url: string | null; category?: string; stock_qty?: number; units_per_item?: number; bottle_variations?: { key: string; label: string; units_consumed: number; price: number }[] | null; product_variations?: ProdVariation[] | null };
 type CartItem = Product & { qty: number; _discount?: number; _originalPrice?: number };
-type OpenedBottle = {
-  id: string; owner_id: string; product_id: string; product_name: string;
-  shot_price: number; shots_sold: number; revenue: number;
-  opened_at: string; finished_at: string | null; status: string;
-  variation_counts: Record<string, number>;
-  units_consumed: number;
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Memoized product card — only re-renders when its own data actually changes.
@@ -169,6 +161,11 @@ function ItemModal({
   // New eBay-style product_variations (qty + unit + price)
   const prodVars = (product.product_variations ?? []).filter((v) => v.name.trim());
   const hasProdVars = prodVars.length > 0;
+  // Base unit label from _baseunit entry in bottle_variations (e.g. "1 lb")
+  const baseUnitEntry = (product.bottle_variations ?? []).find((v) => v.key === "_baseunit");
+  const baseUnitLabel = baseUnitEntry
+    ? `${baseUnitEntry.units_consumed > 1 ? baseUnitEntry.units_consumed + " " : ""}${baseUnitEntry.label}`
+    : null;
 
   // counts: cartKey → qty selected in this session
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -259,7 +256,9 @@ function ItemModal({
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-black text-base leading-tight">{product.name}</p>
-            <p className="font-black text-sm mt-0.5" style={{ color: "#86efac" }}>${Number(product.price).toFixed(2)}</p>
+            <p className="font-black text-sm mt-0.5" style={{ color: "#86efac" }}>
+              ${Number(product.price).toFixed(2)}{baseUnitLabel ? ` / ${baseUnitLabel}` : ""}
+            </p>
             {product.stock_qty !== undefined && (
               <p className="text-[11px] text-muted-foreground">{product.stock_qty} in stock</p>
             )}
@@ -412,7 +411,9 @@ function ItemModal({
           ) : (
             /* No variations — just a qty stepper */
             <div className="flex items-center justify-between py-4">
-              <p className="font-black text-muted-foreground text-sm uppercase tracking-wider">Quantity</p>
+              <p className="font-black text-muted-foreground text-sm uppercase tracking-wider">
+                {baseUnitLabel ? `Qty (${baseUnitLabel} each)` : "Quantity"}
+              </p>
               <div className="flex items-center gap-4">
                 <button
                   type="button"
@@ -530,13 +531,6 @@ export default function RegisterPage() {
     const isManager = profile.role === "manager" || (profile as any)?.job_title === "manager";
     if (isManager) {
       nav("/products");
-    }
-  }, [profile]);
-
-  // Machines-only accounts have no register page — send them to /machines
-  useEffect(() => {
-    if ((profile as any)?.is_machines_account) {
-      nav("/machines");
     }
   }, [profile]);
 
@@ -948,354 +942,6 @@ export default function RegisterPage() {
   // ── Item detail modal (opens for every product tap) ─────────────────────
   const [varPickerProduct, setVarPickerProduct] = useState<Product | null>(null);
 
-  // ── Opened Bottles state ──────────────────────────────────────────────────
-  const [openedBottles, setOpenedBottles]       = useState<OpenedBottle[]>([]);
-  const [bottlesModalOpen, setBottlesModalOpen] = useState(false);
-  const [shotModalOpen, setShotModalOpen]       = useState(false);
-  const [shotStep, setShotStep]                 = useState<"select" | "variation">("select");
-  const [showNewBottleGrid, setShowNewBottleGrid] = useState(false);
-  const [shotBottleId, setShotBottleId]         = useState<string>("");
-  const [shotPrice, setShotPrice]               = useState("");
-  const [selectedVariation, setSelectedVariation] = useState<BottleVariation | null>(null);
-  const selectedBottleRef                       = useRef<HTMLDivElement>(null);
-  const [openNewMode, setOpenNewMode]           = useState(false);   // true = picking a new bottle from products
-  const [newBottleProductId, setNewBottleProductId] = useState<string>("");
-  const [newBottlePrice, setNewBottlePrice]     = useState("");
-  const [bottleBusy, setBottleBusy]             = useState(false);
-  const [markEmptyBottleId, setMarkEmptyBottleId] = useState<string | null>(null); // confirm modal
-  const [cancelBottleId, setCancelBottleId]       = useState<string | null>(null); // confirm modal
-
-  // ΓöÇΓöÇ Opened Packs state (cigarettes retail + rolling paper) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
-  type OpenedPack = {
-    id: string; owner_id: string; product_id: string; product_name: string;
-    pack_type: "retail" | "paper"; unit_price: number; units_sold: number;
-    revenue: number; opened_at: string; finished_at: string | null; status: string;
-  };
-  const [openedPacks, setOpenedPacks]             = useState<OpenedPack[]>([]);
-  const [packModalOpen, setPackModalOpen]         = useState(false);
-  const [packType, setPackType]                   = useState<"retail" | "paper">("retail");
-  const [packStep, setPackStep]                   = useState<"select" | "price">("select");
-  const [packPackId, setPackPackId]               = useState<string>("");
-  const [packPrice, setPackPrice]                 = useState("");
-  const [showNewPackGrid, setShowNewPackGrid]     = useState(false);
-  const [packBusy, setPackBusy]                   = useState(false);
-  const [markEmptyPackId, setMarkEmptyPackId]     = useState<string | null>(null);
-  const [cancelPackId, setCancelPackId]           = useState<string | null>(null);
-  const [packQty, setPackQty]                     = useState(1);
-  const [packSellMode, setPackSellMode]           = useState<"retail" | "special">("retail");
-  const [specialQty, setSpecialQty]               = useState(2);
-  const [specialPrice, setSpecialPrice]           = useState("");
-  // Packs opened mid-order that need reverting if order is cancelled
-  const [packsPendingClose, setPacksPendingClose] = useState<string[]>([]);
-
-  // Called after successful order — close packs that hit capacity
-  const closeFullPacksAfterOrder = async (completedCart: CartItem[]) => {
-    const packQtys = new Map<string, number>();
-    for (const item of completedCart) {
-      const pid = (item as any)._pack_id as string | undefined;
-      if (!pid) continue;
-      const units = (item as any)._pack_units ?? item.qty;
-      packQtys.set(pid, (packQtys.get(pid) ?? 0) + units);
-    }
-    for (const [packId, soldQty] of packQtys) {
-      const pack = openedPacks.find((p) => p.id === packId);
-      if (!pack) continue;
-      const prod = products.find((p) => p.id === pack.product_id);
-      const cap = prod?.units_per_item ?? 0;
-      if (cap > 0 && (pack.units_sold + soldQty) >= cap) {
-        await handleFinishPack(packId);
-      }
-    }
-    setPacksPendingClose([]);
-  };
-
-  // Called when order is cancelled/cleared — revert any packs opened mid-order
-  const revertPendingPacks = async () => {
-    for (const packId of packsPendingClose) {
-      await handleCancelPack(packId);
-    }
-    setPacksPendingClose([]);
-    for (const bottleId of bottlesPendingCancel) {
-      await handleCancelBottle(bottleId);
-    }
-    setBottlesPendingCancel([]);
-  };
-
-  const cigaretteProducts = useMemo(() => {
-    const openedProductIds = new Set(openedPacks.map(p => p.product_id));
-    return products.filter((p) => {
-      if ((p.category || "beers") !== "cigarettes") return false;
-      if (openedProductIds.has(p.id)) return false;
-      // Require retail pricing to be set up (non-zero retail price variation)
-      const hasValidRetailPrice = (p.bottle_variations ?? []).some((v) => v.key === "retail" && v.price > 0);
-      if (!hasValidRetailPrice) return false;
-      const inCart = cart.filter(c => c.id === p.id).reduce((s, c) => s + c.qty, 0);
-      return (p.stock_qty ?? 0) - inCart > 0;
-    });
-  }, [products, openedPacks, cart]);
-
-  const fetchOpenedPacks = useCallback(async () => {
-    const id = ownerIdRef.current;
-    if (!id) return;
-    const { data } = await supabase
-      .from("opened_packs")
-      .select("*")
-      .eq("owner_id", id)
-      .eq("status", "open")
-      .order("opened_at", { ascending: false });
-    setOpenedPacks((data ?? []) as OpenedPack[]);
-  }, []);
-
-  useEffect(() => {
-    if (!ownerId) return;
-    fetchOpenedPacks();
-    const ch = supabase
-      .channel(`opened-packs-${ownerId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "opened_packs", filter: `owner_id=eq.${ownerId}` },
-        () => fetchOpenedPacks())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [ownerId, fetchOpenedPacks]);
-
-  const addPackUnit = async () => {
-    const pack = openedPacks.find((p) => p.id === packPackId);
-    if (!pack) { toast.error("Select a pack"); return; }
-    const product = products.find((p) => p.id === pack.product_id);
-    // Use the retail variation price (set by owner in Items page) not the pack sale price
-    const retailVariation = (product?.bottle_variations ?? []).find((v) => v.key === "retail");
-    const unitPrice = retailVariation?.price ?? product?.price ?? 0;
-    if (unitPrice <= 0) { toast.error("No retail price set for this item — edit the product first"); return; }
-    const capacity = product?.units_per_item ?? 0;
-    const alreadySold = pack.units_sold;
-    const cartQtyForPack = cart.filter((c) => (c as any)._pack_id === pack.id).reduce((s, c) => s + c.qty, 0);
-    const remaining = capacity > 0 ? capacity - alreadySold - cartQtyForPack : Infinity;
-    const qtyToSell = capacity > 0 ? Math.min(packQty, remaining) : packQty;
-    if (qtyToSell <= 0) { toast.error("Pack is empty — open a new pack"); return; }
-    const cartId = `pack-${pack.id}-${Date.now()}`;
-    setCart((c) => [...c, {
-      id: cartId, name: `Retail: ${pack.product_name}`, price: unitPrice,
-      image_url: null, category: "cigarettes", qty: qtyToSell,
-      _pack_id: pack.id,
-    } as CartItem & { _pack_id: string }]);
-    // Close modal after adding so cashier can see the cash order button
-    setPackQty(1);
-    setPackSellMode("retail");
-    setPackStep("select");
-    setPackPackId("");
-    setPackPrice("");
-    setPackModalOpen(false);
-  };
-
-  const handleFinishPack = async (packId: string) => {
-    if (!profile) return;
-    setPackBusy(true);
-    const { error } = await supabase.rpc("finish_pack", { p_pack_id: packId, p_cashier_id: ownerId });
-    setPackBusy(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Pack marked empty — revenue recorded");
-    await fetchOpenedPacks();
-    refreshProfile();
-  };
-
-  const handleCancelPack = async (packId: string) => {
-    setPackBusy(true);
-    const { error } = await supabase.rpc("cancel_pack", { p_pack_id: packId });
-    setPackBusy(false);
-    if (error) { toast.error(error.message); return; }
-    // Remove any retail cart items that were staged from this pack
-    setCart((c) => c.filter((item) => (item as any)._pack_id !== packId));
-    toast.success("Pack cancelled — stock restored");
-    await fetchOpenedPacks();
-    await fetchProducts();
-  };
-
-  const liquorProducts = useMemo(
-    () => {
-      // Count how many bottles of each product are already open
-      const openedBottleCounts = new Map<string, number>();
-      for (const b of openedBottles) {
-        openedBottleCounts.set(b.product_id, (openedBottleCounts.get(b.product_id) ?? 0) + 1);
-      }
-      return products.filter((p) => {
-        if ((p.category || "beers") !== "liquor") return false;
-        // Require shot pricing to be set up (non-zero shot price variation)
-        const hasValidShotPrice = (p.bottle_variations ?? []).some((v) => v.key === "shot" && v.price > 0);
-        if (!hasValidShotPrice) return false;
-        // All non-shot variations must also have a price set
-        const hasIncompleteVariation = (p.bottle_variations ?? [])
-          .filter((v) => v.key !== "shot")
-          .some((v) => v.label && v.units_consumed > 0 && v.price <= 0);
-        if (hasIncompleteVariation) return false;
-        // Subtract how many are already in the cart as whole-bottle sales
-        const inCart = cart.filter(c => c.id === p.id).reduce((s, c) => s + c.qty, 0);
-        // Subtract open bottles from available stock so we don't open more than we have
-        const openedCount = openedBottleCounts.get(p.id) ?? 0;
-        return (p.stock_qty ?? 0) - inCart - openedCount > 0;
-      });
-    },
-    [products, openedBottles, cart]
-  );
-
-  const fetchOpenedBottles = useCallback(async () => {
-    const id = ownerIdRef.current;
-    if (!id) return;
-    const { data } = await supabase
-      .from("opened_bottles")
-      .select("*")
-      .eq("owner_id", id)
-      .eq("status", "open")
-      .order("opened_at", { ascending: false });
-    setOpenedBottles((data ?? []) as OpenedBottle[]);
-  }, []);
-
-  useEffect(() => {
-    if (!ownerId) return;
-    fetchOpenedBottles();
-    const ch = supabase
-      .channel(`opened-bottles-${ownerId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "opened_bottles", filter: `owner_id=eq.${ownerId}` },
-        () => fetchOpenedBottles()
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [ownerId, fetchOpenedBottles]);
-
-  /** Open a new bottle — deducts 1 stock, creates opened_bottles row */
-  const handleOpenNewBottle = async () => {
-    if (!newBottleProductId || !newBottlePrice) return;
-    setBottleBusy(true);
-    const id = ownerIdRef.current;
-    if (!id) { setBottleBusy(false); return; }
-    const { error } = await supabase.rpc("open_bottle", {
-      p_owner_id: id,
-      p_product_id: newBottleProductId,
-      p_shot_price: parseFloat(newBottlePrice),
-    });
-    setBottleBusy(false);
-    if (error) { toast.error(error.message); return; }
-    await fetchOpenedBottles();
-    await fetchProducts();
-    // Auto-select the newly opened bottle
-    const { data } = await supabase
-      .from("opened_bottles")
-      .select("id")
-      .eq("owner_id", id)
-      .eq("product_id", newBottleProductId)
-      .eq("status", "open")
-      .order("opened_at", { ascending: false })
-      .limit(1);
-    if (data?.[0]) setShotBottleId(data[0].id);
-    setShotPrice(newBottlePrice);
-    setShotStep("variation");
-    setOpenNewMode(false);
-    setNewBottleProductId("");
-    setNewBottlePrice("");
-  };
-
-  // Bottles opened mid-order that need reverting if order is cancelled
-  const [bottlesPendingCancel, setBottlesPendingCancel] = useState<string[]>([]);
-  const [shotBuffer, setShotBuffer] = useState<Array<{ variation: BottleVariation; qty: number }>>([]);
-
-  /** Add a shot/variation to the cart from an open bottle */
-  const addShotToBuffer = (variation: BottleVariation) => {
-    setShotBuffer((buf) => {
-      const existing = buf.find((b) => b.variation.key === variation.key);
-      if (existing) return buf.map((b) => b.variation.key === variation.key ? { ...b, qty: b.qty + 1 } : b);
-      return [...buf, { variation, qty: 1 }];
-    });
-  };
-
-  const removeShotFromBuffer = (varKey: string) => {
-    setShotBuffer((buf) => {
-      const existing = buf.find((b) => b.variation.key === varKey);
-      if (!existing) return buf;
-      if (existing.qty <= 1) return buf.filter((b) => b.variation.key !== varKey);
-      return buf.map((b) => b.variation.key === varKey ? { ...b, qty: b.qty - 1 } : b);
-    });
-  };
-
-  const bufferUnitsConsumed = shotBuffer.reduce((s, b) => s + b.variation.units_consumed * b.qty, 0);
-  const bufferTotal = shotBuffer.reduce((s, b) => s + b.variation.price * b.qty, 0);
-
-  const commitShotBuffer = () => {
-    const bottle = openedBottles.find((b) => b.id === shotBottleId);
-    if (!bottle || shotBuffer.length === 0) return;
-    const product = products.find((p) => p.id === bottle.product_id);
-    const capacity = product?.units_per_item ?? 0;
-    const isAtCapacity = capacity > 0 && bottle.units_consumed >= capacity;
-
-    for (const { variation, qty } of shotBuffer) {
-      const isExtra = isAtCapacity;
-      const itemName = isExtra
-        ? `Drink (extras): ${bottle.product_name}`
-        : `${variation.label}: ${bottle.product_name}`;
-      setCart((c) => [...c, {
-        id: `shot-${bottle.id}-${variation.key}-${Date.now()}-${Math.random()}`,
-        name: itemName,
-        price: variation.price,
-        image_url: null,
-        category: "liquor",
-        qty,
-        _bottle_id: bottle.id,
-        _units_consumed: variation.units_consumed * qty,
-        _variation_key: variation.key,
-      } as CartItem & { _bottle_id: string; _units_consumed: number; _variation_key: string }]);
-    }
-
-    // NO local openedBottles state update here — that only happens at order confirm
-    setShotModalOpen(false);
-    setShotStep("select");
-    setShotBottleId("");
-    setShotPrice("");
-    setSelectedVariation(null);
-    setShotBuffer([]);
-  };
-
-  const cancelShotBuffer = () => {
-    // Just close — no DB write, no cart changes
-    setShotModalOpen(false);
-    setShotStep("select");
-    setShotBottleId("");
-    setShotPrice("");
-    setSelectedVariation(null);
-    setShotBuffer([]);
-  };
-
-  // Scroll to selected bottle when entering price step
-  useEffect(() => {
-    if (shotStep === "variation" && selectedBottleRef.current) {
-      setTimeout(() => {
-        selectedBottleRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 100);
-    }
-  }, [shotStep, shotBottleId]);
-  /** Cancel an open bottle — only if 0 shots sold, restores 1 stock */
-  const handleCancelBottle = async (bottleId: string) => {
-    setBottleBusy(true);
-    const { error } = await supabase.rpc("cancel_bottle", { p_bottle_id: bottleId });
-    setBottleBusy(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Bottle cancelled — stock restored");
-    await fetchOpenedBottles();
-    await fetchProducts();
-  };
-
-  const handleFinishBottle = async (bottleId: string) => {
-    if (!profile) return;
-    setBottleBusy(true);
-    const { error } = await supabase.rpc("finish_bottle", {
-      p_bottle_id:  bottleId,
-      p_cashier_id: ownerId,
-    });
-    setBottleBusy(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Bottle marked finished — revenue recorded");
-    await fetchOpenedBottles();
-    refreshProfile();
-  };
-
-
-
   return (
     <>
       {/* ── Float Modal (Open Store) ── */}
@@ -1511,62 +1157,6 @@ export default function RegisterPage() {
               </div>
             )}
 
-            {/* ── Shot button — liquor tab only (hidden in edit/sort mode) ── */}
-            {category === "liquor" && !barEditMode && (
-              <div className="mb-3">
-                <button
-                  onClick={() => {
-                    // If there's a currently selected bottle that is at capacity with 0 shots sold,
-                    // auto-open a new bottle instead of showing the same useless empty bottle.
-                    if (shotBottleId) {
-                      const curBottle = openedBottles.find((b) => b.id === shotBottleId);
-                      if (curBottle) {
-                        const curProd = products.find((p) => p.id === curBottle.product_id);
-                        const curCap = curProd?.units_per_item ?? 0;
-                        const isAtCap = curCap > 0 && curBottle.units_consumed >= curCap;
-                        if (isAtCap && curBottle.shots_sold === 0) {
-                          // Empty bottle with no shots sold — go straight to new bottle picker
-                          setShotModalOpen(true);
-                          setShowNewBottleGrid(true);
-                          return;
-                        }
-                      }
-                    }
-                    setShotModalOpen(true);
-                  }}
-                  className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-bold text-sm active:scale-[0.98] transition border"
-                  style={{ background: "rgba(var(--primary-rgb, 251 146 60) / 0.10)", borderColor: "rgba(var(--primary-rgb, 251 146 60) / 0.35)", color: "var(--primary)" }}
-                >
-                  {t("shot_from_bottle", "🥃 Drink from Opened Bottle")}
-                  {openedBottles.length > 0 && (
-                    <span className="h-5 min-w-[1.25rem] px-1 rounded-full flex items-center justify-center text-[10px] font-black text-primary-foreground"
-                      style={{ background: "var(--gradient-hero)" }}>
-                      {openedBottles.length}
-                    </span>
-                  )}
-                </button>
-              </div>
-            )}
-
-            {/* ── Cigarette pack button — cigarettes tab only (hidden in edit/sort mode) ── */}
-            {category === "cigarettes" && !barEditMode && (
-              <div className="mb-3">
-                <button
-                  onClick={() => { setPackModalOpen(true); setPackStep("select"); setPackPackId(""); setPackPrice(""); setPackQty(1); setShowNewPackGrid(false); }}
-                  className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-bold text-sm active:scale-[0.98] transition border"
-                  style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.10)", borderColor: "rgba(var(--primary-rgb,251 146 60)/0.35)", color: "var(--primary)" }}
-                >
-                  {t("retail_cigg_paper", "🚬 Retail Cigarette & Paper")}
-                  {openedPacks.length > 0 && (
-                    <span className="h-5 min-w-[1.25rem] px-1 rounded-full flex items-center justify-center text-[10px] font-black text-primary-foreground"
-                      style={{ background: "var(--gradient-hero)" }}>
-                      {openedPacks.length}
-                    </span>
-                  )}
-                </button>
-              </div>
-            )}
-
 
             {filtered.length === 0 && !loading ? (
               <div className="text-center py-20 text-muted-foreground">
@@ -1738,953 +1328,23 @@ export default function RegisterPage() {
           onDec={dec}
           onAdd={addToCart}
           onRemove={removeItem}
-          onClearCart={() => { setCart([]); localStorage.removeItem(`bartap-cart-${ownerId}`); revertPendingPacks(); }}
-          onClose={() => { setCashOpen(false); revertPendingPacks(); }}
+          onClearCart={() => { setCart([]); localStorage.removeItem(`bartap-cart-${ownerId}`); }}
+          onClose={() => { setCashOpen(false); }}
           ownerId={ownerId}
           onSuccess={async (paidAmt, changeAmt) => {
-            // Write bottle variation tracking (needs openedBottles state — not available in CashOverlay)
-            const shotItems = cart.filter((c) => (c as any)._bottle_id);
-            const bottleUpdates = new Map<string, { units_consumed: number; variation_counts: Record<string, number> }>();
-            for (const shot of shotItems) {
-              const bid = (shot as any)._bottle_id as string;
-              const vKey = (shot as any)._variation_key as string ?? "shot";
-              const unitsUsed = (shot as any)._units_consumed as number ?? shot.qty;
-              const ex = bottleUpdates.get(bid) ?? { units_consumed: 0, variation_counts: {} };
-              ex.units_consumed += unitsUsed;
-              ex.variation_counts[vKey] = (ex.variation_counts[vKey] ?? 0) + shot.qty;
-              bottleUpdates.set(bid, ex);
-            }
-            for (const [bottleId, update] of bottleUpdates) {
-              const bottle = openedBottles.find((b) => b.id === bottleId);
-              if (!bottle) continue;
-              const merged: Record<string, number> = { ...bottle.variation_counts };
-              for (const [k, v] of Object.entries(update.variation_counts)) merged[k] = (merged[k] ?? 0) + v;
-              await supabase.from("opened_bottles").update({ units_consumed: bottle.units_consumed + update.units_consumed, variation_counts: merged }).eq("id", bottleId);
-            }
-            closeFullPacksAfterOrder(cart);
-            setBottlesPendingCancel([]);
             setCart([]);
             localStorage.removeItem(`bartap-cart-${ownerId}`);
             setCashOpen(false);
             refreshProfile();
-            fetchOpenedBottles();
-            fetchOpenedPacks();
           }}
         />
-      )}
-
-      {/* ── Shot Modal — Step 1: Select Liquor (3-column card grid) ──── */}
-      {shotModalOpen && shotStep === "select" && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => { setShotModalOpen(false); setShotStep("select"); setShotPrice(""); setShotBottleId(""); setNewBottlePrice(""); setNewBottleProductId(""); setShowNewBottleGrid(false); }}>
-          <div className="w-full max-w-md rounded-t-3xl border border-border shadow-2xl"
-            style={{ background: "var(--gradient-card)" }}
-            onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 pt-5 pb-3">
-              <span className="text-base font-black">{t("select_liquor", "🥃 Select Liquor")}</span>
-              <button onClick={() => { setShotModalOpen(false); setShotStep("select"); setShotPrice(""); setShotBottleId(""); setNewBottlePrice(""); setNewBottleProductId(""); setShowNewBottleGrid(false); }}
-                className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="px-4 pb-5 space-y-4 max-h-[75vh] overflow-y-auto">
-
-              {!showNewBottleGrid ? (
-                <>
-                  {/* Currently open — 3-col card grid (exclude already-selected bottle) */}
-                  {openedBottles.filter((b) => b.id !== shotBottleId).length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Currently Open</p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {openedBottles.filter((b) => b.id !== shotBottleId).map((b) => {
-                          const prod = products.find(p => p.id === b.product_id);
-                          return (
-                            <div key={b.id} className="flex flex-col rounded-2xl overflow-hidden border border-border">
-                              {/* Top action bar — Mark Empty (shots > 0) OR Cancel (0 shots) */}
-                              {b.shots_sold > 0 ? (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setMarkEmptyBottleId(b.id); }}
-                                  className="w-full h-10 flex items-center justify-center font-black text-xs text-white active:opacity-80 transition shrink-0"
-                                  style={{ background: "#dc2626" }}
-                                >
-                                  Mark Empty
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setCancelBottleId(b.id); }}
-                                  disabled={bottleBusy}
-                                  className="w-full h-10 flex items-center justify-center font-black text-xs text-white active:opacity-80 transition disabled:opacity-40 shrink-0"
-                                  style={{ background: "#374151" }}
-                                >
-                                  ✗ Cancel
-                                </button>
-                              )}
-                              {/* Tap image area to sell a shot — blocked if owner hasn't set up shot prices */}
-                              {(() => {
-                                const hasShots = (prod?.bottle_variations ?? []).length > 0;
-                                const bCap = prod?.units_per_item ?? 0;
-                                const isEmptyNoShots = bCap > 0 && b.units_consumed >= bCap && b.shots_sold === 0;
-                                return hasShots ? (
-                                  <button
-                                    onClick={() => {
-                                      if (isEmptyNoShots) {
-                                        // Bottle is empty with 0 shots — skip to open new bottle
-                                        setShowNewBottleGrid(true);
-                                        return;
-                                      }
-                                      setShotBottleId(b.id); setShotPrice(b.shot_price ? String(b.shot_price) : ""); setShotStep("variation"); setShotModalOpen(false); setShowNewBottleGrid(false);
-                                    }}
-                                    className="aspect-[3/4] relative w-full active:scale-95 transition"
-                                    style={{ background: "var(--gradient-card)" }}>
-                                    {prod?.image_url ? <img src={productImageUrl(prod.image_url)!} alt="" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
-                                    <div className="absolute inset-0 flex items-center justify-center text-3xl" style={{ display: prod?.image_url ? "none" : "flex" }}>🍾</div>
-                                    {isEmptyNoShots && (
-                                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 px-2 text-center">
-                                        <span className="text-lg">🍾</span>
-                                        <span className="text-[9px] font-black text-amber-400 leading-tight">Tap to open new</span>
-                                      </div>
-                                    )}
-                                  </button>
-                                ) : (
-                                  <div
-                                    className="aspect-[3/4] relative w-full flex items-center justify-center"
-                                    style={{ background: "var(--gradient-card)" }}>
-                                    {prod?.image_url ? <img src={productImageUrl(prod.image_url)!} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/50 px-2 text-center">
-                                      <span className="text-lg">🔒</span>
-                                      <span className="text-[9px] font-black text-white/80 leading-tight">No shots set up by owner</span>
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                              <div className="px-1.5 py-1.5" style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.10)", borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)" }}>
-                                <div className="font-bold text-[11px] truncate leading-tight" style={{ color: "var(--primary)" }}>{b.product_name}</div>
-                                <div className="font-black text-xs mt-0.5" style={{ color: "var(--primary)" }}>${Number(b.revenue).toFixed(2)} made</div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* + Open New Bottle button */}
-                  <div className="pt-3">
-                  <button
-                    onClick={() => setShowNewBottleGrid(true)}
-                    className="w-full h-11 rounded-xl border-dashed border-2 flex items-center justify-center gap-2 font-bold text-sm transition active:scale-[0.98]"
-                    style={{ borderColor: "var(--primary)", color: "var(--primary)" }}
-                  >
-                    + Open New Bottle
-                  </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* Back button + inventory grid */}
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setShowNewBottleGrid(false)} className="text-muted-foreground hover:text-foreground transition">
-                      <X className="h-4 w-4" />
-                    </button>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Select from Inventory</p>
-                  </div>
-                  {liquorProducts.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-6">No liquor in stock.</p>
-                  ) : (
-                    <div className="grid grid-cols-3 gap-2">
-                      {liquorProducts.map((p) => (
-                        <button key={p.id}
-                          onClick={async () => {
-                            setBottleBusy(true);
-                            const ownId = ownerIdRef.current;
-                            if (!ownId) { setBottleBusy(false); return; }
-                            const shotVariation = (p.bottle_variations ?? []).find((v: BottleVariation) => v.key === "shot");
-                            const { error } = await supabase.rpc("open_bottle", {
-                              p_owner_id: ownId, p_product_id: p.id, p_shot_price: shotVariation?.price ?? 0,
-                            });
-                            if (error) { toast.error(error.message); setBottleBusy(false); return; }
-                            await fetchOpenedBottles();
-                            await fetchProducts();
-                            const { data } = await supabase.from("opened_bottles").select("id")
-                              .eq("owner_id", ownId).eq("product_id", p.id).eq("status", "open")
-                              .order("opened_at", { ascending: false }).limit(1);
-                            setBottleBusy(false);
-                            if (data?.[0]) {
-                              // Track for revert if order is cancelled
-                              setBottlesPendingCancel((prev) => [...prev, data[0].id]);
-                              // Go back to select step so cashier taps the newly opened bottle
-                              // — do NOT replace the previously selected bottle
-                              setShowNewBottleGrid(false);
-                            }
-                          }}
-                          disabled={bottleBusy}
-                          className="flex flex-col rounded-2xl overflow-hidden border border-border active:scale-95 transition disabled:opacity-50">
-                          <div className="aspect-[3/4] relative w-full" style={{ background: "var(--gradient-card)" }}>
-                            {p.image_url ? <img src={productImageUrl(p.image_url)!} alt="" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
-                            <div className="absolute inset-0 flex items-center justify-center text-3xl" style={{ display: p.image_url ? "none" : "flex" }}>🍾</div>
-                            <div className="absolute top-1 left-1 bg-black/70 rounded-full px-1.5 py-0.5"><span className="text-[9px] font-black text-white">{p.stock_qty}</span></div>
-                            {bottleBusy && <div className="absolute inset-0 flex items-center justify-center bg-black/40"><Loader2 className="h-6 w-6 animate-spin text-white" /></div>}
-                          </div>
-                          <div className="px-1.5 py-1.5" style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.10)", borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)" }}>
-                            <div className="font-bold text-[11px] truncate leading-tight" style={{ color: "var(--primary)" }}>{p.name}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Item Detail Modal ─────────────────────────────────────────────── */}
-      {varPickerProduct && (
-        <ItemModal
-          product={varPickerProduct}
-          onClose={() => setVarPickerProduct(null)}
-          onAddToOrder={(lines) => {
-            setCart((c) => {
-              let next = [...c];
-              for (const line of lines) {
-                const ex = next.find((i) => (i as any)._varKey === line.cartKey);
-                if (ex) {
-                  next = next.map((i) => (i as any)._varKey === line.cartKey ? { ...i, qty: i.qty + line.qty } : i);
-                } else {
-                  next = [...next, { ...varPickerProduct, id: line.cartKey, name: line.name, price: line.price, qty: line.qty, _varKey: line.cartKey } as CartItem & { _varKey: string }];
-                }
-              }
-              return next;
-            });
-            setVarPickerProduct(null);
-          }}
-        />
-      )}
-
-      {/* ── Shot Step 2: Variation picker (buffer — modal stays open) ── */}
-      {shotStep === "variation" && shotBottleId && (() => {
-        const bottle = openedBottles.find((b) => b.id === shotBottleId);
-        const product = products.find((p) => p.id === bottle?.product_id);
-        const capacity = product?.units_per_item ?? 0;
-        const vars = product?.bottle_variations ?? [];
-        const consumed = bottle?.units_consumed ?? 0;
-        // Units already committed to cart (from previous Add to Order taps this session)
-        const cartUnitsForBottle = cart
-          .filter((c) => (c as any)._bottle_id === shotBottleId)
-          .reduce((s, c) => s + ((c as any)._units_consumed ?? 0), 0);
-        const effectiveConsumed = consumed + cartUnitsForBottle + bufferUnitsConsumed;
-        const remaining = capacity > 0 ? capacity - effectiveConsumed : null;
-        const atCapacity = capacity > 0 && effectiveConsumed >= capacity;
-        return (
-          <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/70 backdrop-blur-sm"
-            onClick={cancelShotBuffer}>
-            <div className="w-full max-w-md mx-auto rounded-t-3xl border border-border shadow-2xl flex flex-col max-h-[92dvh]"
-              style={{ background: "var(--gradient-card)" }}
-              onClick={(e) => e.stopPropagation()}>
-              {/* ── Opened bottles grid — tap to switch active bottle ── */}
-              <div className="px-4 pb-2">
-                <div className="grid grid-cols-3 gap-2">
-                  {openedBottles.map((b) => {
-                    const bProd = products.find(p => p.id === b.product_id);
-                    const bCap = bProd?.units_per_item ?? 0;
-                    const bCartUnits = cart.filter((c) => (c as any)._bottle_id === b.id).reduce((s, c) => s + ((c as any)._units_consumed ?? 0), 0);
-                    const bConsumed = b.units_consumed + bCartUnits;
-                    const bAtCap = bCap > 0 && bConsumed >= bCap;
-                    const isSelected = b.id === shotBottleId;
-                    return (
-                      <div key={b.id} ref={isSelected ? selectedBottleRef : null}>
-                        <button type="button"
-                          onClick={() => { setShotBottleId(b.id); setShotBuffer([]); }}
-                          className="w-full flex flex-col rounded-2xl overflow-hidden border active:scale-95 transition"
-                          style={{ borderWidth: isSelected ? 3 : 1, borderColor: isSelected ? "var(--primary)" : "transparent", background: "var(--gradient-card)" }}>
-                          <div className="aspect-[3/4] relative w-full">
-                            {bProd?.image_url ? <img src={productImageUrl(bProd.image_url)!} alt="" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
-                            <div className="absolute inset-0 flex items-center justify-center text-3xl" style={{ display: bProd?.image_url ? "none" : "flex" }}>🍾</div>
-                            {isSelected && <div className="absolute inset-0 flex items-center justify-center text-5xl font-black" style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.30)", color: "var(--primary)" }}>✔</div>}
-                            {bAtCap && !isSelected && <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(239,68,68,0.5)" }}><span className="text-[9px] font-black text-white uppercase">Empty</span></div>}
-                          </div>
-                          <div className="px-1.5 py-1.5" style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.10)", borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)" }}>
-                            <div className="font-bold text-[11px] truncate leading-tight" style={{ color: "var(--primary)" }}>{b.product_name}</div>
-                            <div className="font-black text-xs mt-0.5" style={{ color: bAtCap ? "#fca5a5" : "#86efac" }}>
-                              {bCap > 0 ? `${Math.max(0, bCap - bConsumed)} left` : `$${Number(b.revenue).toFixed(2)}`}
-                            </div>
-                          </div>
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              {/* Header — bottle name + capacity bar + cancel */}
-              <div className="flex items-center gap-3 px-4 pt-3 pb-2">
-                <div className="min-w-0 flex-1">
-                  <span className="font-black text-base">🥃 {bottle?.product_name}</span>
-                  {capacity > 0 && (
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="h-2 flex-1 rounded-full bg-muted/40 overflow-hidden">
-                        <div className="h-full rounded-full transition-all"
-                          style={{ width: `${Math.min(100, (effectiveConsumed / capacity) * 100)}%`, background: atCapacity ? "#f87171" : "var(--gradient-hero)" }} />
-                      </div>
-                      <span className="text-xs font-black shrink-0" style={{ color: atCapacity ? "#f87171" : "#86efac" }}>
-                        {atCapacity ? "⚠ Should be empty" : `${remaining} left`}
-                      </span>
-                    </div>
-                  )}
-                  {atCapacity && <p className="text-[10px] text-amber-400 font-semibold">Only extra drinks allowed</p>}
-                </div>
-                <button type="button" onClick={cancelShotBuffer}
-                  className="shrink-0 h-8 px-3 rounded-lg bg-muted text-xs font-bold text-muted-foreground flex items-center gap-1">
-                  <X className="h-3.5 w-3.5" /> Cancel
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-4 pb-2 space-y-2">
-                {vars.length > 0 ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      {vars.map((v) => {
-                        const isShot = v.key === "shot";
-                        const bufEntry = shotBuffer.find((b) => b.variation.key === v.key);
-                        const bufQty = bufEntry?.qty ?? 0;
-                        const wouldExceed = capacity > 0 && (effectiveConsumed + v.units_consumed) > capacity;
-                        const isDisabled = !isShot && wouldExceed;
-                        const maxCan = capacity > 0 && v.units_consumed > 0
-                          ? Math.floor((capacity - effectiveConsumed) / v.units_consumed)
-                          : 999;
-                        const countSold = bottle?.variation_counts?.[v.key] ?? 0;
-                        const isSelected = bufQty > 0;
-                        return (
-                          <div key={v.key} className="rounded-2xl border-2 overflow-hidden transition"
-                            style={{
-                              borderColor: isDisabled
-                                ? "rgba(255,255,255,0.06)"
-                                : isSelected ? "var(--primary)"
-                                : isShot && atCapacity ? "#fbbf24"
-                                : "rgba(255,255,255,0.12)",
-                              background: isSelected
-                                ? "rgba(var(--primary-rgb,251 146 60)/0.10)"
-                                : isShot && atCapacity ? "rgba(251,191,36,0.08)"
-                                : "rgba(255,255,255,0.04)",
-                              opacity: isDisabled ? 0.35 : 1,
-                            }}>
-                            <button type="button" disabled={isDisabled}
-                              onClick={() => addShotToBuffer(v)}
-                              className="w-full p-3 flex flex-col items-center gap-0.5 active:bg-white/5 transition">
-                              <span className="font-black text-sm">
-                                {isShot ? "Drink" : v.label}
-                                {isShot && atCapacity && <span className="text-amber-400 text-[10px] ml-1">extras</span>}
-                              </span>
-                              <span className="font-black text-lg" style={{ color: isDisabled ? "var(--muted-foreground)" : "#86efac" }}>
-                                ${v.price.toFixed(2)}
-                              </span>
-                              <span className="text-[10px] text-muted-foreground">
-                                {v.units_consumed} unit{v.units_consumed !== 1 ? "s" : ""}
-                                {!isDisabled && capacity > 0 && maxCan > 0 ? ` - ${maxCan} avail` : ""}
-                              </span>
-                              {countSold > 0 && (
-                                <span className="text-[10px]" style={{ color: "var(--primary)" }}>{countSold} sold</span>
-                              )}
-                            </button>
-                            {isSelected && (
-                              <div className="flex items-center justify-between px-3 pb-2 gap-2">
-                                <button type="button" onClick={() => removeShotFromBuffer(v.key)}
-                                  className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
-                                  style={{ background: "#ef4444" }}>−</button>
-                                <span className="font-black text-base" style={{ color: "var(--primary)" }}>{bufQty}</span>
-                                <button type="button"
-                                  disabled={isDisabled || (capacity > 0 && maxCan <= 0)}
-                                  onClick={() => addShotToBuffer(v)}
-                                  className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition disabled:opacity-30"
-                                  style={{ background: "var(--gradient-hero)" }}>+</button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {capacity > 0 && !atCapacity && shotBuffer.length > 0 && (
-                      <div className="rounded-xl border border-border/40 px-3 py-2" style={{ background: "rgba(255,255,255,0.02)" }}>
-                        <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Remaining after order</p>
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                          {vars.filter((v) => v.units_consumed > 0 && Math.floor((capacity - effectiveConsumed) / v.units_consumed) > 0).map((v) => (
-                            <span key={v.key} className="text-xs font-semibold" style={{ color: "#86efac" }}>
-                              {Math.floor((capacity - effectiveConsumed) / v.units_consumed)}x {v.label}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Open New Bottle — shown when bottle is at/near capacity */}
-                    {capacity > 0 && vars.some((v) => v.key !== "shot" && (effectiveConsumed + v.units_consumed) > capacity) && (
-                      <button type="button" disabled={bottleBusy}
-                        onClick={async () => {
-                          if (!product || !bottle) return;
-                          setBottleBusy(true);
-                          const shotVar = (product.bottle_variations ?? []).find((v: BottleVariation) => v.key === "shot");
-                          const { error } = await supabase.rpc("open_bottle", {
-                            p_owner_id: ownerIdRef.current, p_product_id: product.id, p_shot_price: shotVar?.price ?? 0,
-                          });
-                          setBottleBusy(false);
-                          if (error) { toast.error(error.message); return; }
-                          await fetchOpenedBottles();
-                          await fetchProducts();
-                          const { data } = await supabase.from("opened_bottles").select("id")
-                            .eq("owner_id", ownerIdRef.current!).eq("product_id", product.id)
-                            .eq("status", "open").order("opened_at", { ascending: false }).limit(1);
-                          if (data?.[0]) {
-                            const newBottleId = data[0].id;
-                            // Track new bottle for revert if order is cancelled
-                            setBottlesPendingCancel((prev) => [...prev, newBottleId]);
-                            // Commit any buffered shots from the current bottle directly into cart
-                            // WITHOUT closing the modal, then switch to the new bottle
-                            if (shotBuffer.length > 0) {
-                              const currentBottle = openedBottles.find((b) => b.id === shotBottleId);
-                              const currentProduct = products.find((p) => p.id === currentBottle?.product_id);
-                              const currentCapacity = currentProduct?.units_per_item ?? 0;
-                              const isAtCap = currentCapacity > 0 && (currentBottle?.units_consumed ?? 0) >= currentCapacity;
-                              for (const { variation, qty } of shotBuffer) {
-                                const isExtra = isAtCap;
-                                const itemName = isExtra
-                                  ? `Drink (extras): ${currentBottle?.product_name}`
-                                  : `${variation.label}: ${currentBottle?.product_name}`;
-                                setCart((c) => [...c, {
-                                  id: `shot-${shotBottleId}-${variation.key}-${Date.now()}-${Math.random()}`,
-                                  name: itemName,
-                                  price: variation.price,
-                                  image_url: null,
-                                  category: "liquor",
-                                  qty,
-                                  _bottle_id: shotBottleId,
-                                  _units_consumed: variation.units_consumed * qty,
-                                  _variation_key: variation.key,
-                                } as CartItem & { _bottle_id: string; _units_consumed: number; _variation_key: string }]);
-                              }
-                            }
-                            // Switch to the new bottle and clear buffer — modal stays open
-                            setShotBottleId(newBottleId);
-                            setShotBuffer([]);
-                          }
-                        }}
-                        className="w-full h-10 rounded-xl font-black text-sm border-2 flex items-center justify-center gap-2 transition active:scale-95"
-                        style={{ borderColor: "var(--primary)", color: "var(--primary)", background: "rgba(var(--primary-rgb,251 146 60)/0.08)" }}>
-                        {bottleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "🍾 Open New Bottle"}
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <div className="rounded-2xl border border-border/40 px-4 py-6 flex flex-col items-center gap-2 text-center"
-                    style={{ background: "rgba(255,255,255,0.03)" }}>
-                    <span className="text-3xl">🔒</span>
-                    <p className="font-black text-sm text-foreground">Shots not set up</p>
-                    <p className="text-xs text-muted-foreground leading-snug">
-                      The owner hasn't configured drink prices for this product. Ask the owner to add drink pricing in Product Settings.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {shotBuffer.length > 0 && (
-                <div className="px-4 pb-5 pt-1">
-                  <button type="button"
-                    onClick={async () => { await commitShotBuffer(); }}
-                    className="w-full h-12 rounded-xl font-black text-base text-primary-foreground active:scale-[0.98] transition flex items-center justify-center gap-2"
-                    style={{ background: "var(--gradient-hero)" }}>
-                    + Add to Order
-                    {bufferTotal > 0 && <span className="font-semibold text-sm opacity-80">— ${bufferTotal.toFixed(2)}</span>}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-      {/* Mark Empty Confirm Modal */}
-      {markEmptyBottleId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm px-6">
-          <div className="w-full max-w-xs rounded-2xl border border-border shadow-2xl overflow-hidden"
-            style={{ background: "var(--gradient-card)" }}>
-            <div className="px-5 pt-6 pb-4 text-center">
-              <div className="text-3xl mb-2">🍾</div>
-              <div className="font-black text-base">Mark Bottle Empty?</div>
-              <div className="text-xs text-muted-foreground mt-1">
-                This will close the bottle and record the wallet entry.
-              </div>
-            </div>
-            <div className="grid grid-cols-2 border-t border-border">
-              <button
-                onClick={() => setMarkEmptyBottleId(null)}
-                disabled={bottleBusy}
-                className="h-12 font-black text-sm border-r border-border transition active:bg-muted/60 disabled:opacity-40"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  const id = markEmptyBottleId;
-                  setMarkEmptyBottleId(null);
-                  await handleFinishBottle(id);
-                }}
-                disabled={bottleBusy}
-                className="h-12 font-black text-sm text-white transition active:opacity-80 disabled:opacity-40"
-                style={{ background: "#dc2626" }}
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ΓöÇΓöÇ Cancel Bottle Confirm Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
-      {cancelBottleId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm px-6">
-          <div className="w-full max-w-xs rounded-2xl border border-border shadow-2xl overflow-hidden"
-            style={{ background: "var(--gradient-card)" }}>
-            <div className="px-5 pt-6 pb-4 text-center">
-              <div className="text-3xl mb-2">🍾</div>
-              <div className="font-black text-base">Cancel Bottle?</div>
-              <div className="text-xs text-muted-foreground mt-1">
-                This will remove the bottle and restore 1 to stock.
-              </div>
-            </div>
-            <div className="grid grid-cols-2 border-t border-border">
-              <button
-                onClick={() => setCancelBottleId(null)}
-                disabled={bottleBusy}
-                className="h-12 font-black text-sm border-r border-border transition active:bg-muted/60 disabled:opacity-40"
-              >
-                Keep
-              </button>
-              <button
-                onClick={async () => {
-                  const id = cancelBottleId;
-                  setCancelBottleId(null);
-                  await handleCancelBottle(id);
-                }}
-                disabled={bottleBusy}
-                className="h-12 font-black text-sm text-white transition active:opacity-80 disabled:opacity-40"
-                style={{ background: "#374151" }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ΓöÇΓöÇ Opened Bottles Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
-      {bottlesModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => setBottlesModalOpen(false)}>
-          <div
-            className="w-full max-w-md rounded-t-3xl border border-border shadow-2xl pb-safe"
-            style={{ background: "var(--gradient-card)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 pt-5 pb-3">
-              <span className="text-base font-black">🍾 Opened Bottles</span>
-              <button onClick={() => setBottlesModalOpen(false)}
-                className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="px-5 pb-6 space-y-3 max-h-[70vh] overflow-y-auto">
-              {openedBottles.length === 0 ? (
-                <div className="text-center py-10 text-muted-foreground text-sm">No bottles currently open.</div>
-              ) : (
-                openedBottles.map((b) => {
-                  const prod = products.find(p => p.id === b.product_id);
-                  return (
-                  <div key={b.id}
-                    className="rounded-2xl border border-border overflow-hidden"
-                    style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.06)" }}>
-                    {/* Image + info row */}
-                    <div className="flex items-center gap-3 p-3">
-                      <div className="h-14 w-14 shrink-0 rounded-xl overflow-hidden bg-black/30 flex items-center justify-center">
-                        {prod?.image_url
-                          ? <img src={productImageUrl(prod.image_url)!} alt="" className="h-full w-full object-cover"
-                              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-                          : <span className="text-3xl">🍾</span>}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-black text-sm leading-tight truncate">{b.product_name}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          Opened {new Date(b.opened_at).toLocaleDateString("en-GB", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-muted-foreground">{b.shots_sold} shot{b.shots_sold !== 1 ? "s" : ""}</span>
-                          <span className="text-xs font-black text-primary">${Number(b.revenue).toFixed(2)} made</span>
-                        </div>
-                      </div>
-                    </div>
-                    {/* Single centered button — Cancel if 0 shots, Mark Bottle Empty if shots sold */}
-                    <div className="flex justify-center py-2">
-                      <button
-                        onClick={() => b.shots_sold === 0 ? handleCancelBottle(b.id) : handleFinishBottle(b.id)}
-                        disabled={bottleBusy}
-                        className="px-6 h-10 rounded-xl font-black text-sm text-white disabled:opacity-40 active:scale-[0.98] transition flex items-center justify-center gap-2"
-                        style={{ background: b.shots_sold === 0 ? "linear-gradient(135deg,#374151,#1f2937)" : "linear-gradient(135deg,#dc2626,#991b1b)" }}
-                      >
-                        {bottleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : b.shots_sold === 0 ? "✗ Cancel" : "Mark Bottle Empty"}
-                      </button>
-                    </div>
-                  </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ΓòÉΓòÉ PACK MODALS (cigarettes / rolling papers) ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */}
-
-      {/* ΓöÇΓöÇ Pack Step 1: Select open pack + open new ΓöÇΓöÇ */}
-      {packModalOpen && packStep === "select" && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => { setPackModalOpen(false); setPackStep("select"); setPackPrice(""); setPackPackId(""); setShowNewPackGrid(false); }}>
-          <div className="w-full max-w-md rounded-t-3xl border border-border shadow-2xl"
-            style={{ background: "var(--gradient-card)" }}
-            onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 pt-5 pb-3">
-              <span className="text-base font-black">{packType === "paper" ? t("select_cigg_paper", "🚬 Select Cigarette or Paper") : t("select_cigg_paper", "🚬 Select Cigarette or Paper")}</span>
-              <button onClick={() => { setPackModalOpen(false); setPackStep("select"); setPackPrice(""); setPackPackId(""); setShowNewPackGrid(false); }}
-                className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="px-4 pb-5 space-y-4 max-h-[75vh] overflow-y-auto">
-              {!showNewPackGrid ? (
-                <>
-                  {/* Currently open packs of this type */}
-                  {openedPacks.filter(p => p.pack_type === packType).length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Currently Open</p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {openedPacks.filter(p => p.pack_type === packType).map((pk) => {
-                          const prod = products.find(p => p.id === pk.product_id);
-                          return (
-                            <div key={pk.id} className="flex flex-col rounded-2xl overflow-hidden border border-border">
-                              {pk.units_sold > 0 ? (
-                                <button onClick={(e) => { e.stopPropagation(); setMarkEmptyPackId(pk.id); }}
-                                  className="w-full h-10 flex items-center justify-center font-black text-xs text-white active:opacity-80 transition shrink-0"
-                                  style={{ background: "#dc2626" }}>Mark Empty</button>
-                              ) : (
-                                <button onClick={(e) => { e.stopPropagation(); setCancelPackId(pk.id); }}
-                                  disabled={packBusy}
-                                  className="w-full h-10 flex items-center justify-center font-black text-xs text-white active:opacity-80 transition disabled:opacity-40 shrink-0"
-                                  style={{ background: "#374151" }}>✗ Cancel</button>
-                              )}
-                              <button
-                                onClick={() => { setPackPackId(pk.id); setPackPrice(pk.unit_price ? String(pk.unit_price) : ""); setPackStep("price"); setPackModalOpen(false); setShowNewPackGrid(false); }}
-                                className="aspect-[3/4] relative w-full active:scale-95 transition"
-                                style={{ background: "var(--gradient-card)" }}>
-                                {prod?.image_url ? <img src={productImageUrl(prod.image_url)!} alt="" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
-                                <div className="absolute inset-0 flex items-center justify-center text-3xl"
-                                  style={{ display: prod?.image_url ? "none" : "flex" }}>{packType === "paper" ? "📄" : "🚬"}</div>
-                              </button>
-                              <div className="px-1.5 py-1.5" style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.10)", borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)" }}>
-                                <div className="font-bold text-[11px] truncate leading-tight" style={{ color: "var(--primary)" }}>{pk.product_name}</div>
-                                <div className="font-black text-xs mt-0.5" style={{ color: "var(--primary)" }}>${Number(pk.revenue).toFixed(2)} made</div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                  <div className="pt-3">
-                    <button onClick={() => setShowNewPackGrid(true)}
-                      className="w-full h-11 rounded-xl border-dashed border-2 flex items-center justify-center gap-2 font-bold text-sm transition active:scale-[0.98]"
-                      style={{ borderColor: "var(--primary)", color: "var(--primary)" }}>
-                      + Open New Pack
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setShowNewPackGrid(false)} className="text-muted-foreground hover:text-foreground transition"><X className="h-4 w-4" /></button>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Select from Inventory</p>
-                  </div>
-                  {cigaretteProducts.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-6">No cigarettes in stock.</p>
-                  ) : (
-                    <div className="grid grid-cols-3 gap-2">
-                      {cigaretteProducts.map((p) => (
-                        <button key={p.id}
-                          onClick={async () => {
-                            setPackBusy(true);
-                            const ownId = ownerIdRef.current;
-                            if (!ownId) { setPackBusy(false); return; }
-                            const { error } = await supabase.rpc("open_pack", {
-                              p_owner_id: ownId, p_product_id: p.id, p_pack_type: packType, p_unit_price: 0,
-                            });
-                            if (error) { toast.error(error.message); setPackBusy(false); return; }
-                            await fetchOpenedPacks();
-                            await fetchProducts();
-                            const { data } = await supabase.from("opened_packs").select("id")
-                              .eq("owner_id", ownId).eq("product_id", p.id).eq("status", "open").eq("pack_type", packType)
-                              .order("opened_at", { ascending: false }).limit(1);
-                            setPackBusy(false);
-                            if (data?.[0]) { setPackPackId(data[0].id); setPackPrice(""); setPackStep("price"); setPackModalOpen(false); setShowNewPackGrid(false); }
-                          }}
-                          disabled={packBusy}
-                          className="flex flex-col rounded-2xl overflow-hidden border border-border active:scale-95 transition disabled:opacity-50">
-                          <div className="aspect-[3/4] relative w-full" style={{ background: "var(--gradient-card)" }}>
-                            {p.image_url ? <img src={productImageUrl(p.image_url)!} alt="" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
-                            <div className="absolute inset-0 flex items-center justify-center text-3xl"
-                              style={{ display: p.image_url ? "none" : "flex" }}>{packType === "paper" ? "📄" : "🚬"}</div>
-                            <div className="absolute top-1 left-1 bg-black/70 rounded-full px-1.5 py-0.5"><span className="text-[9px] font-black text-white">{p.stock_qty}</span></div>
-                            {packBusy && <div className="absolute inset-0 flex items-center justify-center bg-black/40"><Loader2 className="h-6 w-6 animate-spin text-white" /></div>}
-                          </div>
-                          <div className="px-1.5 py-1.5" style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.10)", borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)" }}>
-                            <div className="font-bold text-[11px] truncate leading-tight" style={{ color: "var(--primary)" }}>{p.name}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Pack Step 2: Price + Qty entry ── */}
-      {packStep === "price" && packPackId && (() => {
-        const pack = openedPacks.find((p) => p.id === packPackId);
-        const product = products.find((p) => p.id === pack?.product_id);
-        const capacity = product?.units_per_item ?? 0;
-        const alreadySold = pack?.units_sold ?? 0;
-        const remaining = capacity > 0 ? capacity - alreadySold : null;
-        return (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => { setPackStep("select"); setPackPackId(""); setPackPrice(""); setPackQty(1); }}>
-          <div className="w-full max-w-md rounded-t-3xl border border-border shadow-2xl"
-            style={{ background: "var(--gradient-card)" }}
-            onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 pt-5 pb-3">
-              <div>
-                <span className="font-black text-base">🚬 Add to Order</span>
-                {remaining !== null && (
-                  <p className="text-xs mt-0.5 font-semibold" style={{ color: remaining <= 3 ? "#fca5a5" : "#86efac" }}>
-                    {remaining} unit{remaining !== 1 ? "s" : ""} remaining
-                  </p>
-                )}
-              </div>
-              <button onClick={() => { setPackStep("select"); setPackPackId(""); setPackPrice(""); setPackQty(1); setPackModalOpen(true); }}
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 h-8 px-2 rounded-lg bg-muted">
-                <X className="h-3.5 w-3.5" /> Change
-              </button>
-            </div>
-
-            {/* Pack card grid — tap to add, shows qty banner, price from retail variation */}
-            <div className="px-4 pb-2">
-              <div className="grid grid-cols-3 gap-2">
-                {openedPacks.map((pk) => {
-                  const pkProd = products.find(p => p.id === pk.product_id);
-                  const pkCap = pkProd?.units_per_item ?? 0;
-                  const pkRemaining = pkCap > 0 ? pkCap - pk.units_sold : null;
-                  const unitPrice = (pkProd?.bottle_variations ?? []).find((v: any) => v.key === "retail")?.price ?? pkProd?.price ?? 0;
-                  // Cart qty already added for this pack
-                  const cartQtyForPack = cart
-                    .filter((c) => (c as any)._pack_id === pk.id)
-                    .reduce((s, c) => s + c.qty, 0);
-                  const effectiveRemaining = pkRemaining !== null ? pkRemaining - cartQtyForPack : null;
-                  const isSelected = pk.id === packPackId;
-                  const isOutOfStock = effectiveRemaining !== null && effectiveRemaining <= 0;
-                  return (
-                    <div key={pk.id} className="rounded-2xl border-2 overflow-hidden transition"
-                      style={{
-                        borderColor: isSelected ? "var(--primary)" : "rgba(255,255,255,0.1)",
-                        background: isSelected ? "rgba(var(--primary-rgb,251 146 60)/0.08)" : "var(--gradient-card)",
-                        opacity: isOutOfStock ? 0.4 : 1,
-                      }}>
-                      {/* Card image area — tap to select + add 1 */}
-                      <button type="button" disabled={isOutOfStock}
-                        onClick={() => {
-                          setPackPackId(pk.id);
-                          setPackQty((q) => {
-                            const next = isSelected ? q + 1 : 1;
-                            return effectiveRemaining !== null ? Math.min(next, effectiveRemaining) : next;
-                          });
-                          if (!isSelected) setPackQty(1);
-                        }}
-                        className="w-full relative active:bg-white/5 transition">
-                        <div className="aspect-[3/4] relative w-full">
-                          {pkProd?.image_url ? <img src={productImageUrl(pkProd.image_url)!} alt="" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
-                          <div className="absolute inset-0 flex items-center justify-center text-4xl"
-                            style={{ display: pkProd?.image_url ? "none" : "flex" }}>{pk.pack_type === "paper" ? "📄" : "🚬"}</div>
-                          {effectiveRemaining !== null && (
-                            <div className="absolute top-1.5 left-1.5 rounded-full px-1.5 py-0.5 bg-black/70">
-                              <span className="text-[10px] font-black text-white">{effectiveRemaining} left</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="px-2 py-1.5" style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.10)", borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)" }}>
-                          <div className="font-bold text-[11px] truncate" style={{ color: "var(--primary)" }}>{pk.product_name}</div>
-                          <div className="font-black text-xs" style={{ color: "#86efac" }}>${unitPrice.toFixed(2)} each</div>
-                          {pkCap > 0 && (
-                            <div className="text-[10px] font-semibold mt-0.5" style={{ color: "var(--muted-foreground)" }}>{pkCap} per pack</div>
-                          )}
-                        </div>
-                      </button>
-                      {/* Qty banner — shown only when selected */}
-                      {isSelected && (
-                        <div className="flex items-center justify-between px-2 py-1.5 gap-2 border-t border-border/40">
-                          <button type="button"
-                            onClick={() => { if (packQty <= 1) { setPackPackId(""); setPackQty(1); } else setPackQty(q => q - 1); }}
-                            className="h-8 w-8 rounded-full flex items-center justify-center font-black active:scale-90 transition"
-                            style={{ background: "#ef4444" }}>−</button>
-                          <span className="font-black text-base" style={{ color: "var(--primary)" }}>{packQty}</span>
-                          <button type="button"
-                            disabled={effectiveRemaining !== null && packQty >= effectiveRemaining}
-                            onClick={() => setPackQty(q => effectiveRemaining !== null ? Math.min(q + 1, effectiveRemaining) : q + 1)}
-                            className="h-8 w-8 rounded-full flex items-center justify-center font-black active:scale-90 transition disabled:opacity-30"
-                            style={{ background: "var(--gradient-hero)" }}>+</button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Action area — Add to Order + Open New Pack when full */}
-            <div className="px-4 pb-4 pt-1 space-y-2">
-              {/* Running cart summary for this pack session */}
-              {(() => {
-                const sessionItems = cart.filter((c) => (c as any)._pack_id);
-                if (sessionItems.length === 0) return null;
-                const sessionTotal = sessionItems.reduce((s, c) => s + c.price * c.qty, 0);
-                const sessionQty = sessionItems.reduce((s, c) => s + c.qty, 0);
-                return (
-                  <div className="rounded-xl px-3 py-2 flex items-center justify-between"
-                    style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.10)", border: "1px solid rgba(var(--primary-rgb,251 146 60)/0.25)" }}>
-                    <span className="text-xs font-black" style={{ color: "var(--primary)" }}>
-                      {sessionQty} unit{sessionQty !== 1 ? "s" : ""} added
-                    </span>
-                    <span className="text-xs font-black" style={{ color: "var(--primary)" }}>
-                      ${sessionTotal.toFixed(2)}
-                    </span>
-                  </div>
-                );
-              })()}
-
-              {/* Add to Order — only shown when a pack is selected and qty > 0 */}
-              {packPackId && packQty > 0 && (() => {
-                const pack = openedPacks.find((p) => p.id === packPackId);
-                const prod = products.find((p) => p.id === pack?.product_id);
-                const unitPrice = (prod?.bottle_variations ?? []).find((v: any) => v.key === "retail")?.price ?? prod?.price ?? 0;
-                return (
-                  <button onClick={() => addPackUnit()}
-                    disabled={!packPackId || unitPrice <= 0}
-                    className="w-full h-12 rounded-xl font-black text-sm text-primary-foreground disabled:opacity-40 active:scale-[0.98] transition flex items-center justify-center gap-2"
-                    style={{ background: "var(--gradient-hero)" }}>
-                    + Add {packQty > 1 ? `${packQty}x ` : ""}to Order
-                    {unitPrice > 0 && <span className="opacity-80 text-sm">— ${(unitPrice * packQty).toFixed(2)}</span>}
-                  </button>
-                );
-              })()}
-
-              {/* Open New Pack — shown when current pack is tapped out in cart */}
-              {packPackId && (() => {
-                const pack = openedPacks.find((p) => p.id === packPackId);
-                const prod = products.find((p) => p.id === pack?.product_id);
-                const pkCap = prod?.units_per_item ?? 0;
-                const cartQty = cart.filter((c) => (c as any)._pack_id === packPackId).reduce((s, c) => s + c.qty, 0);
-                const alreadySold = pack?.units_sold ?? 0;
-                const isFull = pkCap > 0 && (alreadySold + cartQty) >= pkCap;
-                if (!isFull) return null;
-                return (
-                  <button type="button" disabled={packBusy}
-                    onClick={async () => {
-                      if (!pack || !prod) return;
-                      setPackBusy(true);
-                      const { error } = await supabase.rpc("open_pack", {
-                        p_owner_id: ownerIdRef.current, p_product_id: prod.id,
-                        p_pack_type: pack.pack_type,
-                        p_unit_price: (prod.bottle_variations ?? []).find((v: BottleVariation) => v.key === "retail")?.price ?? prod.price,
-                      });
-                      setPackBusy(false);
-                      if (error) { toast.error(error.message); return; }
-                      await fetchOpenedPacks();
-                      await fetchProducts();
-                      const { data: newPack } = await supabase.from("opened_packs")
-                        .select("id").eq("owner_id", ownerIdRef.current!)
-                        .eq("product_id", prod.id).eq("status", "open")
-                        .order("opened_at", { ascending: false }).limit(1);
-                      if (newPack?.[0]) {
-                        setPacksPendingClose((prev) => [...prev, newPack[0].id]);
-                        setPackPackId(newPack[0].id);
-                        setPackQty(1);
-                      }
-                    }}
-                    className="w-full h-11 rounded-xl font-black text-sm border-2 flex items-center justify-center gap-2 transition active:scale-95"
-                    style={{ borderColor: "var(--primary)", color: "var(--primary)", background: "rgba(var(--primary-rgb,251 146 60)/0.08)" }}>
-                    {packBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "📦 Open New Pack"}
-                  </button>
-                );
-              })()}
-
-            </div>
-          </div>
-        </div>
-        );
-      })()}
-
-      {/* ΓöÇΓöÇ Mark Pack Empty Confirm ΓöÇΓöÇ */}
-      {markEmptyPackId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm px-6">
-          <div className="w-full max-w-xs rounded-2xl border border-border shadow-2xl overflow-hidden" style={{ background: "var(--gradient-card)" }}>
-            <div className="px-5 pt-6 pb-4 text-center">
-              <div className="text-3xl mb-2">🚬</div>
-              <div className="font-black text-base">Mark Pack Empty?</div>
-              <div className="text-xs text-muted-foreground mt-1">This will close the pack and record the wallet entry.</div>
-            </div>
-            <div className="grid grid-cols-2 border-t border-border">
-              <button onClick={() => setMarkEmptyPackId(null)} disabled={packBusy}
-                className="h-12 font-black text-sm border-r border-border transition active:bg-muted/60 disabled:opacity-40">Cancel</button>
-              <button onClick={async () => { const id = markEmptyPackId; setMarkEmptyPackId(null); await handleFinishPack(id!); }}
-                disabled={packBusy}
-                className="h-12 font-black text-sm text-white transition active:opacity-80 disabled:opacity-40"
-                style={{ background: "#dc2626" }}>OK</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ΓöÇΓöÇ Cancel Pack Confirm ΓöÇΓöÇ */}
-      {cancelPackId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm px-6">
-          <div className="w-full max-w-xs rounded-2xl border border-border shadow-2xl overflow-hidden" style={{ background: "var(--gradient-card)" }}>
-            <div className="px-5 pt-6 pb-4 text-center">
-              <div className="text-3xl mb-2">🚬</div>
-              <div className="font-black text-base">Cancel Pack?</div>
-              <div className="text-xs text-muted-foreground mt-1">This will remove the pack and restore 1 to stock.</div>
-            </div>
-            <div className="grid grid-cols-2 border-t border-border">
-              <button onClick={() => setCancelPackId(null)} disabled={packBusy}
-                className="h-12 font-black text-sm border-r border-border transition active:bg-muted/60 disabled:opacity-40">Keep</button>
-              <button onClick={async () => { const id = cancelPackId; setCancelPackId(null); await handleCancelPack(id!); }}
-                disabled={packBusy}
-                className="h-12 font-black text-sm text-white transition active:opacity-80 disabled:opacity-40"
-                style={{ background: "#374151" }}>Cancel</button>
-            </div>
-          </div>
-        </div>
       )}
 
     </>
   );
 }
 
-// ΓöÇΓöÇΓöÇ Cash Overlay ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ─── Cash Overlay ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // ── CashItemActions — shared action bar for cash & credit order item rows ──────
 function CashItemActions({ item, onDec, onAdd, onRemove }: {
   item: CartItem;
@@ -2783,29 +1443,13 @@ function CashOverlay({
   const change = Math.max(0, (Number(paid) || 0) - discountedTotal);
   const enough = (Number(paid) || 0) >= discountedTotal;
 
-  // Shared stock/shot/pack helpers — enqueue offline if no network
+  // Shared stock helper — enqueue offline if no network
   const doStockAndShots = async (groupId: string) => {
-    const stockItems = cart.filter((c) => !c.id.startsWith("shot-") && !c.id.startsWith("pack-")).map((c) => ({ id: c.id, qty: c.qty }));
+    const stockItems = cart.map((c) => ({ id: c.id, qty: c.qty }));
     if (isOnline) {
       await supabase.rpc("decrement_stock_item", { p_items: stockItems });
     } else {
       await enqueue("rpc_decrement_stock_item", { p_items: stockItems }, groupId);
-    }
-    for (const shot of cart.filter((c) => (c as any)._bottle_id)) {
-      const payload = { p_bottle_id: (shot as any)._bottle_id, p_qty: shot.qty, p_revenue: shot.qty * Number(shot.price) };
-      if (isOnline) {
-        await supabase.rpc("record_shot", payload);
-      } else {
-        await enqueue("rpc_record_shot", payload, groupId);
-      }
-    }
-    for (const unit of cart.filter((c) => (c as any)._pack_id)) {
-      const payload = { p_pack_id: (unit as any)._pack_id, p_qty: (unit as any)._pack_units ?? unit.qty, p_revenue: ((unit as any)._pack_units ?? unit.qty) * Number(unit.price) };
-      if (isOnline) {
-        await supabase.rpc("record_pack_unit", payload);
-      } else {
-        await enqueue("rpc_record_pack_unit", payload, groupId);
-      }
     }
   };
 
@@ -3248,27 +1892,6 @@ function CashCustomerOverlay({
     setLoadingAccounts(false);
   };
 
-  const recordShotPack = async (groupId: string) => {
-    const shotItems = cart.filter((c) => (c as any)._bottle_id);
-    for (const shot of shotItems) {
-      const payload = { p_bottle_id: (shot as any)._bottle_id, p_qty: shot.qty, p_revenue: shot.qty * Number(shot.price) };
-      if (isOnline) {
-        await supabase.rpc("record_shot", payload);
-      } else {
-        await enqueue("rpc_record_shot", payload, groupId);
-      }
-    }
-    const packItems = cart.filter((c) => (c as any)._pack_id);
-    for (const unit of packItems) {
-      const payload = { p_pack_id: (unit as any)._pack_id, p_qty: (unit as any)._pack_units ?? unit.qty, p_revenue: ((unit as any)._pack_units ?? unit.qty) * Number(unit.price) };
-      if (isOnline) {
-        await supabase.rpc("record_pack_unit", payload);
-      } else {
-        await enqueue("rpc_record_pack_unit", payload, groupId);
-      }
-    }
-  };
-
   const submitCashOrder = async (account: CreditAccount) => {
     if (!profile || !enough) return;
     setBusy(true);
@@ -3285,7 +1908,7 @@ function CashCustomerOverlay({
       change_given: changeNum,
       ...(orderDiscount > 0 ? { discount_amount: orderDiscount, original_total: total + orderDiscount } : {}),
     };
-    const stockItems = cart.filter((c) => !c.id.startsWith("shot-") && !c.id.startsWith("pack-")).map((c) => ({ id: c.id, qty: c.qty }));
+    const stockItems = cart.map((c) => ({ id: c.id, qty: c.qty }));
     const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
     const creditTxPayload = {
       credit_account_id: account.id,
@@ -3293,15 +1916,13 @@ function CashCustomerOverlay({
       cashier_id: profile.id,
       type: "charge",
       amount: total,
-      items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, units_consumed: (c as any)._units_consumed ?? null })),
+      items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, qty: c.qty })),
       note: "[CASH] " + itemsDesc,
     };
 
     if (!isOnline) {
-      // Queue all operations — they will replay in order when network returns
       await enqueue("orders_insert", orderPayload, groupId);
       await enqueue("rpc_decrement_stock_item", { p_items: stockItems }, groupId);
-      await recordShotPack(groupId);
       await enqueue("credit_transactions_insert", creditTxPayload, groupId);
       setBusy(false);
       toast.success(`💾 Saved offline — will sync when reconnected`);
@@ -3309,17 +1930,11 @@ function CashCustomerOverlay({
       return;
     }
 
-    // 1. Normal cash order (triggers cashier wallet update)
     const { error: orderErr } = await supabase.from("orders").insert(orderPayload);
     if (orderErr) { setBusy(false); toast.error(orderErr.message); return; }
 
-    // 2. Stock decrement
     await supabase.rpc("decrement_stock_item", { p_items: stockItems });
 
-    // 3. Record shot/pack units
-    await recordShotPack(groupId);
-
-    // 4. Record the purchase in the customer's credit history (no balance change — cash was paid)
     await supabase.from("credit_transactions").insert(creditTxPayload);
 
     setBusy(false);
@@ -3547,40 +2162,6 @@ function CreditSaleOverlay({
     loadAccounts();
   };
 
-  // After a credit charge succeeds, record shots/pack-units against open bottles/packs
-  // exactly the same as a cash sale does — the physical items are consumed regardless
-  // of how the customer pays.
-  const recordShotPackForCredit = async (groupId: string) => {
-    const shotItems = cart.filter((c) => (c as any)._bottle_id);
-    for (const shot of shotItems) {
-      const payload = {
-        p_bottle_id: (shot as any)._bottle_id,
-        p_qty:       shot.qty,
-        p_revenue:   shot.qty * Number(shot.price),
-      };
-      if (isOnline) {
-        const { error } = await supabase.rpc("record_shot", payload);
-        if (error) console.warn("record_shot (credit) failed:", error.message);
-      } else {
-        await enqueue("rpc_record_shot", payload, groupId);
-      }
-    }
-    const packItems = cart.filter((c) => (c as any)._pack_id);
-    for (const unit of packItems) {
-      const payload = {
-        p_pack_id: (unit as any)._pack_id,
-        p_qty:     (unit as any)._pack_units ?? unit.qty,
-        p_revenue: ((unit as any)._pack_units ?? unit.qty) * Number(unit.price),
-      };
-      if (isOnline) {
-        const { error } = await supabase.rpc("record_pack_unit", payload);
-        if (error) console.warn("record_pack_unit (credit) failed:", error.message);
-      } else {
-        await enqueue("rpc_record_pack_unit", payload, groupId);
-      }
-    }
-  };
-
   const chargeAccount = async (account: CreditAccount) => {
     if (!profile) return;
     setBusy(true);
@@ -3595,7 +2176,6 @@ function CreditSaleOverlay({
     };
     if (!isOnline) {
       await enqueue("rpc_record_credit_charge", creditPayload, groupId);
-      await recordShotPackForCredit(groupId);
       setBusy(false);
       toast.success(`💾 Saved offline — will sync when reconnected`);
       onSuccess();
@@ -3603,7 +2183,6 @@ function CreditSaleOverlay({
     }
     const { error } = await supabase.rpc("record_credit_charge", creditPayload);
     if (error) { setBusy(false); toast.error(error.message); return; }
-    await recordShotPackForCredit(groupId);
     setBusy(false);
     toast.success(`Charged $${total.toFixed(2)} to ${account.full_name}`);
     onSuccess();
@@ -3641,7 +2220,6 @@ function CreditSaleOverlay({
       p_note: itemsDesc,
     });
     if (chargeErr) { setBusy(false); toast.error(chargeErr.message); return; }
-    await recordShotPackForCredit(groupId);
     setBusy(false);
     toast.success(`Account created & $${total.toFixed(2)} charged to ${newName.trim()}`);
     onSuccess();
