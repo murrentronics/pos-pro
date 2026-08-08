@@ -450,60 +450,56 @@ export default function AdminPage() {
             </TabsList>
 
             {/* ── Dashboard Sub-tab ── */}
-            <TabsContent value="dashboard" className="space-y-5 mt-0 pb-10">
+            <TabsContent value="dashboard" className="space-y-3 mt-0 pb-10">
               {/* Stat cards — 3 per row on all screens */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-2xl border border-border p-4 space-y-1" style={{ background: "var(--gradient-card)" }}>
-                  <p className="text-xs text-muted-foreground font-medium">Pending Users</p>
-                  <p className="text-3xl font-black">{buckets.pending.length}</p>
-                  <p className="text-xs text-muted-foreground">awaiting billing approval</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
+                  <p className="text-[10px] text-muted-foreground font-medium">Pending Users</p>
+                  <p className="text-2xl font-black">{buckets.pending.length}</p>
                 </div>
-                <div className="rounded-2xl border border-border p-4 space-y-1" style={{ background: "var(--gradient-card)" }}>
-                  <p className="text-xs text-muted-foreground font-medium">Approved Users</p>
-                  <p className="text-3xl font-black text-green-400">{buckets.approved.length}</p>
-                  <p className="text-xs text-muted-foreground">active accounts</p>
+                <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
+                  <p className="text-[10px] text-muted-foreground font-medium">Approved Users</p>
+                  <p className="text-2xl font-black text-green-400">{buckets.approved.length}</p>
                 </div>
-                <div className="rounded-2xl border border-border p-4 space-y-1" style={{ background: "var(--gradient-card)" }}>
-                  <p className="text-xs text-muted-foreground font-medium">Pending Payments</p>
-                  <p className="text-3xl font-black text-yellow-400">{pendingBillingCount}</p>
-                  <p className="text-xs text-muted-foreground">waiting review</p>
+                <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
+                  <p className="text-[10px] text-muted-foreground font-medium">Pending Payments</p>
+                  <p className="text-2xl font-black text-yellow-400">{pendingBillingCount}</p>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-2xl border border-border p-4 space-y-1" style={{ background: "var(--gradient-card)" }}>
-                  <p className="text-xs text-muted-foreground font-medium">Due Soon</p>
-                  <p className="text-3xl font-black text-orange-400">{nearExpiryCount}</p>
-                  <p className="text-xs text-muted-foreground">within 7 days</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
+                  <p className="text-[10px] text-muted-foreground font-medium">Due Soon</p>
+                  <p className="text-2xl font-black text-orange-400">{nearExpiryCount}</p>
                 </div>
-                <div className="rounded-2xl border border-border p-4 space-y-1" style={{ background: "var(--gradient-card)" }}>
-                  <p className="text-xs text-muted-foreground font-medium">Suspended</p>
+                <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
+                  <p className="text-[10px] text-muted-foreground font-medium">Suspended</p>
                   <p className="text-2xl font-black text-red-400">{buckets.suspended.length}</p>
                 </div>
-                <div className="rounded-2xl border border-border p-4 space-y-1" style={{ background: "var(--gradient-card)" }}>
-                  <p className="text-xs text-muted-foreground font-medium">Total Registered</p>
+                <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
+                  <p className="text-[10px] text-muted-foreground font-medium">Total Registered</p>
                   <p className="text-2xl font-black">{rows.filter(r => !r.is_bar_account && !["renard.sankersingh@gmail.com", "isabel@gmail.com"].includes(r.email)).length}</p>
                 </div>
               </div>
 
               {/* ── Shareholder Income Split ── */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <DollarSign className="h-4 w-4 text-primary" />
-                  <h2 className="text-sm font-black text-muted-foreground uppercase tracking-widest">Shareholder Income</h2>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <DollarSign className="h-3.5 w-3.5 text-primary" />
+                  <h2 className="text-xs font-black text-muted-foreground uppercase tracking-widest">Shareholder Income</h2>
                 </div>
 
                 {/* Total revenue row */}
-                <div className="rounded-2xl border border-primary/30 p-4" style={{ background: "linear-gradient(135deg, rgba(251,146,60,0.10), rgba(251,146,60,0.03))" }}>
+                <div className="rounded-xl border border-primary/30 p-3" style={{ background: "linear-gradient(135deg, rgba(251,146,60,0.10), rgba(251,146,60,0.03))" }}>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-muted-foreground font-medium">Total Revenue This Month</p>
-                      <p className="text-3xl font-black text-primary">
+                      <p className="text-[10px] text-muted-foreground font-medium">Total Revenue This Month</p>
+                      <p className="text-2xl font-black text-primary">
                         {incomeLoading ? "…" : `$${currentMonthIncome.toLocaleString("en", { minimumFractionDigits: 0 })}`}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-muted-foreground font-medium">Last Month</p>
-                      <p className="text-xl font-black text-muted-foreground">
+                      <p className="text-[10px] text-muted-foreground font-medium">Last Month</p>
+                      <p className="text-lg font-black text-muted-foreground">
                         {incomeLoading ? "…" : `$${lastMonthIncome.toLocaleString("en", { minimumFractionDigits: 0 })}`}
                       </p>
                     </div>
@@ -512,32 +508,32 @@ export default function AdminPage() {
 
                 {/* Per-shareholder cards */}
                 {SHAREHOLDERS.map((sh, idx) => (
-                  <div key={sh.name} className="space-y-2">
-                    <p className={`text-xs font-black uppercase tracking-widest ${sh.color}`}>
+                  <div key={sh.name} className="space-y-1.5">
+                    <p className={`text-[10px] font-black uppercase tracking-widest ${sh.color}`}>
                       {sh.name} · {Math.round(sh.share * 100)}%
                     </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className={`rounded-2xl border ${sh.bg} p-4 space-y-1`} style={{ background: sh.gradient }}>
-                        <div className="flex items-center gap-1.5">
-                          <TrendingUp className={`h-3.5 w-3.5 ${sh.color}`} />
-                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">This Month</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className={`rounded-xl border ${sh.bg} p-3 space-y-0.5`} style={{ background: sh.gradient }}>
+                        <div className="flex items-center gap-1">
+                          <TrendingUp className={`h-3 w-3 ${sh.color}`} />
+                          <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">This Month</p>
                         </div>
-                        <p className={`text-2xl font-black ${sh.color}`}>
+                        <p className={`text-xl font-black ${sh.color}`}>
                           {incomeLoading ? "…" : `$${Math.round(currentMonthIncome * sh.share).toLocaleString()}`}
                         </p>
-                        <p className="text-[10px] text-muted-foreground">
+                        <p className="text-[9px] text-muted-foreground">
                           {new Date().toLocaleString("en", { month: "long", year: "numeric" })}
                         </p>
                       </div>
-                      <div className={`rounded-2xl border ${sh.bg} p-4 space-y-1`} style={{ background: sh.gradient }}>
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className={`h-3.5 w-3.5 ${sh.color} opacity-60`} />
-                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Last Month</p>
+                      <div className={`rounded-xl border ${sh.bg} p-3 space-y-0.5`} style={{ background: sh.gradient }}>
+                        <div className="flex items-center gap-1">
+                          <Calendar className={`h-3 w-3 ${sh.color} opacity-60`} />
+                          <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Last Month</p>
                         </div>
-                        <p className={`text-2xl font-black ${sh.color} opacity-70`}>
+                        <p className={`text-xl font-black ${sh.color} opacity-70`}>
                           {incomeLoading ? "…" : `$${Math.round(lastMonthIncome * sh.share).toLocaleString()}`}
                         </p>
-                        <p className="text-[10px] text-muted-foreground">
+                        <p className="text-[9px] text-muted-foreground">
                           {(() => { const d = new Date(); d.setMonth(d.getMonth() - 1); return d.toLocaleString("en", { month: "long", year: "numeric" }); })()}
                         </p>
                       </div>

@@ -233,12 +233,11 @@ export default function AdminBillingManagementPage() {
           const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
           const { data: { session: adminSession } } = await supabase.auth.getSession();
 
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 30_000);
-
           let res: Response;
           try {
-            res = await fetch(`${supabaseUrl}/functions/v1/create-addon-bars`, {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30_000);
+            res = await fetch(`${supabaseUrl}/functions/v1/create-addon-stores`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -248,26 +247,27 @@ export default function AdminBillingManagementPage() {
               body: JSON.stringify({ payment_id: selectedPayment.id }),
               signal: controller.signal,
             });
-          } catch (fetchErr: unknown) {
             clearTimeout(timeoutId);
+          } catch (fetchErr: unknown) {
             const msg = fetchErr instanceof Error && fetchErr.name === "AbortError"
-              ? "Request timed out — please try again"
-              : "Network error reaching store creation service";
+              ? "Request timed out"
+              : `Network error: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`;
             toast.error(msg);
             setLoading(false);
             return;
           }
-          clearTimeout(timeoutId);
 
           const json = await res.json();
           if (!res.ok) {
-            toast.error("Store creation failed: " + (json.error ?? "unknown error"));
+            toast.error(`Store creation failed (${res.status}): ` + (json.error ?? JSON.stringify(json)));
             setLoading(false);
             return;
           }
 
-          const addonEnd = ownerProfile?.subscription_end_date
-            ? new Date(ownerProfile.subscription_end_date)
+          const { data: ownerFinal } = await supabase
+            .from("profiles").select("subscription_end_date").eq("id", selectedPayment.owner_id).single();
+          const addonEnd = ownerFinal?.subscription_end_date
+            ? new Date(ownerFinal.subscription_end_date)
             : (() => { const d = new Date(); d.setMonth(d.getMonth() + plan.duration_months); return d; })();
           updates.next_due_date = addonEnd.toISOString();
 
