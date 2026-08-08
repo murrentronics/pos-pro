@@ -552,7 +552,7 @@ function SignUpForm() {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           onFocus={scrollIntoView}
-          placeholder="My Bar & Grill"
+          placeholder="My Store"
           required
           minLength={3}
         />
@@ -567,7 +567,7 @@ function SignUpForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           onFocus={scrollIntoView}
-          placeholder="owner@mybar.com"
+          placeholder="owner@mystore.com"
           required
         />
       </div>

@@ -221,7 +221,7 @@ export default function ProfilePage() {
                 id="business-name"
                 value={businessName}
                 onChange={(e) => setBusinessName(e.target.value)}
-                placeholder="My Bar & Grill"
+                placeholder="My Store"
                 required
                 minLength={3}
               />

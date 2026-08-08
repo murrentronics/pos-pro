@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, ImagePlus, Plus, Trash2, Loader2, LayoutGrid, ArrowLeft, X, Search, ChevronDown, ChevronLeft, Pencil, ListChecks, CheckCircle2 } from "lucide-react";
-import { createPortal } from "react-dom";
+import { Camera, ImagePlus, Plus, Trash2, Loader2, X, ChevronLeft, Pencil, ListChecks, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { useTranslation } from "@/lib/i18n";
@@ -22,10 +21,11 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+// Keep BottleVariation for backward-compat with existing DB rows
 type BottleVariation = {
   key: string;
   label: string;
-  units_consumed: number; // how many bottle-units this variation uses
+  units_consumed: number;
   price: number;
 };
 
@@ -470,202 +470,6 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
   );
 }
 
-// ─── Template Keyboard ───────────────────────────────────────────────────────
-const TMPL_NUM_ROW = ["1","2","3","4","5","6","7","8","9","0","."];
-const TMPL_ROWS = [
-  ["Q","W","E","R","T","Y","U","I","O","P"],
-  ["A","S","D","F","G","H","J","K","L"],
-  ["Z","X","C","V","B","N","M","⌫"],
-];
-
-function TemplateKeyboard({ onKey, onClose }: { onKey: (k: string) => void; onClose: () => void }) {
-  return createPortal(
-    <div
-      className="fixed bottom-0 inset-x-0 z-[200] bg-background/98 backdrop-blur border-t border-border px-1 pt-1.5 space-y-1"
-      style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 6px)", boxShadow: "0 -4px 20px rgba(0,0,0,0.4)" }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {/* Dismiss tab */}
-      <div
-        className="absolute inset-x-0 flex justify-center"
-        style={{ top: "-28px", height: "28px", pointerEvents: "auto" }}
-        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
-      >
-        <div className="h-7 w-16 rounded-t-2xl flex items-center justify-center bg-background border border-b-0 border-border hover:bg-muted/70 transition active:scale-95">
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        </div>
-      </div>
-      {/* Number row */}
-      <div className="flex justify-center gap-1">
-        {TMPL_NUM_ROW.map((k) => (
-          <button
-            key={k}
-            onPointerDown={(e) => { e.preventDefault(); onKey(k); }}
-            className="flex-1 h-9 sm:h-12 rounded-lg font-bold text-sm sm:text-base bg-muted hover:bg-muted/70 text-foreground transition active:scale-90 select-none"
-          >
-            {k}
-          </button>
-        ))}
-      </div>
-      {/* Letter rows */}
-      {TMPL_ROWS.map((row, ri) => (
-        <div key={ri} className="flex justify-center gap-1">
-          {row.map((k) => (
-            <button
-              key={k}
-              onPointerDown={(e) => { e.preventDefault(); onKey(k); }}
-              className={`flex-1 max-w-[2.6rem] sm:max-w-[3.5rem] h-9 sm:h-12 rounded-lg font-bold text-sm sm:text-base transition active:scale-90 select-none ${
-                k === "⌫"
-                  ? "bg-destructive/30 text-destructive max-w-[3.5rem] sm:max-w-[4.5rem]"
-                  : "bg-muted hover:bg-muted/70 text-foreground"
-              }`}
-            >
-              {k === "⌫" ? "⌫" : k}
-            </button>
-          ))}
-        </div>
-      ))}
-      {/* Space bar */}
-      <div className="flex justify-center gap-1 px-2">
-        <button
-          onPointerDown={(e) => { e.preventDefault(); onKey("SPACE"); }}
-          className="flex-1 h-9 sm:h-12 rounded-lg bg-muted hover:bg-muted/70 text-xs sm:text-sm font-bold text-muted-foreground transition active:scale-95 select-none"
-        >
-          SPACE
-        </button>
-      </div>
-    </div>,
-    document.body
-  );
-}
-function TemplatePicker({ onSelect, onToggle, selectedUrls, ownerId, category, search }: {
-  onSelect: (url: string, label: string, category: string) => void;
-  onToggle?: (url: string, label: string, category: string) => void;
-  selectedUrls?: Set<string>;
-  ownerId: string;
-  category: string;
-  search: string;
-}) {
-  const [loading, setLoading] = useState(true);
-  const [available, setAvailable] = useState<{ url: string; label: string }[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-
-      const { data: usedData } = await supabase
-        .from("products")
-        .select("image_url")
-        .eq("owner_id", ownerId);
-      const usedUrls = new Set(
-        (usedData ?? [])
-          .map((r: { image_url: string | null }) => r.image_url)
-          .filter((u): u is string => !!u)
-      );
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: dbTemplates } = await supabase
-        .from("template_images")
-        .select("url, label")
-        .eq("category", category)
-        .order("label", { ascending: true });
-
-      const templates = ((dbTemplates as { url: string; label: string }[]) ?? [])
-        .filter((t) => !usedUrls.has(t.url));
-
-      if (!cancelled) {
-        setAvailable(templates);
-        setLoading(false);
-      }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [ownerId, category]);
-
-  const q = search.trim().toLowerCase();
-  const visible = q
-    ? available.filter((t) => t.label.toLowerCase().includes(q))
-    : available;
-
-  if (loading) {
-    return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
-  }
-
-  if (available.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center text-muted-foreground gap-2 py-12">
-        <LayoutGrid className="h-10 w-10 opacity-30" />
-        <p className="text-sm font-semibold">No templates in this category yet.</p>
-        <p className="text-xs opacity-60">Ask your admin to import some from the Admin → Import tab.</p>
-      </div>
-    );
-  }
-
-  if (visible.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center text-muted-foreground gap-2 py-12">
-        <p className="text-sm">No results for "{search}"</p>
-      </div>
-    );
-  }
-
-  // Multi-select mode when onToggle is provided
-  const isMulti = !!onToggle;
-
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {visible.map((t) => {
-        const isSelected = selectedUrls?.has(t.url) ?? false;
-        return (
-          <button
-            key={t.url}
-            onClick={() => isMulti ? onToggle!(t.url, t.label, category) : onSelect(t.url, t.label, category)}
-            onDragStart={(e) => e.preventDefault()}
-            className="aspect-[3/4] relative rounded-xl overflow-hidden border-2 active:scale-95 transition touch-manipulation select-none"
-            style={{
-              background: "var(--gradient-card)",
-              borderColor: isSelected ? "var(--primary)" : "rgba(255,255,255,0.1)",
-              boxShadow: isSelected ? "0 0 0 2px var(--primary)" : "none",
-            }}
-          >
-            <div className="absolute inset-0 flex items-center justify-center text-4xl">
-              {categoryIcon(category)}
-            </div>
-            <img
-              src={t.url}
-              alt=""
-              draggable={false}
-              loading="lazy"
-              decoding="async"
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-              onLoad={(e) => {
-                const img = e.currentTarget as HTMLImageElement;
-                const placeholder = img.previousElementSibling as HTMLElement | null;
-                if (placeholder) placeholder.style.display = "none";
-              }}
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            />
-            {/* Selected overlay */}
-            {isSelected && (
-              <div className="absolute inset-0 bg-primary/20 flex items-start justify-end p-1.5">
-                <div className="h-6 w-6 rounded-full flex items-center justify-center shadow-lg" style={{ background: "var(--primary)" }}>
-                  <CheckCircle2 className="h-4 w-4 text-black" />
-                </div>
-              </div>
-            )}
-            <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 to-transparent pointer-events-none">
-              <div className="text-white text-xs font-bold leading-tight line-clamp-2">{t.label}</div>
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── Bulk Edit Modal ──────────────────────────────────────────────────────────
 function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
   items: Product[];
@@ -1029,7 +833,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       if (spChanged) updatePayload.price = newSp;
       if (unitsChanged) updatePayload.units_per_item = newUnits;
       if (mergedVars) updatePayload.bottle_variations = mergedVars;
-      const { error } = await supabase.from("products").update(updatePayload).eq("id", p.id);
+      const { error } = await supabase.from("products").update(updatePayload as any).eq("id", p.id);
       if (!error) {
         patches.push({
           id: p.id,
@@ -1185,7 +989,6 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                   <tr key={`hdr-${cat.value}`}>
                     <td colSpan={7} className="pl-3 pt-4 pb-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-lg leading-none">{cat.icon}</span>
                         <span className="text-xs font-black uppercase tracking-widest" style={{ color: "var(--primary)" }}>{cat.label}</span>
                       </div>
                     </td>
@@ -2065,8 +1868,9 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   const { profile } = useAuth();
   const { t } = useTranslation();
   const isEdit = !!editProduct;
-  const [name, setName] = useState(editProduct?.name ?? "");
-  const [price, setPrice] = useState(editProduct ? String(editProduct.price) : "");
+
+  const [name,      setName]      = useState(editProduct?.name ?? "");
+  const [price,     setPrice]     = useState(editProduct ? String(editProduct.price) : "");
   const [costPrice, setCostPrice] = useState(editProduct ? String(editProduct.cost_price ?? "") : "");
   const [unitsPerItem, setUnitsPerItem] = useState(editProduct ? String(editProduct.units_per_item || "") : "");
   const [shotPricePerUnit, setShotPricePerUnit] = useState(() => {
@@ -2113,109 +1917,55 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   // which field the numpad is for: "selling" | "cost" | "units" | "shotprice" | "var_{i}_shots" | "var_{i}_price" | null
   const [activeNumpad, setActiveNumpad] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const camRef = useRef<HTMLInputElement>(null);
-  // Tracks whether the current submit should skip opening the stock numpad
+  const camRef  = useRef<HTMLInputElement>(null);
   const skipStockRef = useRef(false);
-  // Scroll the numpad into view when it opens
-  const numpadRef = useRef<HTMLDivElement>(null);
+  const numpadRef    = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (activeNumpad && numpadRef.current) {
       setTimeout(() => numpadRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
     }
   }, [activeNumpad]);
 
-  // Inline numpad rendered directly under its field
+  // ── numpad ───────────────────────────────────────────────────────────────
+  const handleNumpad = (k: string) => {
+    const setter  = activeNumpad === "cost" ? setCostPrice : setPrice;
+    const current = activeNumpad === "cost" ? costPrice    : price;
+    if (k === "⌫") { setter(current.slice(0, -1)); return; }
+    if (k === ".") { if (!current.includes(".")) setter(current + "."); return; }
+    const dotIdx = current.indexOf(".");
+    if (dotIdx !== -1 && current.length - dotIdx > 2) return;
+    setter(current === "0" ? k : current + k);
+  };
+
   const InlineNumpad = ({ forField }: { forField: string }) => {
     if (activeNumpad !== forField) return null;
     return (
       <div ref={numpadRef} className="grid grid-cols-3 gap-1.5 mt-2">
         {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => handleNumpad(k)}
-            className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${
-              k === "⌫" ? "bg-destructive/20 text-destructive hover:bg-destructive/30" : "bg-muted hover:bg-muted/70 text-foreground"
-            }`}
+          <button key={k} type="button" onClick={() => handleNumpad(k)}
+            className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
           >{k}</button>
         ))}
       </div>
     );
   };
 
-  /**
-   * Process a product image: remove background, tight-crop, center on 500×500
-   * transparent canvas, sharpen — mirrors the Bartendaz Pro Bottle-Only Toolkit.
-   * Falls back to simple resize if the pipeline fails.
-   */
+            {/* Cost Price + Base Selling Price */}
+
+  // ── image helpers ─────────────────────────────────────────────────────────
   const compressImage = async (f: File): Promise<File> => {
     const { processProductImage } = await import("@/lib/processProductImage");
     return processProductImage(f, { removeBg: true });
   };
-
   const onPick = (f: File | undefined | null) => {
-    if (!f) return;
-    setFile(f);
-    setTemplateUrl(null);
-    setPreview(URL.createObjectURL(f));
+    if (!f) return; setFile(f); setTemplateUrl(null); setPreview(URL.createObjectURL(f));
   };
 
 
   const clearImage = () => { setFile(null); setTemplateUrl(null); setPreview(null); };
 
-  const handleNumpad = (k: string) => {
-    // Handle variation fields: "var_{i}_shots" or "var_{i}_price"
-    if (activeNumpad?.startsWith("var_")) {
-      const parts = activeNumpad.split("_"); // ["var", i, "shots"|"price"]
-      const idx = parseInt(parts[1]);
-      const field = parts[2] as "shots" | "price";
-      const isInt = field === "shots";
-      setBottleVariations(bv => bv.map((x, j) => {
-        if (j !== idx) return x;
-        const cur = isInt ? String(x.units_consumed || "") : String(x.price || "");
-        let next: string;
-        if (k === "⌫") {
-          next = cur.slice(0, -1);
-        } else if (!isInt && k === ".") {
-          next = cur.includes(".") ? cur : cur + ".";
-        } else {
-          // Block extra decimal places
-          if (!isInt) {
-            const dotIdx = cur.indexOf(".");
-            if (dotIdx !== -1 && cur.length - dotIdx > 2) return x;
-          } else if (k === ".") {
-            return x; // no decimals for shot count
-          }
-          next = cur === "0" ? k : cur + k;
-        }
-        return isInt
-          ? { ...x, units_consumed: parseInt(next) || 0 }
-          : { ...x, price: parseFloat(next) || 0 };
-      }));
-      return;
-    }
-
-    const setter = activeNumpad === "cost" ? setCostPrice
-      : activeNumpad === "units" ? setUnitsPerItem
-      : activeNumpad === "shotprice" ? setShotPricePerUnit
-      : activeNumpad === "cigretail" ? setCigRetailPrice
-      : setPrice;
-    const current = activeNumpad === "cost" ? costPrice
-      : activeNumpad === "units" ? unitsPerItem
-      : activeNumpad === "shotprice" ? shotPricePerUnit
-      : activeNumpad === "cigretail" ? cigRetailPrice
-      : price;
-    if (k === "⌫") { setter(current.slice(0, -1)); return; }
-    if (activeNumpad !== "units") {
-      if (k === ".") { if (!current.includes(".")) setter(current + "."); return; }
-      const dotIdx = current.indexOf(".");
-      if (dotIdx !== -1 && current.length - dotIdx > 2) return;
-    } else {
-      if (k === ".") return;
-    }
-    setter(current === "0" ? k : current + k);
-  };
-
+  // ── submit ────────────────────────────────────────────────────────────────
   const submit = async () => {
     if (!profile || !name || !price) return;
     setBusy(true);
@@ -2230,62 +1980,34 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
       if (upErr) { toast.error(upErr.message); setBusy(false); return; }
       image_url = supabase.storage.from("product-images").getPublicUrl(path).data.publicUrl;
     } else if (isEdit) {
-      // keep the existing image if no new one was picked
       image_url = editProduct?.image_url ?? null;
     }
 
     const costVal = parseFloat(costPrice) || 0;
-    const unitsVal = parseInt(unitsPerItem, 10) || 0;
-    const variationsVal = category === "liquor" ? [
-      ...(unitsVal > 0 && parseFloat(shotPricePerUnit) > 0
-        ? [{ key: "shot", label: "Drink", units_consumed: 1, price: parseFloat(shotPricePerUnit) }]
-        : []),
-      ...bottleVariations.filter((v) => v.key !== "shot" && v.label && v.units_consumed > 0),
-    ] : category === "cigarettes" ? [
-      ...(parseFloat(cigRetailPrice) > 0
-        ? [{ key: "retail", label: "Retail", units_consumed: 1, price: parseFloat(cigRetailPrice) }]
-        : []),
-      ...(parseInt(cigSpecialQty) > 0 && parseFloat(cigSpecialPrice) > 0
-        ? [{ key: "special", label: `${cigSpecialQty} for $${parseFloat(cigSpecialPrice).toFixed(2)}`, units_consumed: parseInt(cigSpecialQty), price: parseFloat(cigSpecialPrice) }]
-        : []),
-    ] : null;
 
     if (isEdit && editProduct) {
       const { data: updated, error } = await supabase
         .from("products")
-        .update({
-          name: name.trim(),
-          price: Number(price),
-          cost_price: costVal,
-          units_per_item: unitsVal,
-          bottle_variations: variationsVal,
-          image_url,
-          category,
-        })
-        .eq("id", editProduct.id)
-        .select("*")
-        .single();
+        .update({ name: name.trim(), price: Number(price), cost_price: costVal, image_url, category })
+        .eq("id", editProduct.id).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
       toast.success("Item updated");
       onDone();
-      if (!skipStockRef.current) {
+      if (!skipStockRef.current)
         onSaved({ ...updated, units_per_item: updated.units_per_item ?? 0, bottle_variations: (updated.bottle_variations ?? null) as any });
-      }
     } else {
-      // ── INSERT new product ───────────────────────────────────────────────
       const { data: inserted, error } = await supabase.from("products").insert({
         owner_id: ownerId, name: name.trim(), price: Number(price), cost_price: costVal,
-        units_per_item: unitsVal, bottle_variations: variationsVal, image_url, category,
+        bottle_variations: null, image_url, category,
       }).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
       toast.success("Item added");
-      setName(""); setPrice(""); setCostPrice(""); setUnitsPerItem(""); setShotPricePerUnit(""); setCigSpecialQty(""); setCigSpecialPrice(""); setCigRetailPrice(""); setBottleVariations([]); setCategory("beers"); setFile(null); setPreview(null); setTemplateUrl(null);
+      setName(""); setPrice(""); setCostPrice(""); setCategory(""); setFile(null); setPreview(null); setTemplateUrl(null);
       onDone();
-      if (!skipStockRef.current) {
+      if (!skipStockRef.current)
         onSaved({ ...inserted, units_per_item: inserted.units_per_item ?? 0, bottle_variations: (inserted.bottle_variations ?? null) as any });
-      }
     }
   };
 
@@ -2320,21 +2042,21 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
               </div>
               <div className="flex flex-col gap-2 flex-1 justify-center">
                 <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => camRef.current?.click()}>
-                  <Camera className="h-5 w-5 mr-2" /> {t("take_photo_btn", "Take Photo")}
+                  <Camera className="h-5 w-5 mr-2" /> Take Photo
                 </Button>
                 <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => fileRef.current?.click()}>
-                  <ImagePlus className="h-5 w-5 mr-2" /> {t("upload_btn", "Upload")}
+                  <ImagePlus className="h-5 w-5 mr-2" /> Upload
                 </Button>
               </div>
             </div>
             <p className="text-[10px] text-muted-foreground/70 leading-snug">
-              💡 {t("best_results_tip", "For best results, upload a")} <span className="font-bold text-amber-400">{t("png_transparent", "PNG with transparent background")}</span>.
+              💡 For best results, upload a <span className="font-bold text-amber-400">PNG with transparent background</span>.
             </p>
 
             {/* Name */}
             <div>
-              <Label className="text-xs">{t("item_name", "Name")}</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Heineken 330ml" className="h-9" />
+              <Label className="text-xs">Item Name</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Fresh Tomatoes" className="h-9 mt-1" />
             </div>
 
             {/* Category + Cost Price + Bottle Price */}
@@ -2548,18 +2270,43 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                     )}
                   </div>
                 ))}
-                {bottleVariations.length > 0 && (
-                  <button type="button"
-                    onClick={() => setBottleVariations(bv => [...bv, { key: `var_${Date.now()}`, label: "", units_consumed: 1, price: 0 }])}
-                    className="w-full h-8 rounded-lg border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
-                    + Add variation
-                  </button>
-                )}
+                <button type="button"
+                  onClick={() => setBottleVariations(bv => [...bv, { key: `var${bv.length}`, label: "", units_consumed: 0, price: 0 }])}
+                  className="w-full h-8 rounded-xl border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition mt-1">
+                  + Add Variation
+                </button>
               </div>
             )}
+
+            {/* Cost Price + Base Selling Price */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Cost Price</Label>
+                <div
+                  className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
+                  onClick={() => setActiveNumpad(activeNumpad === "cost" ? null : "cost")}
+                >
+                  <span className={`text-base font-black ${activeNumpad === "cost" ? "text-primary" : "text-muted-foreground"}`}>
+                    ${costPrice || "0.00"}
+                  </span>
+                </div>
+                <InlineNumpad forField="cost" />
+              </div>
+              <div>
+                <Label className="text-xs">Base Selling Price</Label>
+                <div
+                  className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
+                  onClick={() => setActiveNumpad(activeNumpad === "selling" ? null : "selling")}
+                >
+                  <span className={`text-base font-black ${activeNumpad === "selling" ? "text-primary" : "text-muted-foreground"}`}>
+                    ${price || "0.00"}
+                  </span>
+                </div>
+                <InlineNumpad forField="selling" />
+              </div>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
 
       <div className="pt-3 space-y-2">
           <Button

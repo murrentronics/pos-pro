@@ -157,7 +157,7 @@ export default function BillingPage() {
 
     const amount = isAddonFlow
       ? proRataStorePrice * storeCount
-      : selectedPlan.amount;
+      : PRICE_BASE;
 
     const notesParts: string[] = [];
     if (isAddonFlow) {
@@ -223,7 +223,7 @@ export default function BillingPage() {
   // ── Payment summary for confirm step ──────────────────────────────────
   const confirmAmount = isAddonFlow
     ? proRataStorePrice * storeCount
-    : selectedPlan?.amount ?? 0;
+    : PRICE_BASE;
   const confirmLabel = isAddonFlow
     ? `${storeCount} extra store${storeCount > 1 ? "s" : ""} (pro-rated)`
     : isRenewal ? "Subscription renewal" : "P.O.S. Pro — Annual Plan";

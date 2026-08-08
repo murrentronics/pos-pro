@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Wine } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { friendlyError } from "@/lib/network-error";
 
@@ -35,12 +34,12 @@ function LoginPage() {
       style={{ background: "radial-gradient(circle at 20% 0%, oklch(0.22 0.08 240) 0%, oklch(0.08 0.04 240) 60%)" }}>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl mb-4"
+          <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl mb-4 overflow-hidden"
             style={{ background: "var(--gradient-hero)", boxShadow: "var(--shadow-glow)" }}>
-            <Wine className="h-8 w-8 text-primary-foreground" />
+            <img src="/logo.png" alt="P.O.S. Pro" className="h-12 w-12 object-contain" />
           </div>
           <h1 className="text-4xl font-black tracking-tight">P.O.S. Pro</h1>
-          <p className="text-muted-foreground mt-1">Bar POS & Wallet</p>
+          <p className="text-muted-foreground mt-1">Business POS & Wallet</p>
         </div>
 
         <Tabs defaultValue="signin" className="w-full">
