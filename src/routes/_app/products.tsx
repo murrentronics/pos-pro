@@ -1896,9 +1896,12 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   });
   const [category, setCategory] = useState<string>(editProduct?.category ?? "");
   const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
-  // Generic product variations (Shopify-style) — for all non-liquor, non-cigarette categories
-  type ProdVar = { id?: string; name: string; price: string };
-  const [prodVars, setProdVars] = useState<ProdVar[]>([]);
+  // Generic product variations (eBay-style: qty + unit + price) — for all categories
+  type ProdVar = { id?: string; name: string; price: string; qty: string };
+  const [prodVars, setProdVars] = useState<ProdVar[]>(() => {
+    // On edit: no existing rows yet (loaded via useEffect), start empty
+    return [];
+  });
   useEffect(() => {
     if (!ownerId) return;
     supabase
@@ -1923,7 +1926,13 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
       .order("sort_order", { ascending: true })
       .then(({ data }) => {
         if (data && data.length > 0)
-          setProdVars(data.map((v) => ({ id: v.id, name: v.name, price: String(v.price) })));
+          setProdVars(data.map((v) => {
+            // name is stored as "100 lbs" — split into qty + unit
+            const parts = v.name.trim().split(" ");
+            const qty = parts.length >= 2 ? parts[0] : "1";
+            const unit = parts.length >= 2 ? parts.slice(1).join(" ") : v.name;
+            return { id: v.id, name: unit, price: String(v.price), qty };
+          }));
       });
   }, [editProduct?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [file, setFile] = useState<File | null>(null);
@@ -2013,7 +2022,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
       if (prodVars.length > 0) {
         const rows = prodVars
           .filter((v) => v.name.trim() && parseFloat(v.price) > 0)
-          .map((v, i) => ({ product_id: editProduct.id, owner_id: ownerId, name: v.name.trim(), price: parseFloat(v.price), sort_order: i }));
+          .map((v, i) => ({ product_id: editProduct.id, owner_id: ownerId, name: `${v.qty || "1"} ${v.name}`.trim(), price: parseFloat(v.price), sort_order: i }));
         if (rows.length > 0) await supabase.from("product_variations").insert(rows);
       }
       toast.success("Item updated");
@@ -2031,7 +2040,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
       if (prodVars.length > 0) {
         const rows = prodVars
           .filter((v) => v.name.trim() && parseFloat(v.price) > 0)
-          .map((v, i) => ({ product_id: inserted.id, owner_id: ownerId, name: v.name.trim(), price: parseFloat(v.price), sort_order: i }));
+          .map((v, i) => ({ product_id: inserted.id, owner_id: ownerId, name: `${v.qty || "1"} ${v.name}`.trim(), price: parseFloat(v.price), sort_order: i }));
         if (rows.length > 0) await supabase.from("product_variations").insert(rows);
       }
       toast.success("Item added");
@@ -2309,54 +2318,108 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
               </div>
             )}
 
-            {/* Generic Product Variations — Shopify-style, shown for all categories */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">🏷️ Variations <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                <span className="text-[10px] text-muted-foreground">e.g. Small, Medium, Large · 250ml, 500ml</span>
-              </div>
-              {prodVars.length === 0 ? (
-                <button type="button"
-                  onClick={() => setProdVars([{ name: "", price: "" }])}
-                  className="w-full h-9 rounded-lg border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
-                  + Add a variation
-                </button>
-              ) : (
-                <>
-                  {/* Header row */}
-                  <div className="grid grid-cols-[1fr_96px_32px] gap-2 px-1">
-                    <span className="text-[10px] text-muted-foreground font-semibold">Variation name</span>
-                    <span className="text-[10px] text-muted-foreground font-semibold">Price</span>
-                    <span />
+            {/* ── Variations — eBay-style (qty + unit + price per option) ── */}
+            {(() => {
+              const UNITS = ["each","lb","lbs","oz","kg","g","bag","bunch","bundle","lot","box","pack","case","dozen","pallet"];
+              const pvNumpad = (i: number) => `pv_${i}`;
+              const pvQtyNumpad = (i: number) => `pvq_${i}`;
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">🏷️ Variations <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                    <span className="text-[10px] text-muted-foreground">e.g. 1 lb · $1&nbsp;&nbsp;|&nbsp;&nbsp;100 lbs · $50</span>
                   </div>
-                  {prodVars.map((v, i) => (
-                    <div key={i} className="grid grid-cols-[1fr_96px_32px] gap-2 items-center">
-                      <input
-                        type="text"
-                        value={v.name}
-                        onChange={(e) => setProdVars(pv => pv.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-                        placeholder="e.g. Medium"
-                        className="h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm font-bold outline-none focus:border-primary transition"
-                      />
-                      <div
-                        className={`h-9 rounded-lg border flex items-center px-3 cursor-pointer transition ${activeNumpad === `pv_${i}` ? "border-primary bg-muted/50" : "border-border bg-muted/30"}`}
-                        onClick={() => setActiveNumpad(activeNumpad === `pv_${i}` ? null : `pv_${i}`)}
-                      >
-                        <span className={`text-sm font-black ${activeNumpad === `pv_${i}` ? "text-primary" : "text-muted-foreground"}`}>
-                          ${v.price || "0.00"}
-                        </span>
-                      </div>
-                      <button type="button"
-                        onClick={() => setProdVars(pv => pv.filter((_, j) => j !== i))}
-                        className="h-9 w-8 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/10 transition">
-                        <X className="h-4 w-4" />
-                      </button>
-                      {activeNumpad === `pv_${i}` && (
-                        <div className="col-span-3">
-                          <div ref={numpadRef} className="grid grid-cols-3 gap-1.5 mt-1">
-                            {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => {
-                              const cur = prodVars[i]?.price ?? "";
-                              return (
+                  {prodVars.length === 0 ? (
+                    <button type="button"
+                      onClick={() => setProdVars([{ name: "each", price: "", qty: "1" }])}
+                      className="w-full h-9 rounded-lg border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
+                      + Add a variation
+                    </button>
+                  ) : (
+                    <div className="space-y-3">
+                      {prodVars.map((v, i) => (
+                        <div key={i} className="rounded-xl border border-border p-3 space-y-2" style={{ background: "var(--gradient-card)" }}>
+                          {/* Row 1: Qty + Unit + delete */}
+                          <div className="flex items-center gap-2">
+                            {/* Qty tap-to-numpad */}
+                            <div className="flex flex-col flex-1">
+                              <span className="text-[10px] text-muted-foreground mb-1">Quantity</span>
+                              <div
+                                className={`h-9 rounded-lg border flex items-center px-3 cursor-pointer transition ${activeNumpad === pvQtyNumpad(i) ? "border-primary bg-muted/50" : "border-border bg-muted/30"}`}
+                                onClick={() => setActiveNumpad(activeNumpad === pvQtyNumpad(i) ? null : pvQtyNumpad(i))}
+                              >
+                                <span className={`text-sm font-black ${activeNumpad === pvQtyNumpad(i) ? "text-primary" : "text-muted-foreground"}`}>
+                                  {v.qty || "1"}
+                                </span>
+                              </div>
+                            </div>
+                            {/* Unit picker */}
+                            <div className="flex flex-col flex-[2]">
+                              <span className="text-[10px] text-muted-foreground mb-1">Unit</span>
+                              <select
+                                value={v.name}
+                                onChange={(e) => setProdVars(pv => pv.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                                className="h-9 rounded-lg border border-border bg-muted px-2 text-sm font-bold outline-none cursor-pointer"
+                              >
+                                {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                            </div>
+                            {/* Price */}
+                            <div className="flex flex-col flex-[2]">
+                              <span className="text-[10px] text-muted-foreground mb-1">Price</span>
+                              <div
+                                className={`h-9 rounded-lg border flex items-center px-3 cursor-pointer transition ${activeNumpad === pvNumpad(i) ? "border-primary bg-muted/50" : "border-border bg-muted/30"}`}
+                                onClick={() => setActiveNumpad(activeNumpad === pvNumpad(i) ? null : pvNumpad(i))}
+                              >
+                                <span className={`text-sm font-black ${activeNumpad === pvNumpad(i) ? "text-primary" : "text-muted-foreground"}`}>
+                                  ${v.price || "0.00"}
+                                </span>
+                              </div>
+                            </div>
+                            {/* Delete */}
+                            <div className="flex flex-col justify-end">
+                              <span className="text-[10px] text-transparent mb-1">·</span>
+                              <button type="button"
+                                onClick={() => setProdVars(pv => pv.filter((_, j) => j !== i))}
+                                className="h-9 w-9 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/10 transition">
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Preview label */}
+                          {v.qty && v.name && v.price && parseFloat(v.price) > 0 && (
+                            <p className="text-xs font-bold" style={{ color: "var(--primary)" }}>
+                              {v.qty} {v.name} — ${parseFloat(v.price).toFixed(2)}
+                            </p>
+                          )}
+
+                          {/* Qty numpad */}
+                          {activeNumpad === pvQtyNumpad(i) && (
+                            <div ref={numpadRef} className="grid grid-cols-3 gap-1.5">
+                              {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => (
+                                <button key={k} type="button"
+                                  onClick={() => {
+                                    setProdVars(pv => pv.map((x, j) => {
+                                      if (j !== i) return x;
+                                      const cur = x.qty ?? "";
+                                      if (k === "⌫") return { ...x, qty: cur.slice(0, -1) };
+                                      if (k === ".") return cur.includes(".") ? x : { ...x, qty: cur + "." };
+                                      const dotIdx = cur.indexOf(".");
+                                      if (dotIdx !== -1 && cur.length - dotIdx > 2) return x;
+                                      return { ...x, qty: cur === "0" ? k : cur + k };
+                                    }));
+                                  }}
+                                  className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
+                                >{k}</button>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Price numpad */}
+                          {activeNumpad === pvNumpad(i) && (
+                            <div ref={numpadRef} className="grid grid-cols-3 gap-1.5">
+                              {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => (
                                 <button key={k} type="button"
                                   onClick={() => {
                                     setProdVars(pv => pv.map((x, j) => {
@@ -2370,21 +2433,21 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                                   }}
                                   className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
                                 >{k}</button>
-                              );
-                            })}
-                          </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      )}
+                      ))}
+                      <button type="button"
+                        onClick={() => setProdVars(pv => [...pv, { name: "each", price: "", qty: "1" }])}
+                        className="w-full h-9 rounded-xl border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
+                        + Add another option
+                      </button>
                     </div>
-                  ))}
-                  <button type="button"
-                    onClick={() => setProdVars(pv => [...pv, { name: "", price: "" }])}
-                    className="w-full h-8 rounded-xl border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
-                    + Add another
-                  </button>
-                </>
-              )}
-            </div>
+                  )}
+                </div>
+              );
+            })()}
 
           </div>
         </div>

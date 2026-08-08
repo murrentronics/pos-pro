@@ -24,7 +24,8 @@ import {
 } from "@/lib/offlineCache";
 
 type BottleVariation = { key: string; label: string; units_consumed: number; price: number };
-type Product = { id: string; name: string; price: number; cost_price?: number; image_url: string | null; category?: string; stock_qty?: number; units_per_item?: number; bottle_variations?: BottleVariation[] | null };
+type ProdVariation = { id: string; name: string; price: number; sort_order: number };
+type Product = { id: string; name: string; price: number; cost_price?: number; image_url: string | null; category?: string; stock_qty?: number; units_per_item?: number; bottle_variations?: BottleVariation[] | null; product_variations?: ProdVariation[] | null };
 type CartItem = Product & { qty: number; _discount?: number; _originalPrice?: number };
 type OpenedBottle = {
   id: string; owner_id: string; product_id: string; product_name: string;
@@ -163,7 +164,11 @@ function ItemModal({
     bv.length === 1 && (bv[0] as any)._type === "vargroups"
       ? (bv[0] as any).groups
       : [];
-  const hasVars = groups.length > 0 && groups.some((g) => g.options.some((o) => o.label.trim()));
+  const hasVarGroups = groups.length > 0 && groups.some((g) => g.options.some((o) => o.label.trim()));
+
+  // New eBay-style product_variations (qty + unit + price)
+  const prodVars = (product.product_variations ?? []).filter((v) => v.name.trim());
+  const hasProdVars = prodVars.length > 0;
 
   // counts: cartKey → qty selected in this session
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -184,9 +189,22 @@ function ItemModal({
     if (cur <= 1) { setCounts((c) => { const n = { ...c }; delete n[cartKey]; return n; }); return; }
     setCounts((c) => ({ ...c, [cartKey]: cur - 1 }));
   };
+  const clearOption = (cartKey: string) => {
+    setCounts((c) => { const n = { ...c }; delete n[cartKey]; return n; });
+  };
 
   const handleAdd = () => {
-    if (hasVars) {
+    if (hasProdVars) {
+      const lines: ItemModalLine[] = prodVars
+        .map((v) => {
+          const cartKey = `${product.id}__pv__${v.id}`;
+          const qty = counts[cartKey] ?? 0;
+          return qty > 0 ? { cartKey, name: `${product.name} (${v.name})`, price: v.price, qty } : null;
+        })
+        .filter(Boolean) as ItemModalLine[];
+      if (lines.length === 0) { toast.error("Select at least one option"); return; }
+      onAddToOrder(lines);
+    } else if (hasVarGroups) {
       const lines: ItemModalLine[] = [];
       for (const g of groups) {
         for (const opt of g.options.filter((o) => o.label.trim())) {
@@ -209,8 +227,14 @@ function ItemModal({
     }
   };
 
-  const hasSelection = hasVars ? totalSelected > 0 : baseQty > 0;
-  const orderTotal = hasVars
+  const hasSelection = (hasProdVars || hasVarGroups) ? totalSelected > 0 : baseQty > 0;
+
+  const orderTotal = hasProdVars
+    ? prodVars.reduce((s, v) => {
+        const qty = counts[`${product.id}__pv__${v.id}`] ?? 0;
+        return s + qty * v.price;
+      }, 0)
+    : hasVarGroups
     ? groups.reduce((s, g) => s + g.options.reduce((gs, opt) => {
         const cartKey = `${product.id}__${g.id}__${opt.id}`;
         const qty = counts[cartKey] ?? 0;
@@ -248,7 +272,77 @@ function ItemModal({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-4 pb-3 space-y-4">
-          {hasVars ? (
+
+          {/* ── eBay-style product_variations ── */}
+          {hasProdVars ? (
+            <div className="space-y-2">
+              <p className="text-xs font-black text-muted-foreground uppercase tracking-wider">Select option</p>
+              <div className="grid grid-cols-2 gap-2">
+                {prodVars.map((v) => {
+                  const cartKey = `${product.id}__pv__${v.id}`;
+                  const qty = counts[cartKey] ?? 0;
+                  const isSelected = qty > 0;
+                  return (
+                    <div
+                      key={v.id}
+                      className="relative rounded-2xl border-2 overflow-hidden transition"
+                      style={{
+                        borderColor: isSelected ? "var(--primary)" : "rgba(255,255,255,0.12)",
+                        background: isSelected ? "rgba(var(--primary-rgb,251 146 60)/0.10)" : "rgba(255,255,255,0.04)",
+                      }}
+                    >
+                      {/* X to clear — top right, only when selected */}
+                      {isSelected && (
+                        <button
+                          type="button"
+                          onClick={() => clearOption(cartKey)}
+                          className="absolute top-1.5 right-1.5 h-6 w-6 rounded-full flex items-center justify-center z-10 text-white shadow"
+                          style={{ background: "#dc2626" }}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                      {/* Tap card to increment */}
+                      <button
+                        type="button"
+                        onClick={() => incOption(cartKey)}
+                        className="w-full pt-3 pb-2 px-3 flex flex-col items-center gap-0.5 active:bg-white/5 transition"
+                      >
+                        <span className="font-black text-sm text-center leading-tight pr-5">{v.name}</span>
+                        <span className="font-black text-base mt-0.5" style={{ color: isSelected ? "var(--primary)" : "#86efac" }}>
+                          ${Number(v.price).toFixed(2)}
+                        </span>
+                        {isSelected && (
+                          <span className="text-[11px] font-black mt-0.5" style={{ color: "var(--primary)" }}>
+                            ${(v.price * qty).toFixed(2)} total
+                          </span>
+                        )}
+                      </button>
+                      {/* −/qty/+ controls when selected */}
+                      {isSelected && (
+                        <div className="flex items-center justify-between px-3 pb-2.5 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => decOption(cartKey)}
+                            className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
+                            style={{ background: "#ef4444" }}
+                          >−</button>
+                          <span className="font-black text-lg" style={{ color: "var(--primary)" }}>{qty}</span>
+                          <button
+                            type="button"
+                            onClick={() => incOption(cartKey)}
+                            className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
+                            style={{ background: "var(--gradient-hero)" }}
+                          >+</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+          ) : hasVarGroups ? (
             groups.map((group) => (
               <div key={group.id} className="space-y-2">
                 <p className="text-xs font-black text-muted-foreground uppercase tracking-wider">{group.name}</p>
@@ -261,19 +355,28 @@ function ItemModal({
                     return (
                       <div
                         key={opt.id}
-                        className="rounded-2xl border-2 overflow-hidden transition"
+                        className="relative rounded-2xl border-2 overflow-hidden transition"
                         style={{
                           borderColor: isSelected ? "var(--primary)" : "rgba(255,255,255,0.12)",
                           background: isSelected ? "rgba(var(--primary-rgb,251 146 60)/0.10)" : "rgba(255,255,255,0.04)",
                         }}
                       >
-                        {/* Tap the card to increment */}
+                        {isSelected && (
+                          <button
+                            type="button"
+                            onClick={() => clearOption(cartKey)}
+                            className="absolute top-1.5 right-1.5 h-6 w-6 rounded-full flex items-center justify-center z-10 text-white shadow"
+                            style={{ background: "#dc2626" }}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => incOption(cartKey)}
-                          className="w-full p-3 flex flex-col items-center gap-0.5 active:bg-white/5 transition"
+                          className="w-full pt-3 pb-2 px-3 flex flex-col items-center gap-0.5 active:bg-white/5 transition"
                         >
-                          <span className="font-black text-sm text-center leading-tight">{opt.label}</span>
+                          <span className="font-black text-sm text-center leading-tight pr-5">{opt.label}</span>
                           <span className="font-black text-base mt-0.5" style={{ color: isSelected ? "var(--primary)" : "#86efac" }}>
                             ${optPrice.toFixed(2)}
                           </span>
@@ -283,7 +386,6 @@ function ItemModal({
                             </span>
                           )}
                         </button>
-                        {/* −/qty/+ controls when selected */}
                         {isSelected && (
                           <div className="flex items-center justify-between px-3 pb-2.5 gap-2">
                             <button
@@ -639,14 +741,18 @@ export default function RegisterPage() {
   const fetchProducts = useCallback(async () => {
     const id = ownerIdRef.current;
     if (!id) return;
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .eq("owner_id", id)
-      .order("name", { ascending: true });
+    const [{ data, error }, { data: varRows }] = await Promise.all([
+      supabase.from("products").select("*").eq("owner_id", id).order("name", { ascending: true }),
+      supabase.from("product_variations").select("id, product_id, name, price, sort_order").eq("owner_id", id).order("sort_order", { ascending: true }),
+    ]);
     if (data) {
-      // Network success — update state and refresh the cache
-      setProducts((data ?? []) as Product[]);
+      // Attach product_variations to each product
+      const varsByProduct: Record<string, ProdVariation[]> = {};
+      for (const v of varRows ?? []) {
+        (varsByProduct[v.product_id] ??= []).push({ id: v.id, name: v.name, price: v.price, sort_order: v.sort_order });
+      }
+      const products = (data as Product[]).map((p) => ({ ...p, product_variations: varsByProduct[p.id] ?? null }));
+      setProducts(products);
       setLoading(false);
       cacheProducts(id, data as CachedProduct[]);
     } else {
