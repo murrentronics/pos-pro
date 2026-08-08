@@ -4,9 +4,9 @@ import tailwindcss from "@tailwindcss/vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import path from "path";
 
-const externalSupabaseUrl = "https://vavfsgbrfpvolskscolf.supabase.co";
+const externalSupabaseUrl = "https://wpuqdwrndjswjzieoinx.supabase.co";
 const externalSupabasePublishableKey =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhdmZzZ2JyZnB2b2xza3Njb2xmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzODcyNDAsImV4cCI6MjA5Mzk2MzI0MH0.DNNQJ8sHPWljEpYuRoyXtCmR6QCkKmAzfyd08C6kovI";
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwdXFkd3JuZGpzd2p6aWVvaW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5MzgzMzYsImV4cCI6MjEwMTUxNDMzNn0.d-uguw1p2gUgqjxf_WhZSvXwQD6AbB-A2pIIZah7nFc";
 
 export default defineConfig(({ mode }) => {
   // Load .env so VITE_APP_VERSION is available at build time
@@ -46,7 +46,7 @@ export default defineConfig(({ mode }) => {
   },
   define: {
     "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(externalSupabaseUrl),
-    "import.meta.env.VITE_SUPABASE_PROJECT_ID": JSON.stringify("vavfsgbrfpvolskscolf"),
+    "import.meta.env.VITE_SUPABASE_PROJECT_ID": JSON.stringify("wpuqdwrndjswjzieoinx"),
     "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": JSON.stringify(externalSupabasePublishableKey),
     // Bake the current version into the bundle so the update checker works correctly
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(appVersion),
