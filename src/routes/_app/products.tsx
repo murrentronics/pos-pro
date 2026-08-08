@@ -1896,6 +1896,9 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   });
   const [category, setCategory] = useState<string>(editProduct?.category ?? "");
   const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
+  // Generic product variations (Shopify-style) — for all non-liquor, non-cigarette categories
+  type ProdVar = { id?: string; name: string; price: string };
+  const [prodVars, setProdVars] = useState<ProdVar[]>([]);
   useEffect(() => {
     if (!ownerId) return;
     supabase
@@ -1910,6 +1913,19 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
         if (!editProduct?.category && cats.length > 0) setCategory(cats[0].id);
       });
   }, [ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Load existing generic product_variations for edit mode
+  useEffect(() => {
+    if (!editProduct?.id) return;
+    supabase
+      .from("product_variations")
+      .select("id, name, price")
+      .eq("product_id", editProduct.id)
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        if (data && data.length > 0)
+          setProdVars(data.map((v) => ({ id: v.id, name: v.name, price: String(v.price) })));
+      });
+  }, [editProduct?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(editProduct?.image_url ?? null);
   const [templateUrl, setTemplateUrl] = useState<string | null>(editProduct?.image_url ?? null);
@@ -1992,6 +2008,14 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
         .eq("id", editProduct.id).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
+      // Save generic product variations
+      await supabase.from("product_variations").delete().eq("product_id", editProduct.id);
+      if (prodVars.length > 0) {
+        const rows = prodVars
+          .filter((v) => v.name.trim() && parseFloat(v.price) > 0)
+          .map((v, i) => ({ product_id: editProduct.id, owner_id: ownerId, name: v.name.trim(), price: parseFloat(v.price), sort_order: i }));
+        if (rows.length > 0) await supabase.from("product_variations").insert(rows);
+      }
       toast.success("Item updated");
       onDone();
       if (!skipStockRef.current)
@@ -2003,8 +2027,15 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
       }).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
+      // Save generic product variations
+      if (prodVars.length > 0) {
+        const rows = prodVars
+          .filter((v) => v.name.trim() && parseFloat(v.price) > 0)
+          .map((v, i) => ({ product_id: inserted.id, owner_id: ownerId, name: v.name.trim(), price: parseFloat(v.price), sort_order: i }));
+        if (rows.length > 0) await supabase.from("product_variations").insert(rows);
+      }
       toast.success("Item added");
-      setName(""); setPrice(""); setCostPrice(""); setCategory(""); setFile(null); setPreview(null); setTemplateUrl(null);
+      setName(""); setPrice(""); setCostPrice(""); setCategory(""); setFile(null); setPreview(null); setTemplateUrl(null); setProdVars([]);
       onDone();
       if (!skipStockRef.current)
         onSaved({ ...inserted, units_per_item: inserted.units_per_item ?? 0, bottle_variations: (inserted.bottle_variations ?? null) as any });
@@ -2278,33 +2309,83 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
               </div>
             )}
 
-            {/* Cost Price + Base Selling Price */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">Cost Price</Label>
-                <div
-                  className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
-                  onClick={() => setActiveNumpad(activeNumpad === "cost" ? null : "cost")}
-                >
-                  <span className={`text-base font-black ${activeNumpad === "cost" ? "text-primary" : "text-muted-foreground"}`}>
-                    ${costPrice || "0.00"}
-                  </span>
-                </div>
-                <InlineNumpad forField="cost" />
+            {/* Generic Product Variations — Shopify-style, shown for all categories */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">🏷️ Variations <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <span className="text-[10px] text-muted-foreground">e.g. Small, Medium, Large · 250ml, 500ml</span>
               </div>
-              <div>
-                <Label className="text-xs">Base Selling Price</Label>
-                <div
-                  className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
-                  onClick={() => setActiveNumpad(activeNumpad === "selling" ? null : "selling")}
-                >
-                  <span className={`text-base font-black ${activeNumpad === "selling" ? "text-primary" : "text-muted-foreground"}`}>
-                    ${price || "0.00"}
-                  </span>
-                </div>
-                <InlineNumpad forField="selling" />
-              </div>
+              {prodVars.length === 0 ? (
+                <button type="button"
+                  onClick={() => setProdVars([{ name: "", price: "" }])}
+                  className="w-full h-9 rounded-lg border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
+                  + Add a variation
+                </button>
+              ) : (
+                <>
+                  {/* Header row */}
+                  <div className="grid grid-cols-[1fr_96px_32px] gap-2 px-1">
+                    <span className="text-[10px] text-muted-foreground font-semibold">Variation name</span>
+                    <span className="text-[10px] text-muted-foreground font-semibold">Price</span>
+                    <span />
+                  </div>
+                  {prodVars.map((v, i) => (
+                    <div key={i} className="grid grid-cols-[1fr_96px_32px] gap-2 items-center">
+                      <input
+                        type="text"
+                        value={v.name}
+                        onChange={(e) => setProdVars(pv => pv.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                        placeholder="e.g. Medium"
+                        className="h-9 rounded-lg border border-border bg-muted/30 px-3 text-sm font-bold outline-none focus:border-primary transition"
+                      />
+                      <div
+                        className={`h-9 rounded-lg border flex items-center px-3 cursor-pointer transition ${activeNumpad === `pv_${i}` ? "border-primary bg-muted/50" : "border-border bg-muted/30"}`}
+                        onClick={() => setActiveNumpad(activeNumpad === `pv_${i}` ? null : `pv_${i}`)}
+                      >
+                        <span className={`text-sm font-black ${activeNumpad === `pv_${i}` ? "text-primary" : "text-muted-foreground"}`}>
+                          ${v.price || "0.00"}
+                        </span>
+                      </div>
+                      <button type="button"
+                        onClick={() => setProdVars(pv => pv.filter((_, j) => j !== i))}
+                        className="h-9 w-8 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/10 transition">
+                        <X className="h-4 w-4" />
+                      </button>
+                      {activeNumpad === `pv_${i}` && (
+                        <div className="col-span-3">
+                          <div ref={numpadRef} className="grid grid-cols-3 gap-1.5 mt-1">
+                            {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => {
+                              const cur = prodVars[i]?.price ?? "";
+                              return (
+                                <button key={k} type="button"
+                                  onClick={() => {
+                                    setProdVars(pv => pv.map((x, j) => {
+                                      if (j !== i) return x;
+                                      if (k === "⌫") return { ...x, price: x.price.slice(0, -1) };
+                                      if (k === ".") return x.price.includes(".") ? x : { ...x, price: x.price + "." };
+                                      const dotIdx = x.price.indexOf(".");
+                                      if (dotIdx !== -1 && x.price.length - dotIdx > 2) return x;
+                                      return { ...x, price: x.price === "0" ? k : x.price + k };
+                                    }));
+                                  }}
+                                  className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
+                                >{k}</button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button"
+                    onClick={() => setProdVars(pv => [...pv, { name: "", price: "" }])}
+                    className="w-full h-8 rounded-xl border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
+                    + Add another
+                  </button>
+                </>
+              )}
             </div>
+
           </div>
         </div>
 
