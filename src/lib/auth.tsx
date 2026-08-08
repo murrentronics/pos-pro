@@ -3,7 +3,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
 
-export type UserStatus = "pending" | "approved" | "suspended" | "expelled";
+export type UserStatus = "pending" | "approved" | "suspended" | "expelled" | "rejected";
 export type Profile = {
   id: string;
   username: string;

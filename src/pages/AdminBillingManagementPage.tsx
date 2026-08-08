@@ -132,27 +132,17 @@ export default function AdminBillingManagementPage() {
     const now = new Date().toISOString();
     const soon = sevenDaysFromNow.toISOString();
 
-    // Fetch all approved owners with enough columns to handle every plan type
+    // Fetch all approved owners — all P.O.S. Pro plans use subscription_end_date
     const { data: allOwners } = await supabase
       .from("profiles")
-      .select("id, username, plan_type, subscription_end_date, machines_addon_end_date, premium_subscription_end_date")
+      .select("id, username, plan_type, subscription_end_date")
       .eq("status", "approved")
       .eq("role", "owner");
 
-    // Pick the relevant expiry column per plan type
     type DueRow = { id: string; username: string; endDate: Date };
     const dueRows: DueRow[] = [];
     for (const owner of allOwners ?? []) {
-      const pt = owner.plan_type ?? "basic";
-      let endDateStr: string | null = null;
-      if (pt === "machines_only" || pt === "machines_only_20") {
-        endDateStr = owner.machines_addon_end_date ?? null;
-      } else if (pt === "premium" || pt === "premium_20") {
-        endDateStr = owner.premium_subscription_end_date ?? owner.subscription_end_date ?? null;
-      } else {
-        // basic, chain, bar_only and everything else uses subscription_end_date
-        endDateStr = owner.subscription_end_date ?? null;
-      }
+      const endDateStr = owner.subscription_end_date ?? null;
       if (!endDateStr) continue;
       if (endDateStr >= now && endDateStr <= soon) {
         dueRows.push({ id: owner.id, username: owner.username ?? "Unknown", endDate: new Date(endDateStr) });
@@ -211,21 +201,16 @@ export default function AdminBillingManagementPage() {
       if (plan) {
         const { data: ownerProfile } = await supabase
           .from("profiles")
-          .select("subscription_end_date, billing_status, premium_subscription_end_date, machines_addon_end_date")
+          .select("subscription_end_date, billing_status")
           .eq("id", selectedPayment.owner_id)
           .single();
         
         const startDate = new Date();
-        const isPremium = (plan as any).plan_type === "premium" || (plan as any).plan_type === "premium_20";
-        const isChainPlan = (plan as any).plan_type === "chain";
-        const isMachinesOnly = (plan as any).plan_type === "machines_only" || (plan as any).plan_type === "machines_only_20";
-        const isBarOnlyAddon     = (plan as any).plan_type === "bar_only_addon";
-        const isMachinesBarAddon = (plan as any).plan_type === "machines_bar_addon" || (plan as any).plan_type === "machines_bar_addon_20";
-        const isPremiumAddon     = (plan as any).plan_type === "premium_addon" || (plan as any).plan_type === "premium_addon_20";
-        const isAnyBarAddon      = isBarOnlyAddon || isMachinesBarAddon || isPremiumAddon;
+        const isChainPlan    = (plan as any).plan_type === "chain";
+        const isBarOnlyAddon = (plan as any).plan_type === "bar_only_addon";
+
         if (isChainPlan) {
-          // Chain plan: set plan_type = "chain", chain_addon_active = true,
-          // subscription_end_date = now + duration_months, chain_bar_count = 0
+          // Chain plan: set plan_type = "chain", chain_addon_active = true
           const chainEnd = new Date(startDate);
           chainEnd.setMonth(chainEnd.getMonth() + plan.duration_months);
 
@@ -234,62 +219,21 @@ export default function AdminBillingManagementPage() {
             billing_status: "active",
             plan_type: "chain",
             chain_addon_active: true,
-            chain_bar_count: 1,  // their existing bar is automatically bar 1
+            chain_bar_count: 1,
             subscription_start_date: startDate.toISOString(),
             subscription_end_date: chainEnd.toISOString(),
-            
           }).eq("id", selectedPayment.owner_id);
 
           updates.next_due_date = chainEnd.toISOString();
 
-        } else if (isMachinesOnly) {
-          // Machines Only: activate machines, hide bar features
-          // Preserve the exact variant (machines_only or machines_only_20)
-          const endDate = new Date(startDate);
-          endDate.setMonth(endDate.getMonth() + plan.duration_months);
-
-          await supabase.from("profiles").update({
-            status: "approved",
-            billing_status: "active",
-            plan_type: (plan as any).plan_type, // "machines_only" or "machines_only_20"
-            machines_addon_active: true,
-            machines_addon_start_date: startDate.toISOString(),
-            machines_addon_end_date: endDate.toISOString(),
-            bar_addon_active: false,
-            
-          }).eq("id", selectedPayment.owner_id);
-
-          updates.next_due_date = endDate.toISOString();
-
-        } else if (isPremium) {
-          // Premium: extend premium_subscription_end_date independently
-          const premiumBase = ownerProfile?.premium_subscription_end_date
-            && new Date(ownerProfile.premium_subscription_end_date) > startDate
-            ? new Date(ownerProfile.premium_subscription_end_date)
-            : startDate;
-          const premiumEnd = new Date(premiumBase);
-          premiumEnd.setMonth(premiumEnd.getMonth() + plan.duration_months);
-
-          await supabase.from("profiles").update({
-            status: "approved",
-            billing_status: "active",
-            plan_type: (plan as any).plan_type, // "premium" or "premium_20"
-            premium_subscription_start_date: startDate.toISOString(),
-            premium_subscription_end_date: premiumEnd.toISOString(),
-            
-          }).eq("id", selectedPayment.owner_id);
-
-          updates.next_due_date = premiumEnd.toISOString();
-
-        } else if (isAnyBarAddon) {
-          // Multi-bar addon: call create-addon-bars edge function to bulk-create bars
-          // and reset the subscription end date to now + 12 months
+        } else if (isBarOnlyAddon) {
+          // Multi-store addon: call create-addon-bars edge function
           const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
           const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
           const { data: { session: adminSession } } = await supabase.auth.getSession();
 
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 30_000); // 30s timeout
+          const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
           let res: Response;
           try {
@@ -307,7 +251,7 @@ export default function AdminBillingManagementPage() {
             clearTimeout(timeoutId);
             const msg = fetchErr instanceof Error && fetchErr.name === "AbortError"
               ? "Request timed out — please try again"
-              : "Network error reaching bar creation service";
+              : "Network error reaching store creation service";
             toast.error(msg);
             setLoading(false);
             return;
@@ -316,27 +260,18 @@ export default function AdminBillingManagementPage() {
 
           const json = await res.json();
           if (!res.ok) {
-            toast.error("Bar creation failed: " + (json.error ?? "unknown error"));
+            toast.error("Store creation failed: " + (json.error ?? "unknown error"));
             setLoading(false);
             return;
           }
 
-          // next_due_date = owner's existing plan end date (NOT now + 12 months)
-          // Addon bars are pro-rated to the remaining time on the base plan.
-          // The edge function does NOT move the subscription_end_date, so the
-          // owner's renewal date stays intact and they pay full price at renewal.
-          const existingEnd = ownerProfile?.subscription_end_date
-            ?? ownerProfile?.premium_subscription_end_date
-            ?? ownerProfile?.machines_addon_end_date;
-          const addonEnd = existingEnd ? new Date(existingEnd) : (() => {
-            const d = new Date();
-            d.setMonth(d.getMonth() + plan.duration_months);
-            return d;
-          })();
+          const addonEnd = ownerProfile?.subscription_end_date
+            ? new Date(ownerProfile.subscription_end_date)
+            : (() => { const d = new Date(); d.setMonth(d.getMonth() + plan.duration_months); return d; })();
           updates.next_due_date = addonEnd.toISOString();
 
         } else {
-          // Basic: extend the main subscription dates
+          // Basic (P.O.S. Pro Annual Plan): extend subscription_end_date
           const isActiveRenewal =
             ownerProfile?.subscription_end_date &&
             ownerProfile?.billing_status === "active" &&
@@ -349,7 +284,6 @@ export default function AdminBillingManagementPage() {
           await supabase.from("profiles").update({
             status: "approved",
             billing_status: "active",
-            
             plan_type: "basic",
             ...(isActiveRenewal ? {} : { subscription_start_date: startDate.toISOString() }),
             subscription_end_date: endDate.toISOString(),
@@ -359,11 +293,21 @@ export default function AdminBillingManagementPage() {
         }
       }
     } else if (status === "rejected") {
-      // Set owner status to suspended when payment is rejected
+      // Set user to "rejected" — locked out until admin manually sends to pending
+      // Delete the payment record so a fresh one can be submitted later
       await supabase
         .from("profiles")
-        .update({ status: "suspended" })
+        .update({
+          status: "rejected",
+          billing_status: "pending_setup",
+          subscription_start_date: null,
+          subscription_end_date: null,
+        })
         .eq("id", selectedPayment.owner_id);
+      await supabase
+        .from("billing_payments")
+        .delete()
+        .eq("id", selectedPayment.id);
     }
 
     const { error } = await supabase
@@ -378,7 +322,7 @@ export default function AdminBillingManagementPage() {
       return;
     }
 
-    toast.success(`Payment ${status === "paid" ? "approved" : "rejected"}`);
+    toast.success(`Payment ${status === "paid" ? "approved" : "rejected — user reset to pending"}`);
     setSelectedPayment(null);
     setNotes("");
     setConfirmRevoke(false);
@@ -428,18 +372,9 @@ export default function AdminBillingManagementPage() {
 
     const planType = selectedPayment.billing_plans?.plan_type ?? "basic";
     toast.success(
-      planType === "chain"                ? `${selectedPayment.profiles?.username} Chain plan revoked — reset to pending` :
-      planType === "basic"                ? `${selectedPayment.profiles?.username} reset to pending — subscription removed` :
-      planType === "machines_only"        ? `${selectedPayment.profiles?.username} machines plan revoked — reset to pending` :
-      planType === "machines_only_20"     ? `${selectedPayment.profiles?.username} machines (20-screen) plan revoked — reset to pending` :
-      planType === "premium"              ? `${selectedPayment.profiles?.username} downgraded to Basic` :
-      planType === "premium_20"           ? `${selectedPayment.profiles?.username} Bar+Machines 20-screen plan revoked` :
-      planType === "bar_only_addon"       ? `${selectedPayment.profiles?.username} extra bar revoked` :
-      planType === "machines_bar_addon"   ? `${selectedPayment.profiles?.username} extra machines account (10-screen) revoked` :
-      planType === "machines_bar_addon_20"? `${selectedPayment.profiles?.username} extra machines account (20-screen) revoked` :
-      planType === "premium_addon"        ? `${selectedPayment.profiles?.username} extra bar+machines (10-screen) revoked` :
-      planType === "premium_addon_20"     ? `${selectedPayment.profiles?.username} extra bar+machines (20-screen) revoked` :
-      "Subscription revoked"
+      planType === "chain"          ? `${selectedPayment.profiles?.username} Chain plan revoked — reset to pending` :
+      planType === "bar_only_addon" ? `${selectedPayment.profiles?.username} extra store revoked` :
+      `${selectedPayment.profiles?.username} reset to pending — subscription removed`
     );
     setSelectedPayment(null);
     setConfirmRevoke(false);

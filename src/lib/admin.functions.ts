@@ -7,7 +7,7 @@ export type AdminProfileRow = {
   username: string;
   email: string;
   role: "admin" | "owner" | "cashier" | "manager";
-  status: "pending" | "approved" | "suspended" | "expelled";
+  status: "pending" | "approved" | "suspended" | "expelled" | "rejected";
   wallet_balance: number;
   created_at: string;
   parent_id: string | null;
@@ -68,7 +68,6 @@ export async function setUserStatus(
 
   if (error) throw new Error(error.message);
 }
-
 // ── Delete user (admin RPC) ──────────────────────────────────────────────────
 
 export async function adminDeleteUser(user_id: string): Promise<void> {

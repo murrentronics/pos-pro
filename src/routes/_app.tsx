@@ -217,6 +217,11 @@ function AppLayout() {
         message="Your account has been expelled. You no longer have access to P.O.S. Pro."
         onSignOut={() => { signOut(); nav({ to: "/login" }); }} />;
     }
+    if (profile.status === "rejected") {
+      return <FullScreenStatus icon={Ban} title="Account rejected"
+        message="Your payment was rejected by admin. Contact admin to have your account reinstated."
+        onSignOut={() => { signOut(); nav({ to: "/login" }); }} />;
+    }
     if (profile.status === "suspended") {
       if (loc.pathname === "/billing") return <Outlet />;
       return <FullScreenStatus icon={Ban} title="Account suspended"

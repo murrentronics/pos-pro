@@ -112,6 +112,7 @@ export default function AppLayout() {
   const isDemo     = DEMO_EMAILS.includes(ownerEmail);
   const isPending  = !isAdmin && !isCashier && !isManager && !isDemo && profile.status === "pending";
   const isSuspended = !isAdmin && !isCashier && !isManager && !isDemo && profile.status === "suspended";
+  const isRejected  = !isAdmin && !isCashier && !isManager && !isDemo && profile.status === "rejected";
 
 
   if (!isAdmin && !isCashier && profile.status === "expelled") {
@@ -120,6 +121,17 @@ export default function AppLayout() {
         icon={UserMinus}
         title="Account expelled"
         message="Your account has been expelled. You no longer have access to P.O.S. Pro."
+        onSignOut={() => { signOut(); nav("/login"); }}
+      />
+    );
+  }
+
+  if (isRejected) {
+    return (
+      <FullScreenStatus
+        icon={Ban}
+        title="Account rejected"
+        message="Your payment was rejected by admin. Contact admin to have your account reinstated."
         onSignOut={() => { signOut(); nav("/login"); }}
       />
     );

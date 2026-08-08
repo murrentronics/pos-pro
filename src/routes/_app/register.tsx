@@ -10,7 +10,7 @@ import {
   Trash2, Minus, Plus, Loader2, X, CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { CATEGORIES, type CategoryValue, categoryIcon, categoryKey } from "@/lib/categories";
+import { categoryIcon } from "@/lib/categories";
 import { useTranslation } from "@/lib/i18n";
 import { useNetworkStatus } from "@/lib/useNetworkStatus";
 import { enqueue } from "@/lib/offlineQueue";
@@ -24,7 +24,7 @@ import {
 } from "@/lib/offlineCache";
 
 type BottleVariation = { key: string; label: string; units_consumed: number; price: number };
-type Product = { id: string; name: string; price: number; cost_price?: number; image_url: string | null; category?: CategoryValue; stock_qty?: number; units_per_item?: number; bottle_variations?: BottleVariation[] | null };
+type Product = { id: string; name: string; price: number; cost_price?: number; image_url: string | null; category?: string; stock_qty?: number; units_per_item?: number; bottle_variations?: BottleVariation[] | null };
 type CartItem = Product & { qty: number; _discount?: number; _originalPrice?: number };
 type OpenedBottle = {
   id: string; owner_id: string; product_id: string; product_name: string;
@@ -357,7 +357,9 @@ export default function RegisterPage() {
   };
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [category, setCategory] = useState<CategoryValue>("beers");
+  const [category, setCategory] = useState<string>("__all__");
+  // DB categories loaded from store_categories table
+  const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
   // Stable array reference — only changes when the product list actually changes,
   // not on every cart state update. Without useMemo, every tap (cart change) would
   // create a new array and re-trigger the entire IndexedDB read pipeline.
@@ -470,7 +472,8 @@ export default function RegisterPage() {
   }, [ownerId, fetchProducts]);
 
   const filtered = useMemo(() => {
-    return products.filter((p) => (p.category || "beers") === category);
+    if (category === "__all__") return products;
+    return products.filter((p) => p.category === category);
   }, [products, category]);
 
   // ── Bar sort order ────────────────────────────────────────────────────────
@@ -490,12 +493,13 @@ export default function RegisterPage() {
   // Pre-sort all categories at once so switching tabs is a map lookup, not a re-sort
   const allCategorySorted = useMemo(() => {
     const map: Record<string, Product[]> = {};
-    for (const cat of CATEGORIES) {
-      map[cat.value] = applyBarSort(products, cat.value, barSortMapRef.current);
+    const allCats = ["__all__", ...storeCategories.map(c => c.id)];
+    for (const cat of allCats) {
+      map[cat] = applyBarSort(products, cat, barSortMapRef.current);
     }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, barSortMap]);
+  }, [products, barSortMap, storeCategories]);
 
   // Block the browser's built-in long-press (context menu / text-selection grab)
   // which steals touch focus and freezes buttons. Must be non-passive so we can
@@ -540,7 +544,8 @@ export default function RegisterPage() {
   };
 
   function applyBarSort(prods: Product[], cat: string, map: Record<string, number>) {
-    return [...prods.filter(p => (p.category || "beers") === cat)].sort((a, b) => {
+    const catProds = cat === "__all__" ? prods : prods.filter(p => p.category === cat);
+    return [...catProds].sort((a, b) => {
       const ia = map[a.id] ?? Infinity;
       const ib = map[b.id] ?? Infinity;
       if (ia !== ib) return ia - ib;
@@ -564,6 +569,19 @@ export default function RegisterPage() {
   useEffect(() => {
     if (ownerId) loadBarSort();
   }, [ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load store categories from DB
+  useEffect(() => {
+    if (!ownerId) return;
+    supabase
+      .from("store_categories")
+      .select("id, name")
+      .eq("owner_id", ownerId)
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        setStoreCategories(data ?? []);
+      });
+  }, [ownerId]);
 
   useEffect(() => {
     if (barEditModeRef.current) return;
@@ -1184,50 +1202,49 @@ export default function RegisterPage() {
       <div className="sticky top-0 z-20 -mx-3 px-3 py-2 bg-background/95 backdrop-blur border-b border-border">
         {/* Mobile: horizontal scroll strip; sm+: fixed grid */}
         <div className="sm:hidden flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-          {CATEGORIES.map((cat) => (
+          {[{ id: "__all__", name: "All" }, ...storeCategories].map((cat) => (
             <button
-              key={cat.value}
+              key={cat.id}
               onClick={() => {
                 handleBarDone();
-                const sorted = allCategorySorted[cat.value] ?? applyBarSort(products, cat.value, barSortMapRef.current);
+                const sorted = allCategorySorted[cat.id] ?? applyBarSort(products, cat.id, barSortMapRef.current);
                 barOrderedRef.current = sorted;
-                setCategory(cat.value);
+                setCategory(cat.id);
                 setBarOrdered(sorted);
                 document.querySelector("main")?.scrollTo({ top: 0, behavior: "instant" });
               }}
               className={`h-10 shrink-0 rounded-xl font-black transition flex items-center justify-center px-4 ${
-                category === cat.value
+                category === cat.id
                   ? "text-primary-foreground"
                   : "bg-muted text-muted-foreground"
               }`}
-              style={category === cat.value ? { background: "var(--gradient-hero)" } : {}}
+              style={category === cat.id ? { background: "var(--gradient-hero)" } : {}}
             >
-              <span className="text-xs leading-none whitespace-nowrap">{t(categoryKey(cat.value), cat.label)}</span>
+              <span className="text-xs leading-none whitespace-nowrap">{cat.name}</span>
             </button>
           ))}
         </div>
         {/* Tablet / desktop: fixed grid, all tabs visible */}
-        <div className="hidden sm:grid max-w-2xl lg:max-w-4xl mx-auto grid-cols-7 gap-1.5">
-          {CATEGORIES.map((cat) => (
+        <div className="hidden sm:flex flex-wrap gap-1.5 max-w-2xl lg:max-w-4xl mx-auto">
+          {[{ id: "__all__", name: "All" }, ...storeCategories].map((cat) => (
             <button
-              key={cat.value}
+              key={cat.id}
               onClick={() => {
                 handleBarDone();
-                const sorted = allCategorySorted[cat.value] ?? applyBarSort(products, cat.value, barSortMapRef.current);
+                const sorted = allCategorySorted[cat.id] ?? applyBarSort(products, cat.id, barSortMapRef.current);
                 barOrderedRef.current = sorted;
-                setCategory(cat.value);
+                setCategory(cat.id);
                 setBarOrdered(sorted);
                 document.querySelector("main")?.scrollTo({ top: 0, behavior: "instant" });
               }}
-              className={`h-10 lg:h-11 rounded-xl font-black transition flex items-center justify-center ${
-                category === cat.value
+              className={`h-10 lg:h-11 rounded-xl font-black transition flex items-center justify-center px-4 ${
+                category === cat.id
                   ? "text-primary-foreground"
                   : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
-              style={category === cat.value ? { background: "var(--gradient-hero)" } : {}}
-              title={t(categoryKey(cat.value), cat.label)}
+              style={category === cat.id ? { background: "var(--gradient-hero)" } : {}}
             >
-              <span className="text-xs lg:text-sm leading-none text-center">{t(categoryKey(cat.value), cat.label)}</span>
+              <span className="text-xs lg:text-sm leading-none text-center">{cat.name}</span>
             </button>
           ))}
         </div>
@@ -1321,7 +1338,7 @@ export default function RegisterPage() {
 
             {filtered.length === 0 && !loading ? (
               <div className="text-center py-20 text-muted-foreground">
-                {products.length === 0 ? "No items yet. Add some on the Items page." : `No ${t(categoryKey(CATEGORIES.find(c=>c.value===category)?.value ?? ""), CATEGORIES.find(c=>c.value===category)?.label ?? category)} found.`}
+                {products.length === 0 ? "No items yet. Add some on the Items page." : `No ${storeCategories.find(c => c.id === category)?.name ?? "items"} found.`}
               </div>
             ) : (
           <div>

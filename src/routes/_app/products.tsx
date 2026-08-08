@@ -12,7 +12,7 @@ import { useImageCache } from "@/lib/useImageCache";
 import { productImageUrl } from "@/lib/imageUrl";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { CATEGORIES, categoryIcon, categoryKey } from "@/lib/categories";
+import { categoryIcon } from "@/lib/categories";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
@@ -667,9 +667,10 @@ function TemplatePicker({ onSelect, onToggle, selectedUrls, ownerId, category, s
 }
 
 // ─── Bulk Edit Modal ──────────────────────────────────────────────────────────
-function BulkEditModal({ items, ownerId, onClose, onSaved }: {
+function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
   items: Product[];
   ownerId: string;
+  storeCategories: { id: string; name: string }[];
   onClose: () => void;
   onSaved: (patches: { id: string; stock_qty: number; stock_last_expense_id: string | null; cost_price?: number; price?: number }[]) => void;
 }) {
@@ -826,9 +827,9 @@ function BulkEditModal({ items, ownerId, onClose, onSaved }: {
 
   // Sort all items alphabetically, group by category
   const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name));
-  const grouped = CATEGORIES.map((cat) => ({
-    cat,
-    products: sorted.filter((p) => (p.category || "beers") === cat.value),
+  const grouped = storeCategories.map((cat) => ({
+    cat: { value: cat.id, label: cat.name },
+    products: sorted.filter((p) => p.category === cat.id),
   })).filter((g) => g.products.length > 0);
 
   // Items with a new qty entered
@@ -1691,7 +1692,9 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editItem, setEditItem] = useState<Product | null>(null);
-  const [category, setCategory] = useState<string>("beers");
+  const [category, setCategory] = useState<string>("__all__");
+  // DB categories loaded from store_categories
+  const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
   const [stockNumpadId, setStockNumpadId] = useState<string | null>(null);
   // Tracks the source that opened StockNumpad so Back can return to it:
   // "addDialog" = came from the "+ Add Items" dialog (reopen it)
@@ -1702,6 +1705,7 @@ export default function ProductsPage() {
   // so Back can reliably restore the Edit Item dialog regardless of Radix state.
   const editItemForBackRef = useRef<Product | null>(null);
   const [showBulkEdit, setShowBulkEdit] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [bulkAddItems, setBulkAddItems] = useState<Product[] | null>(null);
   // Preload product images so the grid renders instantly and works offline
   useImageCache(items.map((p) => productImageUrl(p.image_url)));
@@ -1733,6 +1737,18 @@ export default function ProductsPage() {
     return () => { supabase.removeChannel(ch); };
   }, [profile?.id, load, effectiveOwnerId]);
 
+  // Load store categories
+  useEffect(() => {
+    if (!profile?.id) return;
+    const ownerIdForQuery = effectiveOwnerId((profile.role === "manager" || profile.job_title === "manager") ? (profile.parent_id ?? profile.id) : profile.id);
+    supabase
+      .from("store_categories")
+      .select("id, name")
+      .eq("owner_id", ownerIdForQuery)
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => setStoreCategories(data ?? []));
+  }, [profile?.id, effectiveOwnerId]);
+
   if (profile?.role !== "owner" && profile?.role !== "manager" && profile?.job_title !== "manager") {
     return <div className="text-center text-muted-foreground py-20">Only owners and managers can manage items.</div>;
   }
@@ -1742,7 +1758,7 @@ export default function ProductsPage() {
       ? (profile.parent_id ?? profile.id)
       : profile.id
   );
-  const filtered = items.filter((p) => (p.category || "beers") === category);
+  const filtered = items.filter((p) => category === "__all__" || p.category === category);
 
   const updateStock = async (id: string, delta: number) => {
     const item = items.find((p) => p.id === id);
@@ -1788,40 +1804,9 @@ export default function ProductsPage() {
                 ownerId={ownerIdForQuery}
                 onDone={() => { setOpen(false); load(); }}
                 onSaved={(product) => {
-                  // inject the new product into items immediately so the numpad can find it
                   setItems((prev) => [...prev, product]);
                   setStockNumpadSource("addDialog");
                   setStockNumpadId(product.id);
-                }}
-                onBulkSelect={async (templates) => {
-                  setOpen(false);
-                  // Insert all stub products in parallel, then open bulk edit immediately
-                  const results = await Promise.all(
-                    templates.map((t) =>
-                      supabase
-                        .from("products")
-                        .insert({
-                          owner_id: ownerIdForQuery,
-                          name: t.label,
-                          image_url: t.url,
-                          category: t.category,
-                          price: 0,
-                          cost_price: 0,
-                          units_per_item: 0,
-                          bottle_variations: null,
-                          stock_qty: 0,
-                        })
-                        .select("*")
-                        .single()
-                    )
-                  );
-                  const inserted = results
-                    .filter(({ error }) => !error)
-                    .map(({ data }) => data as Product);
-                  if (inserted.length > 0) {
-                    setItems((prev) => [...prev, ...inserted]);
-                    setBulkAddItems(inserted);
-                  }
                 }}
               />
           </Dialog>
@@ -1829,30 +1814,30 @@ export default function ProductsPage() {
         </div>
         {/* Mobile: horizontal scroll; sm+: fixed grid */}
         <div className="sm:hidden flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-          {CATEGORIES.map((cat) => (
+          {[{ id: "__all__", name: "All" }, ...storeCategories].map((cat) => (
             <button
-              key={cat.value}
-              onClick={() => setCategory(cat.value)}
+              key={cat.id}
+              onClick={() => setCategory(cat.id)}
               className={`h-10 shrink-0 rounded-xl font-black transition flex items-center justify-center px-4 ${
-                category === cat.value ? "text-primary-foreground" : "bg-muted text-muted-foreground"
+                category === cat.id ? "text-primary-foreground" : "bg-muted text-muted-foreground"
               }`}
-              style={category === cat.value ? { background: "var(--gradient-hero)" } : {}}
+              style={category === cat.id ? { background: "var(--gradient-hero)" } : {}}
             >
-              <span className="text-xs leading-none whitespace-nowrap">{t(categoryKey(cat.value), cat.label)}</span>
+              <span className="text-xs leading-none whitespace-nowrap">{cat.name}</span>
             </button>
           ))}
         </div>
-        <div className="hidden sm:grid grid-cols-7 gap-1.5">
-          {CATEGORIES.map((cat) => (
+        <div className="hidden sm:flex flex-wrap gap-1.5">
+          {[{ id: "__all__", name: "All" }, ...storeCategories].map((cat) => (
             <button
-              key={cat.value}
-              onClick={() => setCategory(cat.value)}
-              className={`h-10 rounded-xl font-black transition flex items-center justify-center ${
-                category === cat.value ? "text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+              key={cat.id}
+              onClick={() => setCategory(cat.id)}
+              className={`h-10 rounded-xl font-black transition flex items-center justify-center px-4 ${
+                category === cat.id ? "text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
-              style={category === cat.value ? { background: "var(--gradient-hero)" } : {}}
+              style={category === cat.id ? { background: "var(--gradient-hero)" } : {}}
             >
-              <span className="text-xs leading-none whitespace-nowrap">{t(categoryKey(cat.value), cat.label)}</span>
+              <span className="text-xs leading-none whitespace-nowrap">{cat.name}</span>
             </button>
           ))}
         </div>
@@ -1862,7 +1847,7 @@ export default function ProductsPage() {
         {loading ? (
           <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-20 text-muted-foreground">No {t(categoryKey(CATEGORIES.find(c=>c.value===category)?.value ?? ""), CATEGORIES.find(c=>c.value===category)?.label ?? category)} yet — tap Add Item.</div>
+          <div className="text-center py-20 text-muted-foreground">No {storeCategories.find(c => c.id === category)?.name ?? "items"} yet — tap Add Item.</div>
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2">
             {filtered.map((p) => (
@@ -2055,6 +2040,7 @@ export default function ProductsPage() {
         <BulkEditModal
           items={items}
           ownerId={ownerIdForQuery}
+          storeCategories={storeCategories}
           onClose={() => setShowBulkEdit(false)}
           onSaved={(patches) => {
             setItems((prev) => prev.map((p) => {
@@ -2067,28 +2053,6 @@ export default function ProductsPage() {
                 ...(patch.price !== undefined ? { price: patch.price } : {}),
               } : p;
             }));
-          }}
-        />
-      )}
-
-      {/* Bulk Edit Modal — bulk add from templates */}
-      {bulkAddItems && (
-        <BulkEditModal
-          items={bulkAddItems}
-          ownerId={ownerIdForQuery}
-          onClose={() => { setBulkAddItems(null); load(); }}
-          onSaved={(patches) => {
-            setItems((prev) => prev.map((p) => {
-              const patch = patches.find((x) => x.id === p.id);
-              return patch ? {
-                ...p,
-                stock_qty: patch.stock_qty,
-                stock_last_expense_id: patch.stock_last_expense_id,
-                ...(patch.cost_price !== undefined ? { cost_price: patch.cost_price } : {}),
-                ...(patch.price !== undefined ? { price: patch.price } : {}),
-              } : p;
-            }));
-            setBulkAddItems(null);
           }}
         />
       )}
@@ -2126,19 +2090,28 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
     const rv = editProduct?.bottle_variations?.find((v) => v.key === "retail");
     return rv ? String(rv.price) : "";
   });
-  const [category, setCategory] = useState<string>(editProduct?.category ?? "beers");
+  const [category, setCategory] = useState<string>(editProduct?.category ?? "");
+  const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!ownerId) return;
+    supabase
+      .from("store_categories")
+      .select("id, name")
+      .eq("owner_id", ownerId)
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        const cats = data ?? [];
+        setStoreCategories(cats);
+        // Default to first category if none set
+        if (!editProduct?.category && cats.length > 0) setCategory(cats[0].id);
+      });
+  }, [ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(editProduct?.image_url ?? null);
   const [templateUrl, setTemplateUrl] = useState<string | null>(editProduct?.image_url ?? null);
   const [busy, setBusy] = useState(false);
-  const [showTemplates, setShowTemplates] = useState(false);
   // which field the numpad is for: "selling" | "cost" | "units" | "shotprice" | "var_{i}_shots" | "var_{i}_price" | null
   const [activeNumpad, setActiveNumpad] = useState<string | null>(null);
-  // which category tab is active inside the template picker
-  const [templateCat, setTemplateCat] = useState<string>("beers");
-  const [templateSearch, setTemplateSearch] = useState("");
-  // multi-select: map url → {label, category}
-  const [selectedTemplates, setSelectedTemplates] = useState<Map<string, { label: string; category: string }>>(new Map());
   const fileRef = useRef<HTMLInputElement>(null);
   const camRef = useRef<HTMLInputElement>(null);
   // Tracks whether the current submit should skip opening the stock numpad
@@ -2187,15 +2160,6 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
     setPreview(URL.createObjectURL(f));
   };
 
-  const onTemplateSelect = (url: string, label: string, templateCategory: string) => {
-    setTemplateUrl(url);
-    setFile(null);
-    setPreview(url);
-    setName(label);  // always update name from the selected template
-    setCategory(templateCategory);
-    setShowTemplates(false);
-    setTemplateSearch("");
-  };
 
   const clearImage = () => { setFile(null); setTemplateUrl(null); setPreview(null); };
 
@@ -2333,99 +2297,12 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
     >
       <DialogHeader className="shrink-0 pb-3">
         <div className="flex items-center gap-3">
-          {showTemplates && (
-            <button
-              onClick={() => { setShowTemplates(false); }}
-              className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition shrink-0"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-          )}
-          <DialogTitle>{showTemplates ? t("choose_template", "Choose Template") : isEdit ? t("edit_item", "Edit Item") : t("add_item", "Add Item")}</DialogTitle>
-          {/* Done button — shown in template view when ≥1 item selected */}
-          {showTemplates && onBulkSelect && (
-            <button
-              onClick={() => {
-                if (selectedTemplates.size === 0) return;
-                const arr = Array.from(selectedTemplates.entries()).map(([url, { label, category }]) => ({ url, label, category }));
-                if (arr.length === 1) {
-                  // Single selection — use the normal single-item route
-                  onTemplateSelect(arr[0].url, arr[0].label, arr[0].category);
-                  return;
-                }
-                onBulkSelect(arr);
-              }}
-              disabled={selectedTemplates.size === 0}
-              className="ml-auto mr-8 h-8 px-4 rounded-xl font-black text-sm text-primary-foreground flex items-center gap-1.5 transition active:scale-95 disabled:opacity-40 shrink-0"
-              style={{ background: selectedTemplates.size > 0 ? "var(--gradient-hero)" : "rgba(255,255,255,0.08)" }}
-            >
-              Done {selectedTemplates.size > 0 && <span className="h-5 min-w-[1.25rem] px-1 rounded-full bg-black/30 flex items-center justify-center text-xs font-black">{selectedTemplates.size}</span>}
-            </button>
-          )}
+          <DialogTitle>{isEdit ? t("edit_item", "Edit Item") : t("add_item", "Add Item")}</DialogTitle>
         </div>
       </DialogHeader>
 
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(251,146,60,0.4) transparent" }}>
-        {showTemplates ? (
-          <div className="flex flex-col h-full">
-            {/* Sticky search + category tabs */}
-            <div className="sticky top-0 z-10 pb-2 space-y-2" style={{ background: "var(--background)", paddingTop: "1px" }}>
-              {/* Search — real input, device keyboard */}
-              <div className="flex items-center gap-2">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                  <input
-                    type="text"
-                    value={templateSearch}
-                    onChange={(e) => setTemplateSearch(e.target.value)}
-                    placeholder="Search templates…"
-                    className="w-full pl-8 h-8 text-sm rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                {templateSearch && (
-                  <button
-                    onClick={() => setTemplateSearch("")}
-                    className="h-8 px-3 rounded-md text-xs font-black transition active:scale-95 shrink-0 border"
-                    style={{ background: "#000", color: "#ef4444", borderColor: "#ef4444" }}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-              {/* Category tabs — no Misc or Food since templates aren't available for those categories */}
-              <div className="grid grid-cols-5 gap-2">
-                {CATEGORIES.filter((cat) => cat.value !== "miscellaneous" && cat.value !== "food").map((cat) => (
-                  <button
-                    key={cat.value}
-                    onClick={() => setTemplateCat(cat.value)}
-                    className={`h-10 rounded-xl font-black transition flex items-center justify-center ${
-                      templateCat === cat.value ? "text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
-                    }`}
-                    style={templateCat === cat.value ? { background: "var(--gradient-hero)" } : {}}
-                  >
-                    <span className="text-xs leading-none whitespace-nowrap">{t(categoryKey(cat.value), cat.label)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <TemplatePicker
-              onSelect={onTemplateSelect}
-              onToggle={onBulkSelect ? (url, label, cat) => {
-                setSelectedTemplates((prev) => {
-                  const next = new Map(prev);
-                  if (next.has(url)) next.delete(url);
-                  else next.set(url, { label, category: cat });
-                  return next;
-                });
-              } : undefined}
-              selectedUrls={onBulkSelect ? new Set(selectedTemplates.keys()) : undefined}
-              ownerId={ownerId}
-              category={templateCat}
-              search={templateSearch}
-            />
-          </div>
-        ) : (
-          <div className="space-y-3">
+        <div className="space-y-3">
             {/* Image area */}
             <div className="flex gap-3 items-stretch">
               <div className="relative w-1/2 aspect-[3/4] rounded-xl border-2 border-dashed border-border overflow-hidden shrink-0" style={{ background: "var(--gradient-card)" }}>
@@ -2442,9 +2319,6 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                 <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => onPick(e.target.files?.[0])} />
               </div>
               <div className="flex flex-col gap-2 flex-1 justify-center">
-                <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => setShowTemplates(true)}>
-                  <LayoutGrid className="h-5 w-5 mr-2" /> {t("template_btn", "Template")}
-                </Button>
                 <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => camRef.current?.click()}>
                   <Camera className="h-5 w-5 mr-2" /> {t("take_photo_btn", "Take Photo")}
                 </Button>
@@ -2473,8 +2347,8 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                     onChange={(e) => setCategory(e.target.value)}
                     className="mt-1 h-9 w-full rounded-lg border border-border bg-muted px-2 text-sm font-bold outline-none cursor-pointer"
                   >
-                    {CATEGORIES.map((cat) => (
-                      <option key={cat.value} value={cat.value}>{cat.icon} {t(categoryKey(cat.value), cat.label)}</option>
+                    {storeCategories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
                   </select>
                 </div>
@@ -2687,8 +2561,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
         )}
       </div>
 
-      {!showTemplates && (
-        <div className="pt-3 space-y-2">
+      <div className="pt-3 space-y-2">
           <Button
             onClick={() => { skipStockRef.current = false; submit(); }}
             disabled={
@@ -2718,7 +2591,6 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t("save_and_exit", "Save & Exit")}
           </Button>
         </div>
-      )}
     </DialogContent>
   );
 }
