@@ -19,6 +19,7 @@ import type { BillingPayment } from "@/types/billing";
 type PaymentWithOwner = BillingPayment & {
   profiles: { username: string } | null;
   billing_plans: { name: string; plan_type?: string } | null;
+  addon_bar_count?: number | null;
 };
 
 export default function AdminBillingManagementPage() {
@@ -227,7 +228,7 @@ export default function AdminBillingManagementPage() {
           updates.next_due_date = chainEnd.toISOString();
 
         } else if (isBarOnlyAddon) {
-          // Multi-store addon: call create-addon-bars edge function
+          // Extra Store addon: call create-addon-bars edge function
           const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
           const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
           const { data: { session: adminSession } } = await supabase.auth.getSession();
