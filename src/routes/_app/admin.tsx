@@ -47,6 +47,8 @@ type Row = {
   plan_type?: string;
   chain_bar_count?: number;
   is_bar_account?: boolean;
+  addon_bar_count?: number;
+  is_multi_bar?: boolean;
 };
 
 type SubPayment = {
@@ -71,37 +73,55 @@ function formatDate(d: Date): string {
 // ─── Subscription Badge ───────────────────────────────────────────────────────
 // ─── Annual Fee Badge — shown big on right of card ───────────────────────────
 function AnnualFeeBadge({ ownerId }: { ownerId: string }) {
-  const [amount, setAmount] = useState<number | null>(null);
+  const [totalRenewal, setTotalRenewal] = useState<number | null>(null);
+  const [addonCount, setAddonCount]     = useState(0);
 
   useEffect(() => {
     (async () => {
+      // Get profile for addon_bar_count
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("addon_bar_count")
+        .eq("id", ownerId)
+        .single();
+
+      const extras = prof?.addon_bar_count ?? 0;
+      setAddonCount(extras);
+
+      // Get the base plan amount from most recent paid base plan payment
       const { data: payments } = await supabase
         .from("billing_payments")
-        .select("plan_id, amount")
+        .select("amount, billing_plans(plan_type)")
         .eq("owner_id", ownerId)
         .eq("status", "paid")
-        .order("created_at", { ascending: false })
-        .limit(1);
+        .order("created_at", { ascending: false });
+
       if (!payments?.length) return;
-      // Use amount directly from payment row (faster, no extra query)
-      if (payments[0].amount) {
-        setAmount(Number(payments[0].amount));
-        return;
-      }
-      const { data: plan } = await supabase
-        .from("billing_plans")
-        .select("amount")
-        .eq("id", payments[0].plan_id)
-        .single();
-      if (plan) setAmount(plan.amount);
+
+      // Find base plan payment (plan_type = 'basic' or 'chain')
+      const basePay = payments.find((p: any) =>
+        p.billing_plans?.plan_type === "basic" || p.billing_plans?.plan_type === "chain"
+      );
+      const baseAmount = basePay ? Number(basePay.amount) : 1800;
+
+      // Find addon amount per store
+      const addonPay = payments.find((p: any) => p.billing_plans?.plan_type === "bar_only_addon");
+      const addonPerStore = addonPay && extras > 0
+        ? Number(addonPay.amount) / Math.max(1, (addonPay as any).addon_bar_count ?? extras)
+        : 1200;
+
+      setTotalRenewal(baseAmount + extras * addonPerStore);
     })();
   }, [ownerId]);
 
-  if (amount === null) return null;
+  if (totalRenewal === null) return null;
   return (
     <div className="shrink-0 text-right self-start">
-      <div className="text-2xl font-black text-white leading-none">${amount.toFixed(0)}</div>
+      <div className="text-2xl font-black text-white leading-none">${totalRenewal.toFixed(0)}</div>
       <div className="text-[10px] text-white/60 font-bold mt-0.5">TT / yr</div>
+      {addonCount > 0 && (
+        <div className="text-[10px] text-primary font-bold mt-0.5">{addonCount + 1} stores</div>
+      )}
     </div>
   );
 }
@@ -686,6 +706,12 @@ export default function AdminPage() {
                               {(r.chain_bar_count ?? 0) <= 1
                                 ? "1 Additional Store"
                                 : `Multi-store · ${(r.chain_bar_count ?? 1) - 1} additional`}
+                            </span>
+                          )}
+                          {(r.addon_bar_count ?? 0) > 0 && r.plan_type !== "chain" && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                              <GitBranch className="h-2.5 w-2.5" />
+                              {`${(r.addon_bar_count ?? 0) + 1} stores total`}
                             </span>
                           )}
                           {r.is_bar_account && (
