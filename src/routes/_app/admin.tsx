@@ -450,9 +450,9 @@ export default function AdminPage() {
             </TabsList>
 
             {/* ── Dashboard Sub-tab ── */}
-            <TabsContent value="dashboard" className="space-y-5 mt-0">
-              {/* Stat cards */}
-              <div className="grid grid-cols-2 gap-3">
+            <TabsContent value="dashboard" className="space-y-5 mt-0 pb-10">
+              {/* Stat cards — 3 per row on all screens */}
+              <div className="grid grid-cols-3 gap-3">
                 <div className="rounded-2xl border border-border p-4 space-y-1" style={{ background: "var(--gradient-card)" }}>
                   <p className="text-xs text-muted-foreground font-medium">Pending Users</p>
                   <p className="text-3xl font-black">{buckets.pending.length}</p>
@@ -468,25 +468,21 @@ export default function AdminPage() {
                   <p className="text-3xl font-black text-yellow-400">{pendingBillingCount}</p>
                   <p className="text-xs text-muted-foreground">waiting review</p>
                 </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
                 <div className="rounded-2xl border border-border p-4 space-y-1" style={{ background: "var(--gradient-card)" }}>
                   <p className="text-xs text-muted-foreground font-medium">Due Soon</p>
                   <p className="text-3xl font-black text-orange-400">{nearExpiryCount}</p>
                   <p className="text-xs text-muted-foreground">within 7 days</p>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-2xl border border-border p-4 space-y-1" style={{ background: "var(--gradient-card)" }}>
                   <p className="text-xs text-muted-foreground font-medium">Suspended</p>
                   <p className="text-2xl font-black text-red-400">{buckets.suspended.length}</p>
                 </div>
                 <div className="rounded-2xl border border-border p-4 space-y-1" style={{ background: "var(--gradient-card)" }}>
-                  <p className="text-xs text-muted-foreground font-medium">Rejected</p>
-                  <p className="text-2xl font-black text-red-600">{buckets.rejected.length}</p>
+                  <p className="text-xs text-muted-foreground font-medium">Total Registered</p>
+                  <p className="text-2xl font-black">{rows.filter(r => !r.is_bar_account && !["renard.sankersingh@gmail.com", "isabel@gmail.com"].includes(r.email)).length}</p>
                 </div>
-              </div>
-              <div className="rounded-2xl border border-border p-4 space-y-1" style={{ background: "var(--gradient-card)" }}>
-                <p className="text-xs text-muted-foreground font-medium">Total Registered</p>
-                <p className="text-2xl font-black">{rows.filter(r => !r.is_bar_account && !["renard.sankersingh@gmail.com", "isabel@gmail.com"].includes(r.email)).length}</p>
               </div>
 
               {/* ── Shareholder Income Split ── */}
