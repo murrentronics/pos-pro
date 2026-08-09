@@ -61,7 +61,8 @@ function ActualNumpad({
   const unitPrice = priceOverride ?? product.price;
   const qty = product.stock_qty;
   const diff = isValid ? qty - parsed : 0;
-  const loss = isValid ? diff * unitPrice : 0;
+  const loss = isValid && diff > 0 ? diff * unitPrice : 0;
+  const exceed = isValid && diff < 0 ? Math.abs(diff) * unitPrice : 0;
 
   const NUMPAD_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
 
@@ -128,15 +129,13 @@ function ActualNumpad({
           <div
             className="px-3 py-2 rounded-xl text-center"
             style={{
-              background: loss > 0 ? "rgba(239,68,68,0.10)" : "rgba(255,255,255,0.04)",
-              border: loss > 0 ? "1px solid rgba(239,68,68,0.30)" : "1px solid rgba(255,255,255,0.08)",
+              background: loss > 0 ? "rgba(239,68,68,0.10)" : exceed > 0 ? "rgba(134,239,172,0.10)" : "rgba(255,255,255,0.04)",
+              border: loss > 0 ? "1px solid rgba(239,68,68,0.30)" : exceed > 0 ? "1px solid rgba(134,239,172,0.30)" : "1px solid rgba(255,255,255,0.08)",
             }}
           >
-            <div className="text-xs text-muted-foreground">Loss</div>
-            <div
-              className={`text-base font-black leading-tight ${loss > 0 ? "text-red-400" : "text-muted-foreground"}`}
-            >
-              {loss > 0 ? `-$${loss.toFixed(2)}` : "$0.00"}
+            <div className="text-xs text-muted-foreground">{exceed > 0 ? "Exceed" : "Loss"}</div>
+            <div className={`text-base font-black leading-tight ${loss > 0 ? "text-red-400" : exceed > 0 ? "text-green-400" : "text-muted-foreground"}`}>
+              {loss > 0 ? `-$${loss.toFixed(2)}` : exceed > 0 ? `+$${exceed.toFixed(2)}` : "$0.00"}
             </div>
           </div>
         </div>
@@ -153,10 +152,10 @@ function ActualNumpad({
           Sale price:{" "}
           <span className="font-black text-foreground">${unitPrice.toFixed(2)}</span>
           {diff > 0 && isValid && (
-            <>
-              {" "}· Missing:{" "}
-              <span className="font-black text-red-400">{diff}</span>
-            </>
+            <> · Missing: <span className="font-black text-red-400">{diff}</span></>
+          )}
+          {diff < 0 && isValid && (
+            <> · Exceed: <span className="font-black text-green-400">+{Math.abs(diff)}</span></>
           )}
         </p>
 
@@ -471,8 +470,6 @@ function StockCheckPage() {
     const actual = actuals[p.id] ?? p.stock_qty;
     const diff = p.stock_qty - actual;
     let loss = diff > 0 ? diff * p.price : 0;
-
-    // Add open item loss using per-drink price
     const openInfo = openItems[p.id];
     if (openInfo) {
       const remaining = Math.max(0, openInfo.unitsPerItem - openInfo.unitsSold);
@@ -481,8 +478,22 @@ function StockCheckPage() {
       const openPrice = (openInfo.shotPrice != null && openInfo.shotPrice > 0) ? openInfo.shotPrice : p.price;
       loss += openDiff > 0 ? openDiff * openPrice : 0;
     }
-
     return sum + loss;
+  }, 0);
+
+  const totalExceed = items.reduce((sum, p) => {
+    const actual = actuals[p.id] ?? p.stock_qty;
+    const diff = p.stock_qty - actual;
+    let exceed = diff < 0 ? Math.abs(diff) * p.price : 0;
+    const openInfo = openItems[p.id];
+    if (openInfo) {
+      const remaining = Math.max(0, openInfo.unitsPerItem - openInfo.unitsSold);
+      const openActual = actuals[`${p.id}_open`] ?? remaining;
+      const openDiff = remaining - openActual;
+      const openPrice = (openInfo.shotPrice != null && openInfo.shotPrice > 0) ? openInfo.shotPrice : p.price;
+      exceed += openDiff < 0 ? Math.abs(openDiff) * openPrice : 0;
+    }
+    return sum + exceed;
   }, 0);
 
   const totalMissing = items.reduce((sum, p) => {
@@ -570,7 +581,14 @@ function StockCheckPage() {
             doc.text(`-$${loss.toFixed(2)}`, COL.loss, y, { align: "right" });
             doc.setTextColor(0, 0, 0);
           } else {
-            doc.text("—", COL.loss, y, { align: "right" });
+            const exceed = actual > p.stock_qty ? (actual - p.stock_qty) * p.price : 0;
+            if (exceed > 0) {
+              doc.setTextColor(34, 197, 94);
+              doc.text(`+$${exceed.toFixed(2)}`, COL.loss, y, { align: "right" });
+              doc.setTextColor(0, 0, 0);
+            } else {
+              doc.text("—", COL.loss, y, { align: "right" });
+            }
           }
           y += nameLines.length > 1 ? nameLines.length * 4.5 : ROW_H;
 
@@ -593,8 +611,14 @@ function StockCheckPage() {
               doc.setTextColor(220, 38, 38);
               doc.text(`-$${openLoss.toFixed(2)}`, COL.loss, y, { align: "right" });
             } else {
-              doc.setTextColor(180, 100, 20);
-              doc.text("—", COL.loss, y, { align: "right" });
+              const openExceed = openActual > remaining ? (openActual - remaining) * openPrice : 0;
+              if (openExceed > 0) {
+                doc.setTextColor(34, 197, 94);
+                doc.text(`+$${openExceed.toFixed(2)}`, COL.loss, y, { align: "right" });
+              } else {
+                doc.setTextColor(180, 100, 20);
+                doc.text("—", COL.loss, y, { align: "right" });
+              }
             }
             doc.setTextColor(0, 0, 0);
             y += ROW_H;
@@ -629,27 +653,21 @@ function StockCheckPage() {
           {/* Summary pills */}
           <div className="flex items-center gap-2">
             {totalMissing > 0 && (
-              <div
-                className="px-3 py-1.5 rounded-xl text-xs font-black"
-                style={{
-                  background: "rgba(239,68,68,0.12)",
-                  border: "1px solid rgba(239,68,68,0.30)",
-                  color: "#f87171",
-                }}
-              >
+              <div className="px-3 py-1.5 rounded-xl text-xs font-black"
+                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.30)", color: "#f87171" }}>
                 {totalMissing} missing
               </div>
             )}
             {totalLoss > 0 && (
-              <div
-                className="px-3 py-1.5 rounded-xl text-xs font-black"
-                style={{
-                  background: "rgba(239,68,68,0.12)",
-                  border: "1px solid rgba(239,68,68,0.30)",
-                  color: "#f87171",
-                }}
-              >
+              <div className="px-3 py-1.5 rounded-xl text-xs font-black"
+                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.30)", color: "#f87171" }}>
                 −${totalLoss.toFixed(2)}
+              </div>
+            )}
+            {totalExceed > 0 && (
+              <div className="px-3 py-1.5 rounded-xl text-xs font-black"
+                style={{ background: "rgba(134,239,172,0.12)", border: "1px solid rgba(134,239,172,0.30)", color: "#86efac" }}>
+                +${totalExceed.toFixed(2)}
               </div>
             )}
           </div>
@@ -796,11 +814,16 @@ function StockCheckPage() {
                           <span className="font-bold text-xs text-muted-foreground">${p.price.toFixed(2)}</span>
                         </div>
 
-                        {/* Loss */}
+                        {/* Loss / Exceed */}
                         <div className="w-[56px] text-right">
                           {hasLoss
                             ? <span className="font-black text-xs text-red-400 tabular-nums">−${loss.toFixed(2)}</span>
-                            : <span className="font-black text-xs text-muted-foreground/40">—</span>}
+                            : (() => {
+                                const exceed = diff < 0 ? Math.abs(diff) * p.price : 0;
+                                return exceed > 0
+                                  ? <span className="font-black text-xs text-green-400 tabular-nums">+${exceed.toFixed(2)}</span>
+                                  : <span className="font-black text-xs text-muted-foreground/40">—</span>;
+                              })()}
                         </div>
                       </div>
 
@@ -856,11 +879,16 @@ function StockCheckPage() {
                             <span className="font-bold text-xs text-muted-foreground">${openPrice.toFixed(2)}</span>
                           </div>
 
-                          {/* Loss */}
+                          {/* Loss / Exceed */}
                           <div className="w-[56px] text-right">
                             {openLoss > 0
                               ? <span className="font-black text-xs text-red-400 tabular-nums">−${openLoss.toFixed(2)}</span>
-                              : <span className="font-black text-xs text-muted-foreground/40">—</span>}
+                              : (() => {
+                                  const openExceed = openDiff < 0 ? Math.abs(openDiff) * openPrice : 0;
+                                  return openExceed > 0
+                                    ? <span className="font-black text-xs text-green-400 tabular-nums">+${openExceed.toFixed(2)}</span>
+                                    : <span className="font-black text-xs text-muted-foreground/40">—</span>;
+                                })()}
                           </div>
                         </div>
                       )}
@@ -871,17 +899,26 @@ function StockCheckPage() {
             ))}
           </div>
 
-          {/* ── Total loss footer ────────────────────────────────────────── */}
-          {totalLoss > 0 && (
+          {/* ── Total footer ─────────────────────────────────────────── */}
+          {(totalLoss > 0 || totalExceed > 0) && (
             <div
-              className="fixed bottom-0 inset-x-0 mx-auto max-w-2xl px-4 py-3 border-t border-border flex items-center justify-between"
+              className="fixed bottom-0 inset-x-0 mx-auto max-w-2xl px-4 py-3 border-t border-border flex items-center justify-between gap-3"
               style={{ background: "var(--background)" }}
             >
-              <div className="text-sm font-black text-muted-foreground">
-                Total estimated loss
-              </div>
-              <div className="text-lg font-black text-red-400">
-                −${totalLoss.toFixed(2)}
+              <div className="text-sm font-black text-muted-foreground">Total</div>
+              <div className="flex items-center gap-3">
+                {totalLoss > 0 && (
+                  <div className="text-right">
+                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wide">Loss</div>
+                    <div className="text-base font-black text-red-400">−${totalLoss.toFixed(2)}</div>
+                  </div>
+                )}
+                {totalExceed > 0 && (
+                  <div className="text-right">
+                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wide">Exceed</div>
+                    <div className="text-base font-black text-green-400">+${totalExceed.toFixed(2)}</div>
+                  </div>
+                )}
               </div>
             </div>
           )}
