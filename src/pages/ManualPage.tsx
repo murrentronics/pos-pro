@@ -341,9 +341,14 @@ export default function ManualPage() {
           // ── 18. Offline ───────────────────────────────────────────────
           {
             id: "m-offline", icon: "📡", title: "Offline Mode", section: "Section 18",
-            intro: "P.O.S. Pro is a cloud-connected app. A stable internet connection is required for all live features.",
-            warning: "Sales, wallet updates, stock, and reports all require an active connection. Use reliable Wi-Fi or mobile data at your business location.",
-            tip: "Add P.O.S. Pro to your home screen (Add to Home Screen in your browser) for a native-app feel and faster startup times.",
+            intro: "P.O.S. Pro works offline for sales. When your connection drops, the register keeps working — sales are queued locally and sync automatically the moment the internet comes back.",
+            steps: [
+              ["Register stays open offline", "Products, categories, and customer accounts are cached on the device. You can keep taking orders even with no connection."],
+              ["Sales are queued", "Every order placed while offline is saved to a local queue. A banner appears at the top of the screen to let you know you're offline."],
+              ["Auto-sync on reconnect", "As soon as the internet is restored, all queued sales are submitted to the server in order. Stock, wallets, and reports update automatically once synced."],
+              ["Reports require a connection", "The Wallet financials tab, Summary reports, and customer balances need a live connection to load. They show the last known data while offline."],
+            ],
+            tip: "Add P.O.S. Pro to your home screen (Add to Home Screen in your browser) for a native-app feel, faster startup, and better offline caching.",
           },
         ].map((s: any) => (
           <Section key={s.id} {...s} />
