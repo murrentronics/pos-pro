@@ -1675,8 +1675,6 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
       if (overrideCreatedAt) insertData.created_at = overrideCreatedAt;
       const { error } = await supabase.from("owner_expenses").insert(insertData);
       if (error) { toast.error(error.message); return; }
-      const newBal = Number(ownerWalletBalance) - total;
-      await supabase.from("profiles").update({ wallet_balance: newBal }).eq("id", ownerId);
       toast.success("Expense saved");
       setExpenseLines([{ description: "", amount: "" }]);
       setShowAddExpense(false);
