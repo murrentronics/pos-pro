@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+﻿import { createFileRoute } from "@tanstack/react-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, ImagePlus, Plus, Trash2, Loader2, X, ChevronLeft, Pencil, ListChecks, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -218,7 +218,7 @@ const STOCK_BTNS = [
   { qty: 10 }, { qty: 6  }, { qty: 1  },
 ];
 
-function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, stockQtyUndo, stockQtyUndoSaved, lastExpenseId, onClose, onBack, onSaved }: {
+function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, stockQtyUndo, stockQtyUndoSaved, lastExpenseId, unit, onClose, onBack, onSaved }: {
   productId: string;
   productName: string;
   ownerId: string;
@@ -227,30 +227,31 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
   stockQtyUndo: number | null;
   stockQtyUndoSaved: number | null;
   lastExpenseId: string | null;
+  unit?: string;
   onClose: () => void;
   onBack?: () => void;
   onSaved: (patch: Partial<Pick<Product, "stock_qty" | "stock_qty_undo" | "stock_qty_undo_saved" | "stock_last_expense_id">>) => void;
 }) {
-  const [counts, setCounts] = useState([0, 0, 0, 0, 0, 0]);
-  const [busy, setBusy] = useState(false);
+  const [input, setInput]     = useState("");
+  const [busy, setBusy]       = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
   const confirmDialog = useConfirm();
 
-  const addAmount = STOCK_BTNS.reduce((s, b, i) => s + b.qty * counts[i], 0);
+  const addAmount = parseInt(input, 10) || 0;
   const newTotal  = currentQty + addAmount;
+  const unitLabel = unit && unit !== "each" ? unit : "";
 
-  const tap   = (i: number) => setCounts(c => c.map((v, j) => j === i ? v + 1 : v));
-  const untap = (i: number) => setCounts(c => c.map((v, j) => j === i ? Math.max(0, v - 1) : v));
-  const reset = () => setCounts([0, 0, 0, 0, 0, 0]);
-
-  // Undo disabled the moment any single sale reduces qty — currentQty must equal stock_qty_undo_saved exactly
   const canUndo = stockQtyUndo !== null && stockQtyUndoSaved !== null && currentQty === stockQtyUndoSaved;
 
-  const save = async () => {
-    if (addAmount === 0) return;
-    setBusy(true);
+  const handleNumpad = (k: string) => {
+    if (k === "⌫") { setInput((v) => v.slice(0, -1)); return; }
+    if (input.length >= 6) return; // cap at 999999
+    setInput((v) => v === "0" ? k : v + k);
+  };
 
-    // Auto-generate expense record if cost_price is set
+  const save = async () => {
+    if (addAmount <= 0) return;
+    setBusy(true);
     let newExpenseId: string | null = null;
     if (costPrice > 0) {
       const expenseAmount = costPrice * addAmount;
@@ -260,7 +261,7 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
         .insert({
           owner_id: ownerId,
           amount: expenseAmount,
-          description: `${productName} ×${addAmount} @ $${costPrice.toFixed(2)} each`,
+          description: `${productName} ×${addAmount}${unitLabel ? " " + unitLabel : ""} @ $${costPrice.toFixed(2)} each`,
           expense_date: today,
         })
         .select("id")
@@ -268,9 +269,6 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
       if (expErr) { toast.error(expErr.message); setBusy(false); return; }
       newExpenseId = expData?.id ?? null;
     }
-
-    // stock_qty_undo = what qty was before this add (for reverting)
-    // stock_qty_undo_saved = what qty became after this add (to detect any sales)
     const { error } = await supabase
       .from("products")
       .update({
@@ -283,7 +281,7 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
     setBusy(false);
     if (error) { toast.error(error.message); return; }
     onSaved({ stock_qty: newTotal, stock_qty_undo: currentQty, stock_qty_undo_saved: newTotal, stock_last_expense_id: newExpenseId });
-    reset();
+    setInput("");
     onClose();
   };
 
@@ -291,19 +289,16 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
     if (stockQtyUndo === null) return;
     const ok = await confirmDialog({
       title: "Undo Last Stock Edit?",
-      description: `This will revert the quantity back to ${stockQtyUndo} (currently ${currentQty}).`,
+      description: `This will revert the quantity back to ${stockQtyUndo}${unitLabel ? " " + unitLabel : ""} (currently ${currentQty}${unitLabel ? " " + unitLabel : ""}).`,
       confirmLabel: "Yes, Undo",
       cancelLabel: "Cancel",
       destructive: true,
     });
     if (!ok) return;
     setBusy(true);
-
-    // Delete the linked auto-generated expense record
     if (lastExpenseId) {
       await supabase.from("owner_expenses").delete().eq("id", lastExpenseId);
     }
-
     const { error } = await supabase
       .from("products")
       .update({ stock_qty: stockQtyUndo, stock_qty_undo: null, stock_qty_undo_saved: null, stock_last_expense_id: null })
@@ -333,16 +328,15 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
         <div className="mx-5 mb-4 grid grid-cols-3 gap-2">
           <div className="px-3 py-2 rounded-xl bg-muted/30 text-center">
             <div className="text-xs text-muted-foreground">Current</div>
-            <div className="text-xl font-black">{currentQty}</div>
+            <div className="text-xl font-black">{currentQty}{unitLabel && <span className="text-xs font-semibold text-muted-foreground ml-1">{unitLabel}</span>}</div>
           </div>
           <div className="px-3 py-2 rounded-xl bg-muted/30 text-center border border-primary/30">
             <div className="text-xs text-muted-foreground">Adding</div>
-            <div className="text-xl font-black text-primary">+{addAmount}</div>
+            <div className="text-xl font-black text-primary">+{addAmount}{unitLabel && <span className="text-xs font-semibold ml-1">{unitLabel}</span>}</div>
           </div>
           <div className="px-3 py-2 rounded-xl bg-muted/30 text-center relative">
             <div className="text-xs text-muted-foreground">Total</div>
-            <div className="text-xl font-black text-green-400">{newTotal}</div>
-            {/* Revert pencil — only active when nothing is being added */}
+            <div className="text-xl font-black text-green-400">{newTotal}{unitLabel && <span className="text-xs font-semibold ml-1">{unitLabel}</span>}</div>
             <button
               type="button"
               disabled={addAmount !== 0 || currentQty === 0}
@@ -356,67 +350,34 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
           </div>
         </div>
 
-        {/* 6 buttons — 3 per row */}
         <div className="px-5 pb-5 space-y-3">
-          <div>
-            <p className="text-sm font-black text-center mb-3" style={{ color: "var(--primary)" }}>
-              Select qty by Case / Pack / Single
-            </p>
-            <div className="grid grid-cols-3 gap-3">
-              {STOCK_BTNS.map((b, i) => {
-                const count  = counts[i];
-                const active = count > 0;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => tap(i)}
-                    className="relative flex items-center justify-center rounded-2xl border-2 overflow-hidden transition active:scale-95"
-                    style={{
-                      height: "110px",
-                      background: active ? "oklch(0.22 0.06 50 / 0.6)" : "rgba(255,255,255,0.05)",
-                      borderColor: active ? "var(--primary)" : "rgba(255,255,255,0.1)",
-                      boxShadow: active ? "0 4px 18px rgba(251,146,60,0.3)" : "none",
-                      paddingBottom: active ? "36px" : "0",
-                    }}
-                  >
-                    {active && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setCounts(c => c.map((v,j) => j===i ? 0 : v)); }}
-                        className="absolute top-1.5 right-1.5 h-7 w-7 rounded-full flex items-center justify-center text-black shadow z-10 active:scale-90 transition"
-                        style={{ background: "#dc2626" }}
-                      >
-                        <span className="text-xs font-black">×</span>
-                      </button>
-                    )}
-                    <span className="text-3xl font-black text-white leading-none">{b.qty}</span>
-                    {active && (
-                      <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-3 py-1.5"
-                        style={{ background: "rgba(0,0,0,0.80)" }}>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); untap(i); }}
-                          className="h-7 w-7 rounded-full flex items-center justify-center active:scale-90 transition"
-                          style={{ background: "#ef4444" }}
-                        >
-                          <span className="text-xs font-black text-black leading-none">−</span>
-                        </button>
-                        <div
-                          className="h-7 w-7 rounded-full flex items-center justify-center text-sm font-black text-black"
-                          style={{ background: "var(--gradient-hero)" }}
-                        >
-                          {count}
-                        </div>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+          {/* Prompt */}
+          <p className="text-sm font-black text-center" style={{ color: "var(--primary)" }}>
+            How many {unitLabel || "units"} are you adding?
+          </p>
+
+          {/* Display */}
+          <div className="rounded-2xl border-2 border-primary/40 bg-muted/20 h-14 flex items-center justify-center">
+            <span className="text-3xl font-black tracking-widest" style={{ color: "var(--primary)" }}>
+              {input || "0"}{unitLabel && <span className="text-lg font-semibold text-muted-foreground ml-2">{unitLabel}</span>}
+            </span>
           </div>
 
-          {/* Row 1: Undo Last Edit + Clear */}
+          {/* Numpad */}
+          <div className="grid grid-cols-3 gap-2">
+            {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k, idx) =>
+              k === "" ? <div key={idx} /> : (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => handleNumpad(k)}
+                  className={`h-12 rounded-xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
+                >{k}</button>
+              )
+            )}
+          </div>
+
+          {/* Actions */}
           <div className="flex gap-2 pt-1">
             <button
               onClick={doUndo}
@@ -431,27 +392,23 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
               <span className="text-base leading-none">↩</span> Undo Last Edit
             </button>
             <button
-              onClick={reset}
-              disabled={addAmount === 0}
+              onClick={() => setInput("")}
+              disabled={!input}
               className="flex-1 rounded-2xl font-black text-sm py-4 bg-muted/60 text-muted-foreground active:scale-95 transition disabled:opacity-40"
             >Clear</button>
           </div>
 
-          {/* Row 2: Add full width */}
-          <div>
-            <button
-              onClick={save}
-              disabled={busy || addAmount === 0}
-              className="w-full rounded-2xl font-black text-base text-primary-foreground transition active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 py-4"
-              style={{ background: "var(--gradient-hero)" }}
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : `Add ${addAmount} → ${newTotal}`}
-            </button>
-          </div>
+          <button
+            onClick={save}
+            disabled={busy || addAmount <= 0}
+            className="w-full rounded-2xl font-black text-base text-primary-foreground transition active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 py-4"
+            style={{ background: "var(--gradient-hero)" }}
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : `Add ${addAmount}${unitLabel ? " " + unitLabel : ""} → ${newTotal}${unitLabel ? " " + unitLabel : ""}`}
+          </button>
         </div>
       </div>
 
-      {/* ── Revert Stock Modal ── */}
       {revertOpen && (
         <RevertStockModal
           productName={productName}
@@ -1795,6 +1752,10 @@ export default function ProductsPage() {
           stockQtyUndo={stockNumpadProduct.stock_qty_undo ?? null}
           stockQtyUndoSaved={stockNumpadProduct.stock_qty_undo_saved ?? null}
           lastExpenseId={stockNumpadProduct.stock_last_expense_id ?? null}
+          unit={(() => {
+            const unitRow = (stockNumpadProduct as any).product_variations?.find?.((v: any) => v.name?.startsWith("_unit:"));
+            return unitRow ? unitRow.name.slice(6) : "each";
+          })()}
           onClose={() => { setStockNumpadId(null); setStockNumpadSource(null); }}
           onBack={
             stockNumpadSource === "addDialog"
@@ -1898,9 +1859,8 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
   // Base unit for the selling price (e.g. "1 lb", "1 each") — applies to all non-liquor/cigarette categories
   const UNIT_OPTIONS = ["each","lb","lbs","oz","kg","g","bag","bunch","bundle","lot","box","pack","case","dozen","pallet"];
-  const baseUnitEntry = editProduct?.bottle_variations?.find((v) => v.key === "_baseunit");
-  const [baseUnitQty,  setBaseUnitQty]  = useState(baseUnitEntry ? String(baseUnitEntry.units_consumed) : "1");
-  const [baseUnit,     setBaseUnit]     = useState(baseUnitEntry?.label ?? "each");
+  const [baseUnitQty,  setBaseUnitQty]  = useState(editProduct ? String(editProduct.units_per_item || "1") : "1");
+  const [baseUnit,     setBaseUnit]     = useState("each");
   // Generic product variations (eBay-style: qty + unit + price) — for all categories
   type ProdVar = { id?: string; name: string; price: string; qty: string };
   const [prodVars, setProdVars] = useState<ProdVar[]>(() => {
@@ -1926,18 +1886,26 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
     if (!editProduct?.id) return;
     supabase
       .from("product_variations")
-      .select("id, name, price")
+      .select("id, name, price, sort_order")
       .eq("product_id", editProduct.id)
       .order("sort_order", { ascending: true })
       .then(({ data }) => {
-        if (data && data.length > 0)
-          setProdVars(data.map((v) => {
-            // name is stored as "100 lbs" — split into qty + unit
+        if (!data) return;
+        // sort_order = -1 is the base unit label row
+        const unitRow = data.find((v) => v.sort_order === -1);
+        if (unitRow) {
+          const label = unitRow.name.startsWith("_unit:") ? unitRow.name.slice(6) : unitRow.name;
+          setBaseUnit(label);
+        }
+        const userVars = data.filter((v) => v.sort_order >= 0);
+        if (userVars.length > 0) {
+          setProdVars(userVars.map((v) => {
             const parts = v.name.trim().split(" ");
             const qty = parts.length >= 2 ? parts[0] : "1";
             const unit = parts.length >= 2 ? parts.slice(1).join(" ") : v.name;
             return { id: v.id, name: unit, price: String(v.price), qty };
           }));
+        }
       });
   }, [editProduct?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [file, setFile] = useState<File | null>(null);
@@ -2017,55 +1985,48 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
     }
 
     const costVal = parseFloat(costPrice) || 0;
-    // Build the _baseunit entry for bottle_variations (only for non-liquor/cigarette categories)
-    const isLiquorOrCig = category === "liquor" || category === "cigarettes";
-    const buildBaseUnitEntry = () =>
-      !isLiquorOrCig && baseUnit && baseUnitQty
-        ? [{ key: "_baseunit", label: baseUnit, units_consumed: parseFloat(baseUnitQty) || 1, price: 0 }]
-        : [];
+    // Base unit: store qty in units_per_item, unit label as a product_variations row with sort_order = -1
+    const baseUnitQtyVal = parseFloat(baseUnitQty) || 1;
 
     if (isEdit && editProduct) {
-      // Preserve existing bottle_variations (shot/special/etc.) and replace _baseunit
-      const existingBv = (editProduct.bottle_variations ?? []).filter((v) => v.key !== "_baseunit");
-      const newBv = [...buildBaseUnitEntry(), ...existingBv];
       const { data: updated, error } = await supabase
         .from("products")
-        .update({ name: name.trim(), price: Number(price), cost_price: costVal, image_url, category, bottle_variations: newBv.length ? newBv : null })
+        .update({ name: name.trim(), price: Number(price), cost_price: costVal, image_url, category, units_per_item: baseUnitQtyVal })
         .eq("id", editProduct.id).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
-      // Save generic product variations
+      // Save product_variations: row -1 = base unit label, rows 0+ = user variations
       await supabase.from("product_variations").delete().eq("product_id", editProduct.id);
-      if (prodVars.length > 0) {
-        const rows = prodVars
+      const varRows = [
+        { product_id: editProduct.id, owner_id: ownerId, name: `_unit:${baseUnit}`, price: Number(price), sort_order: -1 },
+        ...prodVars
           .filter((v) => v.name.trim() && parseFloat(v.price) > 0)
-          .map((v, i) => ({ product_id: editProduct.id, owner_id: ownerId, name: `${v.qty || "1"} ${v.name}`.trim(), price: parseFloat(v.price), sort_order: i }));
-        if (rows.length > 0) await supabase.from("product_variations").insert(rows);
-      }
+          .map((v, i) => ({ product_id: editProduct.id, owner_id: ownerId, name: `${v.qty || "1"} ${v.name}`.trim(), price: parseFloat(v.price), sort_order: i })),
+      ];
+      await supabase.from("product_variations").insert(varRows);
       toast.success("Item updated");
       onDone();
       if (!skipStockRef.current)
-        onSaved({ ...updated, units_per_item: updated.units_per_item ?? 0, bottle_variations: (updated.bottle_variations ?? null) as any });
+        onSaved({ ...updated, units_per_item: updated.units_per_item ?? 0, bottle_variations: null });
     } else {
-      const newBv = buildBaseUnitEntry();
       const { data: inserted, error } = await supabase.from("products").insert({
         owner_id: ownerId, name: name.trim(), price: Number(price), cost_price: costVal,
-        bottle_variations: newBv.length ? newBv : null, image_url, category,
+        image_url, category, units_per_item: baseUnitQtyVal,
       }).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
-      // Save generic product variations
-      if (prodVars.length > 0) {
-        const rows = prodVars
+      const varRows = [
+        { product_id: inserted.id, owner_id: ownerId, name: `_unit:${baseUnit}`, price: Number(price), sort_order: -1 },
+        ...prodVars
           .filter((v) => v.name.trim() && parseFloat(v.price) > 0)
-          .map((v, i) => ({ product_id: inserted.id, owner_id: ownerId, name: `${v.qty || "1"} ${v.name}`.trim(), price: parseFloat(v.price), sort_order: i }));
-        if (rows.length > 0) await supabase.from("product_variations").insert(rows);
-      }
+          .map((v, i) => ({ product_id: inserted.id, owner_id: ownerId, name: `${v.qty || "1"} ${v.name}`.trim(), price: parseFloat(v.price), sort_order: i })),
+      ];
+      await supabase.from("product_variations").insert(varRows);
       toast.success("Item added");
       setName(""); setPrice(""); setCostPrice(""); setCategory(""); setFile(null); setPreview(null); setTemplateUrl(null); setProdVars([]); setBaseUnitQty("1"); setBaseUnit("each");
       onDone();
       if (!skipStockRef.current)
-        onSaved({ ...inserted, units_per_item: inserted.units_per_item ?? 0, bottle_variations: (inserted.bottle_variations ?? null) as any });
+        onSaved({ ...inserted, units_per_item: inserted.units_per_item ?? 0, bottle_variations: null });
     }
   };
 

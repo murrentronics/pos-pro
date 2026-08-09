@@ -23,8 +23,7 @@ import {
   type CachedProduct,
 } from "@/lib/offlineCache";
 
-type ProdVariation = { id: string; name: string; price: number; sort_order: number };
-type Product = { id: string; name: string; price: number; cost_price?: number; image_url: string | null; category?: string; stock_qty?: number; units_per_item?: number; bottle_variations?: { key: string; label: string; units_consumed: number; price: number }[] | null; product_variations?: ProdVariation[] | null };
+type ProdVariation = { id: string; name: string; price: number; sort_order: number };type Product = { id: string; name: string; price: number; cost_price?: number; image_url: string | null; category?: string; stock_qty?: number; units_per_item?: number; bottle_variations?: { key: string; label: string; units_consumed: number; price: number }[] | null; product_variations?: ProdVariation[] | null };
 type CartItem = Product & { qty: number; _discount?: number; _originalPrice?: number };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,13 +157,13 @@ function ItemModal({
       : [];
   const hasVarGroups = groups.length > 0 && groups.some((g) => g.options.some((o) => o.label.trim()));
 
-  // New eBay-style product_variations (qty + unit + price)
-  const prodVars = (product.product_variations ?? []).filter((v) => v.name.trim());
+  // New eBay-style product_variations (qty + unit + price) — filter out the _unit: meta row
+  const prodVars = (product.product_variations ?? []).filter((v) => v.sort_order >= 0 && v.name.trim() && !v.name.startsWith("_unit:"));
   const hasProdVars = prodVars.length > 0;
-  // Base unit label from _baseunit entry in bottle_variations (e.g. "1 lb")
-  const baseUnitEntry = (product.bottle_variations ?? []).find((v) => v.key === "_baseunit");
-  const baseUnitLabel = baseUnitEntry
-    ? `${baseUnitEntry.units_consumed > 1 ? baseUnitEntry.units_consumed + " " : ""}${baseUnitEntry.label}`
+  // Base unit label from the _unit: row in product_variations (sort_order = -1)
+  const baseUnitRow = (product.product_variations ?? []).find((v) => v.name.startsWith("_unit:"));
+  const baseUnitLabel = baseUnitRow
+    ? `${(product.units_per_item ?? 1) > 1 ? (product.units_per_item ?? 1) + " " : ""}${baseUnitRow.name.slice(6)}`
     : null;
 
   // counts: cartKey → qty selected in this session
