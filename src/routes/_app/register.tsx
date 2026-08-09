@@ -44,7 +44,9 @@ type ProductCardProps = {
 };
 const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgSrc, onAdd, onRemove, onDec }: ProductCardProps) {
   const outOfStock  = (p.stock_qty ?? 1) === 0;
-  const incomplete  = !p.price || Number(p.price) <= 0;
+  const noPrice     = !p.price || Number(p.price) <= 0;
+  const noCost      = !p.cost_price || Number(p.cost_price) <= 0;
+  const incomplete  = noPrice || noCost;
   const inCart      = inCartQty > 0;
   return (
     <div data-bar-id={p.id} className="relative">
@@ -118,7 +120,9 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
           {!outOfStock && incomplete && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-[1px]">
               <div className="rounded-xl px-2 py-1 shadow-lg" style={{ background: "#92400e" }}>
-                <span className="text-white text-[10px] font-black uppercase tracking-wider leading-none">No Price</span>
+                <span className="text-white text-[10px] font-black uppercase tracking-wider leading-none">
+                  {noPrice ? "No Price" : "No Cost"}
+                </span>
               </div>
             </div>
           )}
@@ -920,7 +924,6 @@ export default function RegisterPage() {
   }, [cart, cashOpen]);
 
   const addToCart = useCallback((p: Product) => {
-    // Block items with no price or no cost price set
     if (!p.price || Number(p.price) <= 0) {
       toast.error(`${p.name} has no sale price set. Ask the owner to update it in Items.`);
       return;
@@ -929,7 +932,6 @@ export default function RegisterPage() {
       toast.error(`${p.name} has no cost price set. Ask the owner to update it in Items.`);
       return;
     }
-    // Always open the item modal so the cashier can choose qty / variations
     setVarPickerProduct(p);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

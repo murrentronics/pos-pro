@@ -1565,6 +1565,8 @@ export default function ProductsPage() {
                 onDone={() => { setOpen(false); load(); }}
                 onSaved={(product) => {
                   setItems((prev) => [...prev, product]);
+                  // Save new product so Back from stock step reopens it in edit mode (preserves form data)
+                  editItemForBackRef.current = product;
                   setStockNumpadSource("addDialog");
                   setStockNumpadId(product.id);
                 }}
@@ -1759,7 +1761,15 @@ export default function ProductsPage() {
           onClose={() => { setStockNumpadId(null); setStockNumpadSource(null); }}
           onBack={
             stockNumpadSource === "addDialog"
-              ? () => { setStockNumpadId(null); setStockNumpadSource(null); setOpen(true); }
+              ? () => {
+                  setStockNumpadId(null);
+                  setStockNumpadSource(null);
+                  // Reopen as edit mode so all saved fields are populated — not a blank form
+                  if (editItemForBackRef.current) {
+                    setEditItem(editItemForBackRef.current);
+                    editItemForBackRef.current = null;
+                  }
+                }
               : stockNumpadSource === "editDialog"
               ? () => {
                   setStockNumpadId(null);
@@ -1859,7 +1869,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
   // Base unit for the selling price (e.g. "1 lb", "1 each") — applies to all non-liquor/cigarette categories
   const UNIT_OPTIONS = ["each","lb","lbs","oz","kg","g","bag","bunch","bundle","lot","box","pack","case","dozen","pallet"];
-  const [baseUnitQty,  setBaseUnitQty]  = useState(editProduct ? String(editProduct.units_per_item || "1") : "1");
+  const [baseUnitQty,  setBaseUnitQty]  = useState(editProduct ? String(editProduct.units_per_item || "") : "");
   const [baseUnit,     setBaseUnit]     = useState("each");
   // Generic product variations (eBay-style: qty + unit + price) — for all categories
   type ProdVar = { id?: string; name: string; price: string; qty: string };
@@ -1929,13 +1939,15 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   const handleNumpad = (k: string) => {
     let setter: (v: string) => void;
     let current: string;
-    if (activeNumpad === "cost")         { setter = setCostPrice;    current = costPrice; }
-    else if (activeNumpad === "baseunitqty") { setter = setBaseUnitQty; current = baseUnitQty; }
-    else                                 { setter = setPrice;        current = price; }
+    if (activeNumpad === "cost")             { setter = setCostPrice;    current = costPrice; }
+    else if (activeNumpad === "baseunitqty") { setter = setBaseUnitQty;  current = baseUnitQty; }
+    else                                     { setter = setPrice;        current = price; }
     if (k === "⌫") { setter(current.slice(0, -1)); return; }
     if (k === ".") { if (!current.includes(".")) setter(current + "."); return; }
     const dotIdx = current.indexOf(".");
     if (dotIdx !== -1 && current.length - dotIdx > 2) return;
+    // For baseunitqty: no leading-zero suppression — just append
+    if (activeNumpad === "baseunitqty") { setter(current + k); return; }
     setter(current === "0" ? k : current + k);
   };
 
@@ -1955,14 +1967,9 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
             {/* Cost Price + Base Selling Price */}
 
   // ── image helpers ─────────────────────────────────────────────────────────
-  const compressImage = async (f: File): Promise<File> => {
-    const { processProductImage } = await import("@/lib/processProductImage");
-    return processProductImage(f, { removeBg: true });
-  };
   const onPick = (f: File | undefined | null) => {
     if (!f) return; setFile(f); setTemplateUrl(null); setPreview(URL.createObjectURL(f));
   };
-
 
   const clearImage = () => { setFile(null); setTemplateUrl(null); setPreview(null); };
 
@@ -1974,10 +1981,9 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
     if (templateUrl) {
       image_url = templateUrl;
     } else if (file) {
-      const compressed = await compressImage(file);
-      const ext = compressed.name.split(".").pop() || "png";
+      const ext = file.name.split(".").pop() || "jpg";
       const path = `${profile.id}/${crypto.randomUUID()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("product-images").upload(path, compressed, { upsert: false });
+      const { error: upErr } = await supabase.storage.from("product-images").upload(path, file, { upsert: false });
       if (upErr) { toast.error(upErr.message); setBusy(false); return; }
       image_url = supabase.storage.from("product-images").getPublicUrl(path).data.publicUrl;
     } else if (isEdit) {
@@ -2069,7 +2075,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
               </div>
             </div>
             <p className="text-[10px] text-muted-foreground/70 leading-snug">
-              💡 For best results, upload a <span className="font-bold text-amber-400">PNG with transparent background</span>.
+              💡 For best results, use a clear photo with good lighting.
             </p>
 
             {/* Name */}
@@ -2133,7 +2139,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                     className={`h-9 w-20 rounded-lg border flex items-center justify-center px-3 cursor-pointer transition font-black text-sm ${activeNumpad === "baseunitqty" ? "border-primary bg-muted/50 text-primary" : "border-border bg-muted/30 text-muted-foreground"}`}
                     onClick={() => setActiveNumpad(activeNumpad === "baseunitqty" ? null : "baseunitqty")}
                   >
-                    {baseUnitQty || "1"}
+                    <span className={baseUnitQty ? "" : "text-muted-foreground/40"}>{baseUnitQty || "1"}</span>
                   </div>
                   {/* Unit dropdown */}
                   <select
