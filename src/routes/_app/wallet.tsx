@@ -347,12 +347,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
       await supabase.rpc("reverse_order_shot_pack", { p_items: items });
     }
 
-    const restorableItems = items.filter((i: any) => !i.id?.startsWith("shot-") && !i.id?.startsWith("pack-"));
-    if (restorableItems.length > 0) {
-      await supabase.rpc("restore_stock_item", {
-        p_items: restorableItems.map((i: any) => ({ id: i.id, qty: i.qty })),
-      });
-    }
+    // Stock is restored by the handle_order_delete DB trigger — no separate RPC call needed.
 
     // Delete ALL wallet_transactions for this order (cashier 'sale' row + owner 'cashier_sale' row)
     // The DB trigger (migration 20260628000003) also does this server-side once applied.
@@ -2322,20 +2317,12 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
     const items = Array.isArray(order.items) ? (order.items as any[]) as { id: string; qty: number; price?: number }[] : [];
 
     // 1. Reverse shots_sold / units_sold / revenue on any opened bottles or packs.
-    //    Also reopens any bottle/pack that was subsequently marked empty (finished),
-    //    removing the bottle_finished / pack_finished wallet entry in the process.
     const hasShotOrPack = items.some(i => i.id?.startsWith("shot-") || i.id?.startsWith("pack-"));
     if (hasShotOrPack) {
       await supabase.rpc("reverse_order_shot_pack", { p_items: items });
     }
 
-    // 2. Restore stock for every real product in the order (skip shot-xxx and pack-xxx)
-    const restorableItems = items.filter(i => !i.id?.startsWith("shot-") && !i.id?.startsWith("pack-"));
-    if (restorableItems.length > 0) {
-      await supabase.rpc("restore_stock_item", {
-        p_items: restorableItems.map(i => ({ id: i.id, qty: i.qty })),
-      });
-    }
+    // 2. Stock is restored by the handle_order_delete DB trigger — no separate RPC call needed.
 
     // 3. DB trigger on_order_delete handles deleting ALL wallet_transactions
     //    for this order (owner + cashier rows) and deducting wallet_balance.
