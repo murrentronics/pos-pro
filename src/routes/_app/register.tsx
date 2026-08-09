@@ -43,7 +43,8 @@ type ProductCardProps = {
   onDec: (id: string) => void;
 };
 const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgSrc, onAdd, onRemove, onDec }: ProductCardProps) {
-  const outOfStock  = (p.stock_qty ?? 1) === 0;
+  const remainingQty = (p.stock_qty ?? 1) - inCartQty;
+  const outOfStock  = (p.stock_qty ?? 1) === 0 || remainingQty <= 0;
   const noPrice     = !p.price || Number(p.price) <= 0;
   const noCost      = !p.cost_price || Number(p.cost_price) <= 0;
   const incomplete  = noPrice || noCost;
@@ -82,7 +83,7 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
           </div>
           {p.stock_qty !== undefined && !outOfStock && (
             <div className="absolute top-1.5 left-1.5 h-6 min-w-[1.5rem] px-1.5 rounded-full flex items-center justify-center bg-black/70 shadow">
-              <span className="text-[10px] font-black text-white leading-none">{p.stock_qty}</span>
+              <span className="text-[10px] font-black text-white leading-none">{remainingQty}</span>
             </div>
           )}
           {inCart && (
@@ -126,7 +127,7 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
               </div>
             </div>
           )}
-          {!outOfStock && !incomplete && !inCart && (p.stock_qty ?? 1) >= 1 && (p.stock_qty ?? 1) <= 5 && (
+          {!outOfStock && !incomplete && !inCart && remainingQty >= 1 && remainingQty <= 5 && (
             <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full bg-red-600 shadow">
               <span className="text-[9px] font-black uppercase tracking-wide text-white leading-none">Low</span>
             </div>
@@ -951,6 +952,12 @@ export default function RegisterPage() {
     // No variations — add directly to cart, incrementing qty if already present
     setCart((c) => {
       const existing = c.find((i) => i.id === p.id);
+      const inCartNow = existing?.qty ?? 0;
+      // Respect stock limit
+      if (p.stock_qty !== undefined && p.stock_qty !== null && inCartNow >= p.stock_qty) {
+        toast.error(`Only ${p.stock_qty} in stock`);
+        return c;
+      }
       if (existing) {
         return c.map((i) => i.id === p.id ? { ...i, qty: i.qty + 1 } : i);
       }
