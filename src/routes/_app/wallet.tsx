@@ -665,7 +665,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
       </div>
 
       {cashierTab === "sales" && (
-      <section className="space-y-3">
+      <section className="space-y-3 pb-24">
         <div className="flex items-center justify-between">
           <h2 className="font-black text-xl">{t("records", "Records")}</h2>
           <span className="text-sm text-muted-foreground">{totalRecords} records</span>

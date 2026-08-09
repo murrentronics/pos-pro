@@ -2382,10 +2382,16 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                               <span className="text-[10px] text-muted-foreground mb-1">Quantity</span>
                               <div
                                 className={`h-9 rounded-lg border flex items-center px-3 cursor-pointer transition ${activeNumpad === pvQtyNumpad(i) ? "border-primary bg-muted/50" : "border-border bg-muted/30"}`}
-                                onClick={() => setActiveNumpad(activeNumpad === pvQtyNumpad(i) ? null : pvQtyNumpad(i))}
+                                onClick={() => {
+                                  if (activeNumpad !== pvQtyNumpad(i)) {
+                                    // Clear the field so typing replaces instead of appending
+                                    setProdVars(pv => pv.map((x, j) => j === i ? { ...x, qty: "" } : x));
+                                  }
+                                  setActiveNumpad(activeNumpad === pvQtyNumpad(i) ? null : pvQtyNumpad(i));
+                                }}
                               >
-                                <span className={`text-sm font-black ${activeNumpad === pvQtyNumpad(i) ? "text-primary" : "text-muted-foreground"}`}>
-                                  {v.qty || "1"}
+                                <span className={`text-sm font-black ${activeNumpad === pvQtyNumpad(i) ? "text-primary" : v.qty ? "text-muted-foreground" : "text-muted-foreground/40"}`}>
+                                  {activeNumpad === pvQtyNumpad(i) ? (v.qty || "") : (v.qty || "1")}
                                 </span>
                               </div>
                             </div>

@@ -177,12 +177,29 @@ function ItemModal({
   const [baseQty, setBaseQty] = useState(1);
 
   const stock = product.stock_qty ?? Infinity;
-  const totalSelected = Object.values(counts).reduce((s, n) => s + n, 0);
+
+  // Helper: get the units-per-tap multiplier for a prodVar cartKey (e.g. "3 pack" → 3)
+  const getMultiplier = (cartKey: string): number => {
+    if (!hasProdVars) return 1;
+    const varId = cartKey.includes("__pv__") ? cartKey.split("__pv__")[1] : null;
+    if (!varId) return 1;
+    const v = prodVars.find((pv) => pv.id === varId);
+    if (!v) return 1;
+    const m = parseInt(v.name.trim().split(/\s+/)[0], 10);
+    return !isNaN(m) && m > 1 ? m : 1;
+  };
+
+  // totalSelected in actual units (not taps) for stock guard
+  const totalSelected = hasProdVars
+    ? Object.entries(counts).reduce((s, [k, taps]) => s + taps * getMultiplier(k), 0)
+    : Object.values(counts).reduce((s, n) => s + n, 0);
+
   const imgSrc = product.image_url ? productImageUrl(product.image_url) : null;
 
   const incOption = (cartKey: string) => {
     const cur = counts[cartKey] ?? 0;
-    if (totalSelected >= stock) { toast.error(`Only ${stock} in stock`); return; }
+    const multiplier = getMultiplier(cartKey);
+    if (totalSelected + multiplier > stock) { toast.error(`Only ${stock} in stock`); return; }
     setCounts((c) => ({ ...c, [cartKey]: cur + 1 }));
   };
   const decOption = (cartKey: string) => {
@@ -199,8 +216,13 @@ function ItemModal({
       const lines: ItemModalLine[] = prodVars
         .map((v) => {
           const cartKey = `${product.id}__pv__${v.id}`;
-          const qty = counts[cartKey] ?? 0;
-          return qty > 0 ? { cartKey, name: `${product.name} (${v.name})`, price: v.price, qty } : null;
+          const taps = counts[cartKey] ?? 0;
+          if (taps === 0) return null;
+          // v.name is stored as "<qty> <unit>" e.g. "3 pack" — leading number is the
+          // units-per-deal multiplier. 2 taps of "3 pack" = 6 units deducted from stock.
+          const multiplier = parseInt(v.name.trim().split(/\s+/)[0], 10);
+          const qty = !isNaN(multiplier) && multiplier > 1 ? taps * multiplier : taps;
+          return { cartKey, name: `${product.name} (${v.name})`, price: v.price, qty };
         })
         .filter(Boolean) as ItemModalLine[];
       if (lines.length === 0) { toast.error("Select at least one option"); return; }
@@ -283,8 +305,10 @@ function ItemModal({
               <div className="grid grid-cols-2 gap-2">
                 {prodVars.map((v) => {
                   const cartKey = `${product.id}__pv__${v.id}`;
-                  const qty = counts[cartKey] ?? 0;
-                  const isSelected = qty > 0;
+                  const taps = counts[cartKey] ?? 0;
+                  const isSelected = taps > 0;
+                  const multiplier = getMultiplier(cartKey);
+                  const unitsSelected = taps * multiplier;
                   return (
                     <div
                       key={v.id}
@@ -317,7 +341,7 @@ function ItemModal({
                         </span>
                         {isSelected && (
                           <span className="text-[11px] font-black mt-0.5" style={{ color: "var(--primary)" }}>
-                            ${(v.price * qty).toFixed(2)} total
+                            ${(v.price * taps).toFixed(2)} total
                           </span>
                         )}
                       </button>
@@ -330,7 +354,12 @@ function ItemModal({
                             className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
                             style={{ background: "#ef4444" }}
                           >−</button>
-                          <span className="font-black text-lg" style={{ color: "var(--primary)" }}>{qty}</span>
+                          <div className="flex flex-col items-center">
+                            <span className="font-black text-lg" style={{ color: "var(--primary)" }}>{taps}</span>
+                            {multiplier > 1 && (
+                              <span className="text-[9px] text-muted-foreground leading-none">{unitsSelected} units</span>
+                            )}
+                          </div>
                           <button
                             type="button"
                             onClick={() => incOption(cartKey)}
