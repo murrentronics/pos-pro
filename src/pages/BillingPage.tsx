@@ -340,16 +340,20 @@ export default function BillingPage() {
                   </div>
                   <div>
                     <p className="font-black text-foreground text-sm">P.O.S. Pro</p>
-                    <p className="text-xs text-muted-foreground">
-                      ${PRICE_BASE.toLocaleString()} TT / year{extraStores > 0 ? ` + ${extraStores} store${extraStores !== 1 ? "s" : ""}` : ""}
+                    <p className="font-black text-base" style={{ color: "var(--primary)" }}>
+                      ${totalRenewal.toLocaleString()} TT / year
                     </p>
+                    {extraStores > 0 && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        ${PRICE_BASE.toLocaleString()} plan + {extraStores}×${PRICE_STORE.toLocaleString()} store{extraStores !== 1 ? "s" : ""}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <span className={`text-xs font-black px-2.5 py-1 rounded-full ${isOverdue ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"}`}>
                   {isOverdue ? "OVERDUE" : "ACTIVE"}
                 </span>
               </div>
-              {renewalBreakdown && <p className="text-xs text-muted-foreground">{renewalBreakdown}</p>}
               {extraStores > 0 && (
                 <p className="text-xs text-muted-foreground">
                   {extraStores + 1} store{extraStores + 1 !== 1 ? "s" : ""} total

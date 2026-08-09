@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Run cap:sync before commit",
+      "trigger": "PreToolUse",
+      "matcher": "execute_pwsh",
+      "action": {
+        "type": "agent",
+        "prompt": "If this execute_pwsh tool call contains a `git commit` command, verify that `npm run cap:sync` was already run in this session before allowing the commit. If it was not run, remind the assistant to run `npm run cap:sync` first before committing."
+      }
+    }
+  ]
+}
