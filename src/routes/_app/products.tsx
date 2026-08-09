@@ -328,15 +328,15 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
         <div className="mx-5 mb-4 grid grid-cols-3 gap-2">
           <div className="px-3 py-2 rounded-xl bg-muted/30 text-center">
             <div className="text-xs text-muted-foreground">Current</div>
-            <div className="text-xl font-black">{currentQty}{unitLabel && <span className="text-xs font-semibold text-muted-foreground ml-1">{unitLabel}</span>}</div>
+            <div className="text-xl font-black">{currentQty}</div>
           </div>
           <div className="px-3 py-2 rounded-xl bg-muted/30 text-center border border-primary/30">
             <div className="text-xs text-muted-foreground">Adding</div>
-            <div className="text-xl font-black text-primary">+{addAmount}{unitLabel && <span className="text-xs font-semibold ml-1">{unitLabel}</span>}</div>
+            <div className="text-xl font-black text-primary">+{addAmount}</div>
           </div>
           <div className="px-3 py-2 rounded-xl bg-muted/30 text-center relative">
             <div className="text-xs text-muted-foreground">Total</div>
-            <div className="text-xl font-black text-green-400">{newTotal}{unitLabel && <span className="text-xs font-semibold ml-1">{unitLabel}</span>}</div>
+            <div className="text-xl font-black text-green-400">{newTotal}</div>
             <button
               type="button"
               disabled={addAmount !== 0 || currentQty === 0}
