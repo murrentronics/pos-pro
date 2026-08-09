@@ -99,11 +99,13 @@ function RevertStockModal({
       if (expErr) { toast.error(expErr.message); setBusy(false); return; }
     }
 
-    // Update the product stock_qty only — don't touch undo fields
-    const { error } = await supabase
-      .from("products")
-      .update({ stock_qty: newQty })
-      .eq("id", productId);
+    // Update the product stock_qty via RPC — does NOT sync stock_check_actuals
+    // because this is a manual correction, not a real stock movement
+    const { error } = await supabase.rpc("revert_stock_qty", {
+      p_product_id: productId,
+      p_new_qty: newQty,
+      p_owner_id: ownerId,
+    });
 
     setBusy(false);
     if (error) { toast.error(error.message); return; }
