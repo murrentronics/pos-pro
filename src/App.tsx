@@ -29,6 +29,7 @@ import StockCheckPage from "@/pages/StockCheckPage";
 import ManualPage from "@/pages/ManualPage";
 import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
 import TermsPage from "@/pages/TermsPage";
+import FactoryResetPage from "@/pages/FactoryResetPage";
 import { ChainProvider } from "@/lib/ChainContext";
 
 // ── Offline status banner ─────────────────────────────────────────────────────
@@ -105,6 +106,7 @@ function AppWithUpdateCheck() {
             <Route path="admin/billing" element={<AdminBillingManagementPage />} />
             <Route path="privacy" element={<PrivacyPolicyPage />} />
             <Route path="terms" element={<TermsPage />} />
+            <Route path="factory-reset" element={<FactoryResetPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

@@ -8,7 +8,7 @@ import { usePushNotifications } from "@/lib/usePushNotifications";
 import { useTranslation } from "@/lib/i18n";
 import { useOffline } from "@/lib/OfflineProvider";
 import { OfflinePageGuard } from "@/components/OfflinePageGuard";
-import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid } from "lucide-react";
+import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const DEMO_EMAILS = ["isabel@gmail.com", "renard.sankersingh@gmail.com"];
@@ -403,6 +403,17 @@ export default function AppLayout() {
                       <BookOpen className={`h-6 w-6 ${loc.pathname === "/manual" ? "text-white" : "text-primary"}`} />
                     </div>
                     <span className={`text-xs font-black text-center leading-tight ${loc.pathname === "/manual" ? "text-white" : "text-foreground"}`}>Manual</span>
+                  </button>
+                )}
+                {isOwner && (
+                  <button onClick={() => { setMenuOpen(false); nav("/factory-reset"); }}
+                    className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 px-2 active:scale-95 transition-transform select-none"
+                    style={{ background: loc.pathname === "/factory-reset" ? "rgba(239,68,68,0.20)" : "var(--gradient-card)", borderColor: loc.pathname === "/factory-reset" ? "#ef4444" : "rgba(239,68,68,0.30)", boxShadow: "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
+                    <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0"
+                      style={{ background: loc.pathname === "/factory-reset" ? "rgba(239,68,68,0.30)" : "rgba(239,68,68,0.10)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
+                      <RotateCcw className="h-6 w-6 text-red-500" />
+                    </div>
+                    <span className="text-xs font-black text-center leading-tight text-red-400">Reset</span>
                   </button>
                 )}
                 <button onClick={async () => { try { await signOut(); } catch { /* ignore */ } nav("/login"); }}
