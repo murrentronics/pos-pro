@@ -1523,24 +1523,6 @@ function CashOverlay({
   const change = Math.max(0, (Number(paid) || 0) - discountedTotal);
   const enough = (Number(paid) || 0) >= discountedTotal;
 
-  // Shared stock helper — enqueue offline if no network
-  const doStockAndShots = async (groupId: string) => {
-    // Cart item ids for variation lines are "productId__pv__varId" or "productId__g__optId".
-    // Strip the suffix to get the real product UUID, then aggregate qty by product id
-    // so multiple variation lines for the same product count correctly.
-    const qtyByProduct: Record<string, number> = {};
-    for (const c of cart) {
-      const productId = c.id.includes("__") ? c.id.split("__")[0] : c.id;
-      qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + c.qty;
-    }
-    const stockItems = Object.entries(qtyByProduct).map(([id, qty]) => ({ id, qty }));
-    if (isOnline) {
-      await supabase.rpc("decrement_stock_item", { p_items: stockItems });
-    } else {
-      await enqueue("rpc_decrement_stock_item", { p_items: stockItems }, groupId);
-    }
-  };
-
   const submit = async () => {
     if (payMode === "credit") {
       if (!selectedCustomer || !profile) {
@@ -1558,6 +1540,7 @@ function CashOverlay({
 
     if (payMode === "credit" && selectedCustomer) {
       // ── Credit order ──────────────────────────────────────────────────
+      // record_credit_charge RPC handles stock decrement internally — no separate call needed.
       const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
       const discountNote = orderDiscount > 0 ? ` | Disc: -$${orderDiscount.toFixed(2)} (orig $${total.toFixed(2)})` : "";
       const creditPayload = {
@@ -1569,7 +1552,6 @@ function CashOverlay({
       };
       if (!isOnline) {
         await enqueue("rpc_record_credit_charge", creditPayload, groupId);
-        await doStockAndShots(groupId);
         setBusy(false);
         toast.success(`💾 Saved offline — will sync when reconnected`);
         onSuccess(paidNum, changeNum);
@@ -1577,7 +1559,6 @@ function CashOverlay({
       }
       const { error } = await supabase.rpc("record_credit_charge", creditPayload);
       if (error) { setBusy(false); toast.error(error.message); return; }
-      await doStockAndShots(groupId);
       setBusy(false);
       toast.success(`Charged $${discountedTotal.toFixed(2)} to ${selectedCustomer.full_name}`);
       onSuccess(paidNum, changeNum);
@@ -1585,6 +1566,7 @@ function CashOverlay({
     }
 
     // ── Cash order (guest or customer) ────────────────────────────────
+    // Stock is decremented by the handle_order_insert DB trigger — no separate RPC call needed.
     const orderPayload = {
       owner_id: ownerId, cashier_id: profile.id,
       items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, units_consumed: (c as any)._units_consumed ?? null, ...(c._discount ? { discount: c._discount, original_price: c._originalPrice ?? c.price } : {}) })),
@@ -1594,7 +1576,6 @@ function CashOverlay({
 
     if (!isOnline) {
       await enqueue("orders_insert", orderPayload, groupId);
-      await doStockAndShots(groupId);
       if (payMode === "cash" && selectedCustomer) {
         const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
         await enqueue("credit_transactions_insert", {
@@ -1615,7 +1596,7 @@ function CashOverlay({
 
     const { error } = await supabase.from("orders").insert(orderPayload);
     if (error) { setBusy(false); toast.error(error.message); return; }
-    await doStockAndShots(groupId);
+    // Trigger handle_order_insert fires automatically — no separate stock RPC needed
 
     // If a customer was selected with cash, record history without changing balance
     if (payMode === "cash" && selectedCustomer) {
@@ -1996,14 +1977,6 @@ function CashCustomerOverlay({
       change_given: changeNum,
       ...(orderDiscount > 0 ? { discount_amount: orderDiscount, original_total: total + orderDiscount } : {}),
     };
-    const stockItems = (() => {
-      const qtyByProduct: Record<string, number> = {};
-      for (const c of cart) {
-        const productId = c.id.includes("__") ? c.id.split("__")[0] : c.id;
-        qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + c.qty;
-      }
-      return Object.entries(qtyByProduct).map(([id, qty]) => ({ id, qty }));
-    })();
     const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
     const creditTxPayload = {
       credit_account_id: account.id,
@@ -2017,7 +1990,6 @@ function CashCustomerOverlay({
 
     if (!isOnline) {
       await enqueue("orders_insert", orderPayload, groupId);
-      await enqueue("rpc_decrement_stock_item", { p_items: stockItems }, groupId);
       await enqueue("credit_transactions_insert", creditTxPayload, groupId);
       setBusy(false);
       toast.success(`💾 Saved offline — will sync when reconnected`);
@@ -2027,8 +1999,7 @@ function CashCustomerOverlay({
 
     const { error: orderErr } = await supabase.from("orders").insert(orderPayload);
     if (orderErr) { setBusy(false); toast.error(orderErr.message); return; }
-
-    await supabase.rpc("decrement_stock_item", { p_items: stockItems });
+    // handle_order_insert trigger fires automatically — no separate stock RPC needed
 
     await supabase.from("credit_transactions").insert(creditTxPayload);
 
