@@ -932,7 +932,37 @@ export default function RegisterPage() {
       toast.error(`${p.name} has no cost price set. Ask the owner to update it in Items.`);
       return;
     }
-    setVarPickerProduct(p);
+
+    // Check for any variation types
+    const bv = p.bottle_variations ?? [];
+    const hasVarGroups =
+      bv.length === 1 && (bv[0] as any)._type === "vargroups" &&
+      (bv[0] as any).groups?.some((g: any) => g.options?.some((o: any) => o.label?.trim()));
+    const hasProdVars = (p.product_variations ?? []).filter(
+      (v) => v.sort_order >= 0 && v.name.trim() && !v.name.startsWith("_unit:")
+    ).length > 0;
+
+    if (hasVarGroups || hasProdVars) {
+      // Has variations — open the picker modal
+      setVarPickerProduct(p);
+      return;
+    }
+
+    // No variations — add directly to cart, incrementing qty if already present
+    setCart((c) => {
+      const existing = c.find((i) => i.id === p.id);
+      if (existing) {
+        return c.map((i) => i.id === p.id ? { ...i, qty: i.qty + 1 } : i);
+      }
+      return [...c, {
+        id: p.id,
+        name: p.name,
+        price: p.price,
+        cost_price: p.cost_price ?? 0,
+        image_url: p.image_url,
+        qty: 1,
+      }];
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dec = useCallback((id: string) =>
@@ -1473,7 +1503,15 @@ function CashOverlay({
 
   // Shared stock helper — enqueue offline if no network
   const doStockAndShots = async (groupId: string) => {
-    const stockItems = cart.map((c) => ({ id: c.id, qty: c.qty }));
+    // Cart item ids for variation lines are "productId__pv__varId" or "productId__g__optId".
+    // Strip the suffix to get the real product UUID, then aggregate qty by product id
+    // so multiple variation lines for the same product count correctly.
+    const qtyByProduct: Record<string, number> = {};
+    for (const c of cart) {
+      const productId = c.id.includes("__") ? c.id.split("__")[0] : c.id;
+      qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + c.qty;
+    }
+    const stockItems = Object.entries(qtyByProduct).map(([id, qty]) => ({ id, qty }));
     if (isOnline) {
       await supabase.rpc("decrement_stock_item", { p_items: stockItems });
     } else {
@@ -1936,7 +1974,14 @@ function CashCustomerOverlay({
       change_given: changeNum,
       ...(orderDiscount > 0 ? { discount_amount: orderDiscount, original_total: total + orderDiscount } : {}),
     };
-    const stockItems = cart.map((c) => ({ id: c.id, qty: c.qty }));
+    const stockItems = (() => {
+      const qtyByProduct: Record<string, number> = {};
+      for (const c of cart) {
+        const productId = c.id.includes("__") ? c.id.split("__")[0] : c.id;
+        qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + c.qty;
+      }
+      return Object.entries(qtyByProduct).map(([id, qty]) => ({ id, qty }));
+    })();
     const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
     const creditTxPayload = {
       credit_account_id: account.id,

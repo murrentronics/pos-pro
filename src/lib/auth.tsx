@@ -110,6 +110,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(null);
           setLoading(false);
           explicitSignOut.current = false;
+        } else {
+          // Not intentional — re-check the session from storage before deciding
+          // anything. The SW claiming the page or a token-refresh blip can fire
+          // SIGNED_OUT even when a valid session still exists in localStorage.
+          supabase.auth.getSession().then(({ data }) => {
+            if (data.session) {
+              // Session is still alive — the SIGNED_OUT event was a false alarm.
+              setSession(data.session);
+              loadProfile(data.session.user.id);
+            } else {
+              // Genuinely signed out — clear state.
+              setProfile(null);
+              setLoading(false);
+            }
+          });
         }
       }
     });

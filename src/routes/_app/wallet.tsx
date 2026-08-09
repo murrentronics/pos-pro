@@ -1673,10 +1673,10 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
       };
       // If a session override timestamp is provided, use it so the expense lands in that session
       if (overrideCreatedAt) insertData.created_at = overrideCreatedAt;
-      const { error } = await (sb as any).from("owner_expenses").insert(insertData);
+      const { error } = await supabase.from("owner_expenses").insert(insertData);
       if (error) { toast.error(error.message); return; }
       const newBal = Number(ownerWalletBalance) - total;
-      await (sb as any).from("profiles").update({ wallet_balance: newBal }).eq("id", ownerId);
+      await supabase.from("profiles").update({ wallet_balance: newBal }).eq("id", ownerId);
       toast.success("Expense saved");
       setExpenseLines([{ description: "", amount: "" }]);
       setShowAddExpense(false);
@@ -2908,7 +2908,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
     let todayAnchor: string | null = barSessionStart; // bar is open — use current session start
     if (!barSessionStart && barClosedAtVal) {
       // Bar was closed — find the most recent closed session's start time
-      const lastSessionRes = await (sb as any).from("store_sessions")
+      const lastSessionRes = await supabase.from("store_sessions")
         .select("opened_at")
         .eq("owner_id", profile.id)
         .order("opened_at", { ascending: false })

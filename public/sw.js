@@ -11,7 +11,7 @@
 //  │ App shell (HTML, manifest, icons, sw.js)        │ Network-first, stale fallback    │
 //  └─────────────────────────────────────────────────┴──────────────────────────────────┘
 
-const VERSION      = "v4";
+const VERSION      = "v5";
 const SHELL_CACHE  = `pospro-shell-${VERSION}`;
 const ASSET_CACHE  = `pospro-assets-${VERSION}`;
 const IMAGE_CACHE  = `pospro-images-${VERSION}`;
@@ -28,7 +28,11 @@ const PRECACHE_SHELL = [
   "/manifest.json",
 ];
 
-// ── Install: precache shell + take control immediately ───────────────────────
+// ── Install: precache shell ───────────────────────────────────────────────────
+// Do NOT call skipWaiting() here. Activating the new SW immediately while a
+// session is live causes clients.claim() to trigger a page reload that races
+// against Supabase's session rehydration and logs the user out. The new SW
+// will take over on the next natural page open instead.
 self.addEventListener("install", (e) => {
   e.waitUntil(
     caches.open(SHELL_CACHE).then((cache) =>
@@ -43,7 +47,9 @@ self.addEventListener("install", (e) => {
       )
     )
   );
-  self.skipWaiting();
+  // skipWaiting() intentionally omitted — see note above.
+  // The UpdateBanner component sends SKIP_WAITING when the user explicitly
+  // chooses to update, which is the only safe time to take over.
 });
 
 // ── Activate: delete stale caches from old versions ──────────────────────────
