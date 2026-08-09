@@ -212,19 +212,33 @@ function ItemModal({
   };
 
   const handleAdd = () => {
+    // Base-price single-unit option: cartKey = product.id (no __pv__ suffix)
+    const baseTaps = counts[product.id] ?? 0;
+
     if (hasProdVars) {
-      const lines: ItemModalLine[] = prodVars
-        .map((v) => {
-          const cartKey = `${product.id}__pv__${v.id}`;
-          const taps = counts[cartKey] ?? 0;
-          if (taps === 0) return null;
-          // v.name is stored as "<qty> <unit>" e.g. "3 pack" — leading number is the
-          // units-per-deal multiplier. 2 taps of "3 pack" = 6 units deducted from stock.
-          const multiplier = parseInt(v.name.trim().split(/\s+/)[0], 10);
-          const qty = !isNaN(multiplier) && multiplier > 1 ? taps * multiplier : taps;
-          return { cartKey, name: `${product.name} (${v.name})`, price: v.price, qty };
-        })
-        .filter(Boolean) as ItemModalLine[];
+      const lines: ItemModalLine[] = [];
+
+      // If cashier also tapped the "1× base price" card, add that first
+      if (baseTaps > 0) {
+        lines.push({ cartKey: product.id, name: product.name, price: product.price, qty: baseTaps });
+      }
+
+      prodVars.forEach((v) => {
+        const cartKey = `${product.id}__pv__${v.id}`;
+        const taps = counts[cartKey] ?? 0;
+        if (taps === 0) return;
+        // qty = number of deals (taps) — used for pricing (taps × deal_price)
+        // units_consumed = taps × pack_size — used for stock deduction
+        const multiplier = parseInt(v.name.trim().split(/\s+/)[0], 10);
+        const unitsConsumed = !isNaN(multiplier) && multiplier > 1 ? taps * multiplier : taps;
+        lines.push({
+          cartKey,
+          name: `${product.name} (${v.name})`,
+          price: v.price,
+          qty: taps,
+          unitsConsumed,
+        } as ItemModalLine & { unitsConsumed: number });
+      });
       if (lines.length === 0) { toast.error("Select at least one option"); return; }
       onAddToOrder(lines);
     } else if (hasVarGroups) {
@@ -253,7 +267,8 @@ function ItemModal({
   const hasSelection = (hasProdVars || hasVarGroups) ? totalSelected > 0 : baseQty > 0;
 
   const orderTotal = hasProdVars
-    ? prodVars.reduce((s, v) => {
+    ? (counts[product.id] ?? 0) * product.price +
+      prodVars.reduce((s, v) => {
         const qty = counts[`${product.id}__pv__${v.id}`] ?? 0;
         return s + qty * v.price;
       }, 0)
@@ -303,6 +318,68 @@ function ItemModal({
             <div className="space-y-2">
               <p className="text-xs font-black text-muted-foreground uppercase tracking-wider">Select option</p>
               <div className="grid grid-cols-2 gap-2">
+
+                {/* ── Base-price card — always first ── */}
+                {(() => {
+                  const baseKey = product.id;
+                  const baseTaps = counts[baseKey] ?? 0;
+                  const baseSelected = baseTaps > 0;
+                  return (
+                    <div
+                      className="relative rounded-2xl border-2 overflow-hidden transition"
+                      style={{
+                        borderColor: baseSelected ? "var(--primary)" : "rgba(255,255,255,0.12)",
+                        background: baseSelected ? "rgba(var(--primary-rgb,251 146 60)/0.10)" : "rgba(255,255,255,0.04)",
+                      }}
+                    >
+                      {baseSelected && (
+                        <button
+                          type="button"
+                          onClick={() => clearOption(baseKey)}
+                          className="absolute top-1.5 right-1.5 h-6 w-6 rounded-full flex items-center justify-center z-10 text-white shadow"
+                          style={{ background: "#dc2626" }}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => incOption(baseKey)}
+                        className="w-full pt-3 pb-2 px-3 flex flex-col items-center gap-0.5 active:bg-white/5 transition"
+                      >
+                        <span className="font-black text-sm text-center leading-tight pr-5">
+                          {baseUnitLabel ? `1 ${baseUnitLabel}` : "Single"}
+                        </span>
+                        <span className="font-black text-base mt-0.5" style={{ color: baseSelected ? "var(--primary)" : "#86efac" }}>
+                          ${Number(product.price).toFixed(2)}
+                        </span>
+                        {baseSelected && (
+                          <span className="text-[11px] font-black mt-0.5" style={{ color: "var(--primary)" }}>
+                            ${(product.price * baseTaps).toFixed(2)} total
+                          </span>
+                        )}
+                      </button>
+                      {baseSelected && (
+                        <div className="flex items-center justify-between px-3 pb-2.5 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => decOption(baseKey)}
+                            className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
+                            style={{ background: "#ef4444" }}
+                          >−</button>
+                          <span className="font-black text-lg" style={{ color: "var(--primary)" }}>{baseTaps}</span>
+                          <button
+                            type="button"
+                            onClick={() => incOption(baseKey)}
+                            className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
+                            style={{ background: "var(--gradient-hero)" }}
+                          >+</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {prodVars.map((v) => {
                   const cartKey = `${product.id}__pv__${v.id}`;
                   const taps = counts[cartKey] ?? 0;
@@ -1406,7 +1483,10 @@ export default function RegisterPage() {
               const qtyByProduct: Record<string, number> = {};
               for (const c of cart) {
                 const productId = c.id.includes("__") ? c.id.split("__")[0] : c.id;
-                qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + c.qty;
+                // Use _units_consumed when set (variation deals) so stock reflects
+                // actual units consumed, not number of deals
+                const units = (c as any)._units_consumed ?? c.qty;
+                qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + units;
               }
               return prev.map((p) =>
                 qtyByProduct[p.id] !== undefined && p.stock_qty !== undefined && p.stock_qty !== null
@@ -1429,10 +1509,13 @@ export default function RegisterPage() {
           onClose={() => setVarPickerProduct(null)}
           onAddToOrder={(lines) => {
             lines.forEach((line) => {
+              const uc = (line as any).unitsConsumed as number | undefined;
               setCart((c) => {
                 const existing = c.find((i) => i.id === line.cartKey);
                 if (existing) {
-                  return c.map((i) => i.id === line.cartKey ? { ...i, qty: i.qty + line.qty } : i);
+                  return c.map((i) => i.id === line.cartKey
+                    ? { ...i, qty: i.qty + line.qty, _units_consumed: ((i as any)._units_consumed ?? i.qty) + (uc ?? line.qty) }
+                    : i);
                 }
                 return [...c, {
                   id: line.cartKey,
@@ -1441,6 +1524,7 @@ export default function RegisterPage() {
                   cost_price: varPickerProduct.cost_price ?? 0,
                   image_url: varPickerProduct.image_url,
                   qty: line.qty,
+                  ...(uc !== undefined ? { _units_consumed: uc } : {}),
                 }];
               });
             });
