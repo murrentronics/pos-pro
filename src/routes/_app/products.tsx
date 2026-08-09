@@ -1958,9 +1958,15 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   const InlineNumpad = ({ forField }: { forField: string }) => {
     if (activeNumpad !== forField) return null;
     return (
-      <div ref={numpadRef} className="grid grid-cols-3 gap-1.5 mt-2">
+      <div
+        ref={numpadRef}
+        className="grid grid-cols-3 gap-1.5 mt-2"
+        onMouseDown={e => e.stopPropagation()}
+      >
         {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => (
-          <button key={k} type="button" onClick={() => handleNumpad(k)}
+          <button key={k} type="button"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); handleNumpad(k); }}
+            onClick={e => e.preventDefault()}
             className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
           >{k}</button>
         ))}
