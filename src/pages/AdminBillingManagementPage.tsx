@@ -213,7 +213,7 @@ export default function AdminBillingManagementPage() {
         if (isChainPlan) {
           // Chain plan: set plan_type = "chain", chain_addon_active = true
           const chainEnd = new Date(startDate);
-          chainEnd.setMonth(chainEnd.getMonth() + plan.duration_months);
+          chainEnd.setMonth(chainEnd.getMonth() + Math.min(plan.duration_months, 12));
 
           await supabase.from("profiles").update({
             status: "approved",
@@ -268,7 +268,7 @@ export default function AdminBillingManagementPage() {
             .from("profiles").select("subscription_end_date").eq("id", selectedPayment.owner_id).single();
           const addonEnd = ownerFinal?.subscription_end_date
             ? new Date(ownerFinal.subscription_end_date)
-            : (() => { const d = new Date(); d.setMonth(d.getMonth() + plan.duration_months); return d; })();
+            : (() => { const d = new Date(); d.setMonth(d.getMonth() + Math.min(plan.duration_months, 12)); return d; })();
           updates.next_due_date = addonEnd.toISOString();
 
         } else {
@@ -279,8 +279,8 @@ export default function AdminBillingManagementPage() {
             new Date(ownerProfile.subscription_end_date) > startDate;
 
           const endDate = isActiveRenewal
-            ? (() => { const d = new Date(ownerProfile!.subscription_end_date!); d.setMonth(d.getMonth() + plan.duration_months); return d; })()
-            : (() => { const d = new Date(); d.setMonth(d.getMonth() + plan.duration_months); return d; })();
+            ? (() => { const d = new Date(ownerProfile!.subscription_end_date!); d.setMonth(d.getMonth() + Math.min(plan.duration_months, 12)); return d; })()
+            : (() => { const d = new Date(); d.setMonth(d.getMonth() + Math.min(plan.duration_months, 12)); return d; })();
 
           await supabase.from("profiles").update({
             status: "approved",
@@ -430,10 +430,13 @@ export default function AdminBillingManagementPage() {
             {(["pending", "due", "paid", "rejected"] as const).map((f) => (
                 <Button
                   key={f}
-                  variant={filter === f ? "default" : "outline"}
+                  variant="outline"
                   onClick={() => { setFilter(f); setPage(0); }}
-                  className="flex-1 flex flex-col items-center gap-0.5 h-auto py-2 px-1 min-w-0"
-                  style={f === "due" && filter === f ? { background: "linear-gradient(135deg,#ea580c,#f59e0b)" } : {}}
+                  className="flex-1 flex flex-col items-center gap-0.5 h-auto py-2 px-1 min-w-0 transition-all"
+                  style={filter === f
+                    ? { borderColor: "#00b4ff", borderWidth: "2px", background: "transparent", boxShadow: "0 0 0 1px rgba(0,180,255,0.15)" }
+                    : { borderColor: "var(--border)", background: "transparent" }
+                  }
                 >
                   {f === "pending"  && <Clock       className="h-4 w-4 text-yellow-500 shrink-0" />}
                   {f === "due"      && <AlertCircle className="h-4 w-4 text-orange-400 shrink-0" />}

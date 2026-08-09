@@ -1341,6 +1341,33 @@ export default function RegisterPage() {
         />
       )}
 
+      {/* ── Item Modal (variation picker / qty selector) ── */}
+      {varPickerProduct && (
+        <ItemModal
+          product={varPickerProduct}
+          onClose={() => setVarPickerProduct(null)}
+          onAddToOrder={(lines) => {
+            lines.forEach((line) => {
+              setCart((c) => {
+                const existing = c.find((i) => i.id === line.cartKey);
+                if (existing) {
+                  return c.map((i) => i.id === line.cartKey ? { ...i, qty: i.qty + line.qty } : i);
+                }
+                return [...c, {
+                  id: line.cartKey,
+                  name: line.name,
+                  price: line.price,
+                  cost_price: varPickerProduct.cost_price ?? 0,
+                  image_url: varPickerProduct.image_url,
+                  qty: line.qty,
+                }];
+              });
+            });
+            setVarPickerProduct(null);
+          }}
+        />
+      )}
+
     </>
   );
 }

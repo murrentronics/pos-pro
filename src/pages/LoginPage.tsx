@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Wine, Eye, EyeOff, X, FileText } from "lucide-react";
+import { Eye, EyeOff, X, FileText } from "lucide-react";
 import { PhoneInput } from "@/components/PhoneInput";
 import { friendlyError } from "@/lib/network-error";
 import { useTranslation } from "@/lib/i18n";
@@ -37,16 +37,18 @@ export default function LoginPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-3 py-8"
+      className="min-h-screen flex flex-col items-center px-3 pt-10 pb-24 overflow-y-auto"
       style={{ background: "radial-gradient(circle at 20% 0%, oklch(0.22 0.08 240) 0%, oklch(0.08 0.04 240) 60%)" }}
     >
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div
-            className="inline-flex h-16 w-16 items-center justify-center rounded-2xl mb-4"
-            style={{ background: "var(--gradient-hero)", boxShadow: "var(--shadow-glow)" }}
-          >
-            <Wine className="h-8 w-8 text-primary-foreground" />
+          <div className="inline-flex mb-4">
+            <img
+              src="/logo.svg"
+              alt="P.O.S. Pro logo"
+              className="h-16 w-16"
+              style={{ filter: "drop-shadow(var(--shadow-glow))" }}
+            />
           </div>
           <h1 className="text-4xl font-black tracking-tight">P.O.S. Pro</h1>
           <p className="text-muted-foreground mt-1">{t("business_pos_wallet", "Business POS & Wallet")}</p>
@@ -116,7 +118,7 @@ function SignInForm({ onForgotChange }: { onForgotChange: (open: boolean) => voi
           autoComplete="username"
           value={id}
           onChange={(e) => setId(e.target.value)}
-          placeholder="owner@bar.com or cashier1"
+          placeholder="owner@store.com or cashier1"
           required
         />
       </div>
@@ -294,7 +296,7 @@ function ForgotPasswordFlow({ onBack }: { onBack: () => void }) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="owner@bar.com"
+              placeholder="owner@store.com"
               required
             />
           </div>

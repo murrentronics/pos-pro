@@ -25,8 +25,8 @@ import { confirm } from "@/components/ui/confirm-dialog";
 
 // ─── Shareholder Config ───────────────────────────────────────────────────────
 const SHAREHOLDERS = [
-  { name: "Renard Sankersingh", share: 0.8, color: "text-emerald-400", bg: "border-emerald-500/30", gradient: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.04))" },
-  { name: "Theron Murren",      share: 0.2, color: "text-blue-400",    bg: "border-blue-500/30",    gradient: "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(59,130,246,0.04))" },
+  { name: "Renard Sankersingh", share: 0.7, color: "text-emerald-400", bg: "border-emerald-500/30", gradient: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.04))" },
+  { name: "Theron Murren",      share: 0.3, color: "text-blue-400",    bg: "border-blue-500/30",    gradient: "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(59,130,246,0.04))" },
 ] as const;
 
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -194,6 +194,41 @@ function SubscriptionBadge({ ownerId }: {
         Due {formatDate(dueDate)}{isNearExpiry && ` (${daysUntil}d)`}
       </span>
     </div>
+  );
+}
+
+// ─── BillingDueInline ─────────────────────────────────────────────────────────
+// Lightweight inline due-date display for user cards in every status tab.
+// Shows the subscription end date if set, otherwise "Not set".
+function BillingDueInline({ ownerId }: { ownerId: string }) {
+  const [dueDate, setDueDate] = useState<Date | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from("profiles")
+      .select("subscription_end_date")
+      .eq("id", ownerId)
+      .single()
+      .then(({ data }) => {
+        setDueDate(data?.subscription_end_date ? new Date(data.subscription_end_date) : null);
+        setLoaded(true);
+      });
+  }, [ownerId]);
+
+  if (!loaded) return <span className="text-xs text-muted-foreground">…</span>;
+  if (!dueDate) return <span className="text-xs text-muted-foreground italic">Not set</span>;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const daysUntil = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
+  const isOverdue = daysUntil < 0;
+  const isNear = daysUntil >= 0 && daysUntil <= 7;
+
+  return (
+    <span className={`text-xs font-semibold ${isOverdue ? "text-red-400" : isNear ? "text-orange-400" : "text-muted-foreground"}`}>
+      {formatDate(dueDate)}{isNear && ` (${daysUntil}d)`}{isOverdue && " (overdue)"}
+    </span>
   );
 }
 
@@ -692,9 +727,10 @@ export default function AdminPage() {
                 {buckets[k].map((r) => (
                   <div key={r.id} className="flex flex-col gap-3 p-4 rounded-xl border border-border bg-card">
                     <div className="flex flex-row items-start justify-between gap-3">
-                      <div className="min-w-0 space-y-1 flex-1">
+                      <div className="min-w-0 space-y-2 flex-1">
+                        {/* ── Business name + plan badges ── */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold">{r.username}</span>
+                          <span className="font-bold text-base">{r.username || <span className="text-muted-foreground italic">—</span>}</span>
                           {r.plan_type === "chain" && (
                             <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">
                               <GitBranch className="h-2.5 w-2.5" />
@@ -715,34 +751,48 @@ export default function AdminPage() {
                             </span>
                           )}
                         </div>
-                        {r.email && (
-                          <a
-                            href={`mailto:${r.email}`}
-                            className="text-xs text-primary hover:underline truncate block"
-                            title={`Email ${r.username}`}
-                          >
-                            ✉ {r.email}
-                          </a>
-                        )}
-                        {r.phone && (
-                          <a
-                            href={`tel:${r.phone}`}
-                            className="inline-flex items-center gap-2 text-xs font-black text-black bg-primary border border-primary rounded-lg px-3 py-1.5 hover:opacity-90 transition active:scale-95"
-                            title={`Call ${r.username}`}
-                          >
-                            📞 {r.phone}
-                          </a>
-                        )}
-                        {r.address && (
-                          <div className="text-xs text-muted-foreground">
-                            📍 {r.address}
+
+                        {/* ── Contact info grid — always visible ── */}
+                        <div className="grid grid-cols-1 gap-1">
+                          {/* Email */}
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-12 shrink-0">Email</span>
+                            {r.email
+                              ? <a href={`mailto:${r.email}`} className="text-xs text-primary hover:underline truncate" title={`Email ${r.username}`}>{r.email}</a>
+                              : <span className="text-xs text-muted-foreground italic">—</span>
+                            }
                           </div>
-                        )}
+
+                          {/* Phone */}
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-12 shrink-0">Phone</span>
+                            {r.phone
+                              ? <a href={`tel:${r.phone}`} className="inline-flex items-center gap-1 text-xs font-black text-black bg-primary rounded-md px-2 py-0.5 hover:opacity-90 transition active:scale-95">📞 {r.phone}</a>
+                              : <span className="text-xs text-muted-foreground italic">—</span>
+                            }
+                          </div>
+
+                          {/* Address */}
+                          <div className="flex items-start gap-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-12 shrink-0 mt-px">Addr</span>
+                            {r.address
+                              ? <span className="text-xs text-muted-foreground leading-snug">📍 {r.address}</span>
+                              : <span className="text-xs text-muted-foreground italic">—</span>
+                            }
+                          </div>
+
+                          {/* Billing due date — always shown */}
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-12 shrink-0">Due</span>
+                            <BillingDueInline ownerId={r.id} />
+                          </div>
+                        </div>
+
                         <div className="text-xs text-muted-foreground">
                           Joined {new Date(r.created_at).toLocaleDateString("en-GB", { month: "short", day: "numeric", year: "numeric" })}
                         </div>
                       </div>
-                      {/* Annual fee — fetched by SubscriptionBadge, shown big on right */}
+                      {/* Annual fee — fetched by AnnualFeeBadge, shown big on right */}
                       {(k === "approved" || k === "suspended") && (
                         <AnnualFeeBadge ownerId={r.id} />
                       )}
@@ -828,10 +878,6 @@ export default function AdminPage() {
                           </>
                         )}
                       </div>
-                    {/* Subscription reminder — show for approved/suspended users */}
-                    {(k === "approved" || k === "suspended") && (
-                      <SubscriptionBadge ownerId={r.id} />
-                    )}
                   </div>
                 ))}
               </TabsContent>

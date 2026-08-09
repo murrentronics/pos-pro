@@ -30,7 +30,7 @@ function LoginPage() {
   }, [session, profile, loading, nav]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-3 py-8"
+    <div className="min-h-screen flex flex-col items-center px-3 pt-10 pb-24 overflow-y-auto"
       style={{ background: "radial-gradient(circle at 20% 0%, oklch(0.22 0.08 240) 0%, oklch(0.08 0.04 240) 60%)" }}>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
@@ -77,7 +77,7 @@ function SignInForm() {
       style={{ background: "var(--gradient-card)", boxShadow: "var(--shadow-elegant)" }}>
       <div>
         <Label htmlFor="signin-id">Email or Cashier Username</Label>
-        <Input id="signin-id" name="username" autoComplete="username" value={id} onChange={(e) => setId(e.target.value)} placeholder="owner@bar.com or cashier1" required />
+        <Input id="signin-id" name="username" autoComplete="username" value={id} onChange={(e) => setId(e.target.value)} placeholder="owner@store.com or cashier1" required />
       </div>
       <div>
         <Label htmlFor="signin-pw">Password</Label>
@@ -303,7 +303,7 @@ function ForgotPasswordFlow({ onBack }: { onBack: () => void }) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="owner@bar.com"
+              placeholder="owner@store.com"
               required
             />
           </div>

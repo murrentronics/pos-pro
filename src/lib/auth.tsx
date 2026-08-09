@@ -47,6 +47,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   // track whether a profile fetch is in flight so we don't sign out prematurely
   const profileFetching = useRef(false);
+  // track whether the user explicitly called signOut() so we don't treat
+  // token-refresh SIGNED_OUT events as intentional logouts
+  const explicitSignOut = useRef(false);
 
   const loadProfile = async (uid: string) => {
     profileFetching.current = true;
@@ -64,24 +67,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as { data: unknown; error: { message?: string } | null };
 
-      // If the request failed due to a network error (offline), keep whatever
-      // profile is already in state rather than wiping it — this prevents the
-      // AppLayout guard from triggering a forced sign-out while offline.
       if (error) {
-        const msg = (error as { message?: string }).message ?? "";
-        const isNetworkError =
-          msg.includes("Failed to fetch") ||
-          msg.includes("NetworkError") ||
-          msg.includes("network") ||
-          msg.includes("offline") ||
-          !navigator.onLine;
-        if (isNetworkError) {
-          // Leave profile unchanged — user is still logged in, just offline
-          return;
-        }
+        // Any fetch failure (network, timeout, brief JWT issue on deploy) —
+        // keep the existing profile in state rather than wiping it.
+        // This prevents spurious logouts during builds or network blips.
+        return;
       }
 
       const p = data ? (data as unknown as Profile) : null;
+      // Only wipe the profile if we got a confirmed null back from the DB
+      // (i.e. the row genuinely doesn't exist), not on errors.
       setProfile(p);
     } finally {
       profileFetching.current = false;
@@ -107,9 +102,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (s?.user) {
         loadProfile(s.user.id);
       } else {
-        // Session ended — clear profile
-        setProfile(null);
-        setLoading(false);
+        // Only clear profile on an intentional sign-out.
+        // Token-refresh failures and build deploys fire SIGNED_OUT too —
+        // if the user didn't explicitly sign out, keep the profile so they
+        // don't get booted to the login screen unexpectedly.
+        if (explicitSignOut.current) {
+          setProfile(null);
+          setLoading(false);
+          explicitSignOut.current = false;
+        }
       }
     });
 
@@ -151,6 +152,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) await loadProfile(session.user.id);
     },
     signOut: async () => {
+      // Flag that this is intentional so the auth listener knows to clear state
+      explicitSignOut.current = true;
       // Remove push notification listeners before signing out to prevent
       // the cleanup race on Android that causes the brown screen crash
       if (Capacitor.isNativePlatform()) {
