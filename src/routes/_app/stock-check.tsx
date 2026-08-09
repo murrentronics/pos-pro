@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { supabase } from "@/integrations/supabase/client";
 import { productImageUrl } from "@/lib/imageUrl";
-import { CATEGORIES, categoryIcon, categoryLabel } from "@/lib/categories";
+import { categoryIcon } from "@/lib/categories";
 import { toast } from "sonner";
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
@@ -217,6 +217,7 @@ function StockCheckPage() {
   const [openItems, setOpenItems] = useState<Record<string, OpenItemInfo>>({});
   const [loading, setLoading] = useState(true);
   const [activeNumpadId, setActiveNumpadId] = useState<string | null>(null);
+  const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
 
   const profileRef = useRef(profile);
   useEffect(() => {
@@ -239,12 +240,20 @@ function StockCheckPage() {
         ? (p.parent_id ?? p.id)
         : p.id
     );
-    const { data } = await supabase
-      .from("products")
-      .select("id, name, price, image_url, category, stock_qty, units_per_item")
-      .eq("owner_id", oid)
-      .order("name", { ascending: true });
+    const [{ data }, { data: cats }] = await Promise.all([
+      supabase
+        .from("products")
+        .select("id, name, price, image_url, category, stock_qty, units_per_item")
+        .eq("owner_id", oid)
+        .order("name", { ascending: true }),
+      supabase
+        .from("store_categories")
+        .select("id, name")
+        .eq("owner_id", oid)
+        .order("sort_order", { ascending: true }),
+    ]);
     setItems((data ?? []) as Product[]);
+    setStoreCategories((cats ?? []) as { id: string; name: string }[]);
     setLoading(false);
   }, [effectiveOwnerId]);
 
@@ -431,12 +440,31 @@ function StockCheckPage() {
     );
   }
 
-  // ── Group alphabetically by category ────────────────────────────────────
+  // ── Group by store categories (dynamic) ─────────────────────────────────
   const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name));
-  const grouped = CATEGORIES.map((cat) => ({
-    cat,
-    products: sorted.filter((p) => (p.category || "beers") === cat.value),
-  })).filter((g) => g.products.length > 0);
+
+  // Build group list from store_categories; fall back to an "Other" bucket
+  // for any products whose category UUID isn't in the list.
+  const grouped = (() => {
+    const result: { cat: { value: string; label: string; icon: string }; products: Product[] }[] = [];
+    const assigned = new Set<string>();
+
+    for (const sc of storeCategories) {
+      const catProducts = sorted.filter((p) => p.category === sc.id);
+      if (catProducts.length > 0) {
+        result.push({ cat: { value: sc.id, label: sc.name, icon: categoryIcon(sc.name) as string }, products: catProducts });
+        catProducts.forEach((p) => assigned.add(p.id));
+      }
+    }
+
+    // Fallback: items with no matching store category
+    const unassigned = sorted.filter((p) => !assigned.has(p.id));
+    if (unassigned.length > 0) {
+      result.push({ cat: { value: "__other__", label: "Other", icon: "📦" }, products: unassigned });
+    }
+
+    return result;
+  })();
 
   // ── Summary totals ───────────────────────────────────────────────────────
   const totalLoss = items.reduce((sum, p) => {
