@@ -1370,6 +1370,21 @@ export default function RegisterPage() {
           onClose={() => { setCashOpen(false); }}
           ownerId={ownerId}
           onSuccess={async (paidAmt, changeAmt) => {
+            // Optimistically decrement stock_qty in local state using the cart
+            // that's about to be cleared. This prevents the badge snapping back
+            // to the old value while waiting for the DB realtime event to arrive.
+            setProducts((prev) => {
+              const qtyByProduct: Record<string, number> = {};
+              for (const c of cart) {
+                const productId = c.id.includes("__") ? c.id.split("__")[0] : c.id;
+                qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + c.qty;
+              }
+              return prev.map((p) =>
+                qtyByProduct[p.id] !== undefined && p.stock_qty !== undefined && p.stock_qty !== null
+                  ? { ...p, stock_qty: Math.max(0, p.stock_qty - qtyByProduct[p.id]) }
+                  : p
+              );
+            });
             setCart([]);
             localStorage.removeItem(`bartap-cart-${ownerId}`);
             setCashOpen(false);
