@@ -123,7 +123,7 @@ export function ChainProvider({ children }: { children: ReactNode }) {
 
     setBarsLoading(true);
     try {
-      const { data, error } = await sb.rpc("get_chain_bars", { p_owner_id: user.id });
+      const { data, error } = await supabase.rpc("get_chain_bars", { p_owner_id: user.id });
       if (!error && data) {
         setChainBars(data as ChainBar[]);
         // If stored activeBarId no longer exists in the bar list, clear it

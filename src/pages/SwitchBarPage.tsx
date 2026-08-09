@@ -41,11 +41,11 @@ export default function SwitchBarPage() {
         </p>
       </div>
 
-      {/* Account count badge */}
+      {/* Store count badge */}
       <div className="flex items-center gap-2">
         <span className="text-xs font-black px-2.5 py-1 rounded-full border border-primary/30 text-primary"
           style={{ background: "rgba(0,180,255,0.08)" }}>
-          {chainBars.length} {t("account_number_lbl", "account")}{chainBars.length !== 1 ? "s" : ""}
+          {chainBars.length} {t("store_number_lbl", "store")}{chainBars.length !== 1 ? "s" : ""}
         </span>
       </div>
 
@@ -150,10 +150,10 @@ export default function SwitchBarPage() {
             style={{ background: "var(--gradient-hero)" }}
           >
             <Plus className="h-4 w-4" />
-            {t("add_upgrade_account", "Add New / Upgrade")}
+            {t("add_new_store_btn", "Add New Store")}
           </Button>
           <p className="text-center text-xs text-muted-foreground mt-2">
-            {t("extra_accounts_billing", "Additional accounts are added through your billing plan.")}
+            {t("extra_stores_billing", "Additional stores are added through your billing plan.")}
           </p>
         </div>
       )}

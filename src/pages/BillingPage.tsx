@@ -340,7 +340,9 @@ export default function BillingPage() {
                   </div>
                   <div>
                     <p className="font-black text-foreground text-sm">P.O.S. Pro</p>
-                    <p className="text-xs text-muted-foreground">${totalRenewal.toLocaleString()} TT / year</p>
+                    <p className="text-xs text-muted-foreground">
+                      ${PRICE_BASE.toLocaleString()} TT / year{extraStores > 0 ? ` + ${extraStores} store${extraStores !== 1 ? "s" : ""}` : ""}
+                    </p>
                   </div>
                 </div>
                 <span className={`text-xs font-black px-2.5 py-1 rounded-full ${isOverdue ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"}`}>
