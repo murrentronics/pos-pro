@@ -920,8 +920,7 @@ export default function RegisterPage() {
   // Pre-sort all categories at once so switching tabs is a map lookup, not a re-sort
   const allCategorySorted = useMemo(() => {
     const map: Record<string, Product[]> = {};
-    const allCats = ["__all__", ...storeCategories.map(c => c.id)];
-    for (const cat of allCats) {
+    for (const cat of storeCategories.map(c => c.id)) {
       map[cat] = applyBarSort(products, cat, barSortMapRef.current);
     }
     return map;
@@ -1006,7 +1005,10 @@ export default function RegisterPage() {
       .eq("owner_id", ownerId)
       .order("sort_order", { ascending: true })
       .then(({ data }) => {
-        setStoreCategories(data ?? []);
+        const cats = data ?? [];
+        setStoreCategories(cats);
+        // Auto-select first real category (no "All" tab anymore)
+        if (cats.length > 0) setCategory(cats[0].id);
       });
   }, [ownerId]);
 
@@ -1224,7 +1226,7 @@ export default function RegisterPage() {
       <div className="sticky top-0 z-20 -mx-3 px-3 py-2 bg-background/95 backdrop-blur border-b border-border">
         {/* Mobile: horizontal scroll strip; sm+: fixed grid */}
         <div className="sm:hidden flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-          {[{ id: "__all__", name: "All" }, ...storeCategories].map((cat) => (
+          {storeCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => {
@@ -1248,7 +1250,7 @@ export default function RegisterPage() {
         </div>
         {/* Tablet / desktop: fixed grid, all tabs visible */}
         <div className="hidden sm:flex flex-wrap gap-1.5 max-w-2xl lg:max-w-4xl mx-auto">
-          {[{ id: "__all__", name: "All" }, ...storeCategories].map((cat) => (
+          {storeCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => {

@@ -1512,7 +1512,12 @@ export default function ProductsPage() {
       .select("id, name")
       .eq("owner_id", ownerIdForQuery)
       .order("sort_order", { ascending: true })
-      .then(({ data }) => setStoreCategories(data ?? []));
+      .then(({ data }) => {
+        const cats = data ?? [];
+        setStoreCategories(cats);
+        // Auto-select first real category (no "All" tab anymore)
+        if (cats.length > 0) setCategory(cats[0].id);
+      });
   }, [profile?.id, effectiveOwnerId]);
 
   if (profile?.role !== "owner" && profile?.role !== "manager" && profile?.job_title !== "manager") {
@@ -1582,7 +1587,7 @@ export default function ProductsPage() {
         </div>
         {/* Mobile: horizontal scroll; sm+: fixed grid */}
         <div className="sm:hidden flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-          {[{ id: "__all__", name: "All" }, ...storeCategories].map((cat) => (
+          {storeCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setCategory(cat.id)}
@@ -1596,7 +1601,7 @@ export default function ProductsPage() {
           ))}
         </div>
         <div className="hidden sm:flex flex-wrap gap-1.5">
-          {[{ id: "__all__", name: "All" }, ...storeCategories].map((cat) => (
+          {storeCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setCategory(cat.id)}

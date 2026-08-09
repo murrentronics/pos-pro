@@ -1672,6 +1672,14 @@ export type Database = {
         Args: { _owner_id: string }
         Returns: undefined
       }
+      revert_stock_qty: {
+        Args: {
+          p_product_id: string
+          p_new_qty: number
+          p_owner_id: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "owner" | "cashier" | "admin" | "manager" | "custom"
