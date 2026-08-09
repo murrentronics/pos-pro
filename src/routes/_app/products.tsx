@@ -1477,12 +1477,16 @@ export default function ProductsPage() {
     const p = profileRef.current;
     if (!p) return;
     const ownerIdForQuery = effectiveOwnerId((p.role === "manager" || p.job_title === "manager") ? (p.parent_id ?? p.id) : p.id);
-    const { data } = await supabase
-      .from("products")
-      .select("*")
-      .eq("owner_id", ownerIdForQuery)
-      .order("name", { ascending: true });
-    setItems((data ?? []) as Product[]);
+    const [{ data }, { data: varRows }] = await Promise.all([
+      supabase.from("products").select("*").eq("owner_id", ownerIdForQuery).order("name", { ascending: true }),
+      supabase.from("product_variations").select("id, product_id, name, price, sort_order").eq("owner_id", ownerIdForQuery).order("sort_order", { ascending: true }),
+    ]);
+    const varsByProduct: Record<string, any[]> = {};
+    for (const v of varRows ?? []) {
+      (varsByProduct[v.product_id] ??= []).push(v);
+    }
+    const products = (data ?? []).map((p: any) => ({ ...p, product_variations: varsByProduct[p.id] ?? null }));
+    setItems(products as Product[]);
     setLoading(false);
   }, [effectiveOwnerId]);
 
