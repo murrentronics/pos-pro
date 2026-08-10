@@ -2199,12 +2199,13 @@ export default function CashiersPage() {
           <div className="mt-6 space-y-2">
             {list.length === 0 && <div className="text-muted-foreground py-8 text-center">No staff yet.</div>}
             {(() => {
-              const managers = list.filter(c => (c as any).job_title === "manager" && (c as any).role !== "custom");
-              const cashiers = list.filter(c => (c as any).role !== "custom" && (c as any).job_title !== "manager");
-              const others   = list.filter(c => (c as any).role === "custom");
+              const byName = (a: typeof list[0], b: typeof list[0]) => a.username.localeCompare(b.username);
+              const managers = list.filter(c => (c as any).job_title === "manager" && (c as any).role !== "custom").sort(byName);
+              const cashiers = list.filter(c => (c as any).role !== "custom" && (c as any).job_title !== "manager").sort(byName);
+              const others   = list.filter(c => (c as any).role === "custom").sort(byName);
               const groups: { label: string; color: string; borderColor: string; items: typeof list }[] = [];
-              if (managers.length > 0) groups.push({ label: "Managers", color: "rgba(134,239,172,0.08)", borderColor: "rgba(134,239,172,0.35)", items: managers });
-              if (cashiers.length > 0) groups.push({ label: "Cashiers", color: "rgba(251,146,60,0.07)", borderColor: "rgba(251,146,60,0.35)", items: cashiers });
+              if (cashiers.length > 0) groups.push({ label: "Cashiers",      color: "rgba(251,146,60,0.07)",  borderColor: "rgba(251,146,60,0.35)",  items: cashiers });
+              if (managers.length > 0) groups.push({ label: "Managers",      color: "rgba(134,239,172,0.08)", borderColor: "rgba(134,239,172,0.35)", items: managers });
               if (others.length   > 0) groups.push({ label: "Other Workers", color: "rgba(167,139,250,0.07)", borderColor: "rgba(167,139,250,0.35)", items: others });
               return groups.map(({ label, color, borderColor, items }) => (
                 <div key={label} className="rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${borderColor}`, background: color }}>
