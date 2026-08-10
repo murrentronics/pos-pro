@@ -2242,7 +2242,12 @@ export default function CashiersPage() {
                       </div>
                     )}
                   </div>
-                  {/* Delete button */}
+                  {/* Delete button — for managers, Password sits inline here too */}
+                  {isManager && (
+                    <Button size="sm" variant="outline" className="h-9 px-3 shrink-0 font-black text-xs" onClick={() => { setResetPwCashier(c); setNewPw(""); setShowNewPw(false); }}>
+                      <KeyRound className="h-4 w-4 mr-1" /> Password
+                    </Button>
+                  )}
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button size="sm" variant="destructive" className="h-9 w-9 p-0 shrink-0"><Trash2 className="h-4 w-4" /></Button>
@@ -2263,19 +2268,15 @@ export default function CashiersPage() {
                     </AlertDialogContent>
                   </AlertDialog>
                 </div>
-                {/* Action buttons — custom workers: none; managers: password only; cashiers: all */}
-                {!isCustom && (
+                {/* Action buttons — custom workers: none; managers: inline above; cashiers: all */}
+                {!isCustom && !isManager && (
                   <div className="flex flex-wrap items-center gap-2 mt-3">
-                    {!isManager && (
-                      <Button size="sm" variant="outline" className="flex-1 min-w-[90px] h-12 text-sm font-black" onClick={() => setStatementCashier(c)}>
-                        <FileText className="h-5 w-5 mr-1.5" /> Statement
-                      </Button>
-                    )}
-                    {!isManager && (
-                      <Button size="sm" variant="secondary" className="flex-1 min-w-[90px] h-12 text-sm font-black" onClick={() => onClear(c)} disabled={Number(c.wallet_balance) === 0}>
-                        <Eraser className="h-5 w-5 mr-1.5" /> Clear
-                      </Button>
-                    )}
+                    <Button size="sm" variant="outline" className="flex-1 min-w-[90px] h-12 text-sm font-black" onClick={() => setStatementCashier(c)}>
+                      <FileText className="h-5 w-5 mr-1.5" /> Statement
+                    </Button>
+                    <Button size="sm" variant="secondary" className="flex-1 min-w-[90px] h-12 text-sm font-black" onClick={() => onClear(c)} disabled={Number(c.wallet_balance) === 0}>
+                      <Eraser className="h-5 w-5 mr-1.5" /> Clear
+                    </Button>
                     <Button size="sm" variant="outline" className="flex-1 min-w-[90px] h-12 text-sm font-black" onClick={() => { setResetPwCashier(c); setNewPw(""); setShowNewPw(false); }}>
                       <KeyRound className="h-5 w-5 mr-1.5" /> Password
                     </Button>
