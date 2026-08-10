@@ -2983,6 +2983,9 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
     // Resolve cost for an order item — handles exact ID, name fallback, and shot synthetic IDs
     const SHOT_SYNTHETIC_PREFIXES = ["Shot", "2oz", "1oz", "Retail", "Pack"];
     const resolveItemCost = (it: { id?: string; name: string }): number => {
+      // Variation cart keys are "uuid__pv__xxx" or "uuid__gid__oid" — strip the suffix to get the real product UUID
+      const baseId = it.id && it.id.includes("__") ? it.id.split("__")[0] : it.id;
+      if (baseId && prodCostById.has(baseId)) return prodCostById.get(baseId)!;
       if (it.id && prodCostById.has(it.id)) return prodCostById.get(it.id)!;
       if (prodCostByName.has(it.name)) return prodCostByName.get(it.name)!;
       // Shot items: "<variation.label>: <product_name>" with id starting "shot-"
