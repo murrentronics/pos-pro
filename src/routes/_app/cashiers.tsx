@@ -407,7 +407,22 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
         <div className="space-y-3">
           {employees.length === 0
             ? <div className="text-center py-10 text-muted-foreground text-sm">No staff found.</div>
-            : employees.map(emp => {
+            : (() => {
+                const hMgrs  = employees.filter(e => e.role === "manager");
+                const hCshs  = employees.filter(e => e.role === "cashier");
+                const hOthrs = employees.filter(e => e.role === "custom");
+                const hGroups: { label: string; color: string; borderColor: string; items: typeof employees }[] = [];
+                if (hMgrs.length  > 0) hGroups.push({ label: "Managers",      color: "rgba(134,239,172,0.08)", borderColor: "rgba(134,239,172,0.35)", items: hMgrs });
+                if (hCshs.length  > 0) hGroups.push({ label: "Cashiers",      color: "rgba(251,146,60,0.07)",  borderColor: "rgba(251,146,60,0.35)",  items: hCshs });
+                if (hOthrs.length > 0) hGroups.push({ label: "Other Workers", color: "rgba(167,139,250,0.07)", borderColor: "rgba(167,139,250,0.35)", items: hOthrs });
+                return hGroups.map(({ label, color, borderColor, items: empItems }) => (
+                  <div key={label} className="rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${borderColor}`, background: color }}>
+                    {/* Group label */}
+                    <div className="px-3 py-2 border-b" style={{ borderColor, background: color }}>
+                      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: borderColor.replace("0.35", "0.9") }}>{label}</span>
+                    </div>
+                    <div className="p-2 space-y-2">
+                    {empItems.map(emp => {
                 const empOpen  = timeCards.find(tc => tc.employee_id === emp.id && !tc.clocked_out_at);
                 const isSel    = selectedEmp?.id === emp.id;
                 const isCIn    = isSel && isClockedIn;
@@ -447,6 +462,10 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
                   </div>
                 );
               })}
+                    </div>
+                  </div>
+                ));
+              })()}
 
           {/* ── Active workers flat list ── */}
           {(() => {
@@ -956,17 +975,32 @@ function SalaryTab({ cashiers, ownerId }: { cashiers: Cashier[]; ownerId: string
   if (loadingSalaries) return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
   if (cashiers.length === 0) return <div className="text-muted-foreground py-10 text-center text-sm">No cashiers yet.</div>;
 
+  const salaryGroups: { label: string; color: string; borderColor: string; items: Cashier[] }[] = [];
+  const mgrs  = cashiers.filter(c => (c as any).job_title === "manager" && (c as any).role !== "custom");
+  const cshs  = cashiers.filter(c => (c as any).role !== "custom" && (c as any).job_title !== "manager");
+  const othrs = cashiers.filter(c => (c as any).role === "custom");
+  if (mgrs.length  > 0) salaryGroups.push({ label: "Managers",      color: "rgba(134,239,172,0.08)", borderColor: "rgba(134,239,172,0.35)", items: mgrs });
+  if (cshs.length  > 0) salaryGroups.push({ label: "Cashiers",      color: "rgba(251,146,60,0.07)",  borderColor: "rgba(251,146,60,0.35)",  items: cshs });
+  if (othrs.length > 0) salaryGroups.push({ label: "Other Workers", color: "rgba(167,139,250,0.07)", borderColor: "rgba(167,139,250,0.35)", items: othrs });
+
   return (
   <>
-    <div className="space-y-3 mt-4">
-      {cashiers.map((c) => {
+    <div className="space-y-4 mt-4">
+      {salaryGroups.map(({ label, color, borderColor, items }) => (
+        <div key={label} className="rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${borderColor}`, background: color }}>
+          {/* Group label */}
+          <div className="px-3 py-2 border-b" style={{ borderColor, background: color }}>
+            <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: borderColor.replace("0.35", "0.9") }}>{label}</span>
+          </div>
+          <div className="divide-y" style={{ borderColor }}>
+      {items.map((c) => {
         const salary   = getSalary(c.id);
         const isOpen   = openId === c.id;
         const isPaying = paying === c.id;
         const wasPaid  = paid === c.id;
 
         return (
-          <div key={c.id} className="rounded-2xl border border-border overflow-hidden" style={{ background: "var(--gradient-card)" }}>
+          <div key={c.id} className="border-border overflow-hidden" style={{ background: "transparent" }}>
             {/* ── Card header row ── */}
             <div className="flex items-center gap-3 px-4 pt-3 pb-2">
               {/* Avatar */}
@@ -1262,6 +1296,9 @@ function SalaryTab({ cashiers, ownerId }: { cashiers: Cashier[]; ownerId: string
           </div>
         );
       })}
+          </div>
+        </div>
+      ))}
     </div>
 
     {/* ── Salary History popup ── */}
@@ -2161,7 +2198,22 @@ export default function CashiersPage() {
         <TabsContent value="manage">
           <div className="mt-6 space-y-2">
             {list.length === 0 && <div className="text-muted-foreground py-8 text-center">No staff yet.</div>}
-            {list.map((c) => {
+            {(() => {
+              const managers = list.filter(c => (c as any).job_title === "manager" && (c as any).role !== "custom");
+              const cashiers = list.filter(c => (c as any).role !== "custom" && (c as any).job_title !== "manager");
+              const others   = list.filter(c => (c as any).role === "custom");
+              const groups: { label: string; color: string; borderColor: string; items: typeof list }[] = [];
+              if (managers.length > 0) groups.push({ label: "Managers", color: "rgba(134,239,172,0.08)", borderColor: "rgba(134,239,172,0.35)", items: managers });
+              if (cashiers.length > 0) groups.push({ label: "Cashiers", color: "rgba(251,146,60,0.07)", borderColor: "rgba(251,146,60,0.35)", items: cashiers });
+              if (others.length   > 0) groups.push({ label: "Other Workers", color: "rgba(167,139,250,0.07)", borderColor: "rgba(167,139,250,0.35)", items: others });
+              return groups.map(({ label, color, borderColor, items }) => (
+                <div key={label} className="rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${borderColor}`, background: color }}>
+                  {/* Group label */}
+                  <div className="px-3 py-2 border-b" style={{ borderColor, background: `${color}` }}>
+                    <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: borderColor.replace("0.35", "0.9") }}>{label}</span>
+                  </div>
+                  <div className="space-y-0">
+                  {items.map((c, idx) => {
               const isCustom = (c as any).role === "custom";
               const isManager = (c as any).job_title === "manager";
               const roleBadge = isCustom
@@ -2170,7 +2222,7 @@ export default function CashiersPage() {
                 ? { label: "Manager", color: "rgba(134,239,172,0.15)", border: "rgba(134,239,172,0.4)", text: "#86efac" }
                 : { label: "Cashier", color: "rgba(var(--primary-rgb,251 146 60)/0.15)", border: "rgba(var(--primary-rgb,251 146 60)/0.4)", text: "var(--primary)" };
               return (
-              <div key={c.id} className="rounded-2xl p-3 border border-border" style={{ background: "var(--gradient-card)" }}>
+              <div key={c.id} className={`p-3 ${idx < items.length - 1 ? "border-b" : ""}`} style={{ borderColor, background: "transparent" }}>
                 <div className="flex items-center gap-3">
                   <div className="h-11 w-11 rounded-full flex items-center justify-center shrink-0" style={{ background: "var(--gradient-hero)" }}>
                     <User className="h-5 w-5 text-primary-foreground" />
@@ -2231,6 +2283,10 @@ export default function CashiersPage() {
               </div>
               );
             })}
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         </TabsContent>
 

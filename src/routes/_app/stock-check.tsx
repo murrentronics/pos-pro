@@ -703,7 +703,6 @@ function StockCheckPage() {
                 {/* Category section header with PDF button(s) */}
                 <div className="flex items-center justify-between px-3 pt-5 pb-2">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-base leading-none">{cat.icon}</span>
                     <span
                       className="text-xs font-black uppercase tracking-widest"
                       style={{ color: "var(--primary)" }}
