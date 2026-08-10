@@ -55,7 +55,10 @@ function aggregateItems(
     for (const it of o.items) {
       const existing = map.get(it.name) ?? { qty: 0, revenue: 0, costTotal: 0, category: "miscellaneous" };
       let costEach = 0;
-      if (it.id && costMap.has(it.id)) costEach = costMap.get(it.id)!;
+      // Variation cart keys are "uuid__pv__xxx" or "uuid__gid__oid" — strip suffix to get real product UUID
+      const baseId = it.id && it.id.includes("__") ? it.id.split("__")[0] : it.id;
+      if (baseId && costMap.has(baseId)) costEach = costMap.get(baseId)!;
+      else if (it.id && costMap.has(it.id)) costEach = costMap.get(it.id)!;
       else if (nameMap.has(it.name)) costEach = nameMap.get(it.name)!;
       else {
         const SYNTH = ["Shot", "2oz", "1oz", "Retail", "Pack"];
