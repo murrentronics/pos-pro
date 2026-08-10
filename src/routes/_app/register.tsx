@@ -33,22 +33,31 @@ type CartItem = Product & { qty: number; _discount?: number; _originalPrice?: nu
 // ─────────────────────────────────────────────────────────────────────────────
 type ProductCardProps = {
   p: Product;
-  inCartQty: number; // 0 = not in cart
+  inCartQty: number; // 0 = not in cart (base-price / non-variation)
   // Resolved image src string — passed as a plain value so React.memo can do
   // a simple equality check. Each card re-renders only when its own image
   // resolves, not when any other product's image finishes loading.
   resolvedImgSrc: string | null;
+  // Variation cart lines for this product (cartKey has __ in it)
+  variantLines: CartItem[];
   onAdd: (p: Product) => void;
   onRemove: (id: string) => void;
   onDec: (id: string) => void;
+  onRemoveVariant: (cartKey: string) => void;
 };
-const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgSrc, onAdd, onRemove, onDec }: ProductCardProps) {
-  const remainingQty = (p.stock_qty ?? 1) - inCartQty;
+const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgSrc, variantLines, onAdd, onRemove, onDec, onRemoveVariant }: ProductCardProps) {
+  const hasVariants  = variantLines.length > 0;
+  // Total units across variation lines (for stock remaining calc)
+  const variantQty   = variantLines.reduce((s, v) => s + v.qty, 0);
+  const totalInCart  = inCartQty + variantQty;
+  const remainingQty = (p.stock_qty ?? 1) - totalInCart;
   const outOfStock  = (p.stock_qty ?? 1) === 0 || remainingQty <= 0;
   const noPrice     = !p.price || Number(p.price) <= 0;
   const noCost      = !p.cost_price || Number(p.cost_price) <= 0;
   const incomplete  = noPrice || noCost;
   const inCart      = inCartQty > 0;
+  // Card is "active" (highlighted border) if either base or variants are in cart
+  const isActive    = inCart || hasVariants;
   return (
     <div data-bar-id={p.id} className="relative">
       <button
@@ -58,7 +67,7 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
         style={{
           background: "var(--gradient-card)",
           boxShadow: "var(--shadow-elegant)",
-          borderColor: inCart ? "var(--primary)" : "var(--border)",
+          borderColor: isActive ? "var(--primary)" : "var(--border)",
         }}
       >
         <div className="aspect-[3/4] relative w-full">
@@ -109,6 +118,71 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
                 style={{ background: "var(--gradient-hero)" }}>
                 {inCartQty}
               </div>
+            </div>
+          )}
+          {/* ── Variation badges — shown when variant lines are in cart ── */}
+          {hasVariants && !inCart && (
+            <div className="absolute inset-0 flex flex-col justify-end pointer-events-none"
+              style={{ background: "linear-gradient(to top, rgba(0,0,0,0.82) 0%, transparent 55%)" }}>
+              <div className="px-1.5 pb-1.5 flex flex-col gap-0.5 pointer-events-auto">
+                {variantLines.map((v) => {
+                  // Extract the variant label from the cart item name: "Product (Variant)" → "Variant"
+                  const parenMatch = v.name.match(/\(([^)]+)\)$/);
+                  const dashMatch  = v.name.match(/—\s*(.+)$/);
+                  const label      = parenMatch?.[1] ?? dashMatch?.[1] ?? v.name;
+                  const shortLabel = label.length > 10 ? label.slice(0, 9) + "…" : label;
+                  return (
+                    <div
+                      key={v.id}
+                      className="flex items-center justify-between gap-0.5 rounded-lg px-1.5 py-0.5"
+                      style={{ background: "var(--gradient-hero)" }}
+                    >
+                      <span className="text-[9px] font-black text-black leading-tight flex-1 truncate">
+                        {v.qty}× {shortLabel}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onRemoveVariant(v.id); }}
+                        className="h-4 w-4 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition"
+                        style={{ background: "rgba(0,0,0,0.35)" }}
+                      >
+                        <X className="h-2.5 w-2.5 text-black" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {/* When both base qty AND variants in cart, show variant badges above the base stepper overlay */}
+          {hasVariants && inCart && (
+            <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-0.5 px-1.5 pb-1"
+              style={{ zIndex: 5 }}>
+              {variantLines.map((v) => {
+                const parenMatch = v.name.match(/\(([^)]+)\)$/);
+                const dashMatch  = v.name.match(/—\s*(.+)$/);
+                const label      = parenMatch?.[1] ?? dashMatch?.[1] ?? v.name;
+                const shortLabel = label.length > 10 ? label.slice(0, 9) + "…" : label;
+                return (
+                  <div
+                    key={v.id}
+                    className="flex items-center justify-between gap-0.5 rounded-lg px-1.5 py-0.5"
+                    style={{ background: "rgba(251,146,60,0.85)" }}
+                  >
+                    <span className="text-[9px] font-black text-black leading-tight flex-1 truncate">
+                      {v.qty}× {shortLabel}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onRemoveVariant(v.id); }}
+                      className="h-4 w-4 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition"
+                      style={{ background: "rgba(0,0,0,0.35)" }}
+                    >
+                      <X className="h-2.5 w-2.5 text-black" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
           {outOfStock && (
@@ -582,15 +656,18 @@ type ProductGridProps = {
   // Passing pre-resolved strings lets React.memo do a cheap string equality
   // check per card instead of comparing a shared function reference.
   resolvedImgMap: Record<string, string | null>;
+  // Map of base productId → variation CartItems in cart
+  cartVariantMap: Record<string, CartItem[]>;
   onAdd: (p: Product) => void;
   onRemove: (id: string) => void;
   onDec: (id: string) => void;
+  onRemoveVariant: (cartKey: string) => void;
   onEnterEditMode: () => void;
   showSortButton: boolean;
   sortLabel: string;
 };
 const ProductGrid = React.memo(function ProductGrid({
-  barOrdered, cartQtyMap, resolvedImgMap, onAdd, onRemove, onDec,
+  barOrdered, cartQtyMap, resolvedImgMap, cartVariantMap, onAdd, onRemove, onDec, onRemoveVariant,
   onEnterEditMode, showSortButton, sortLabel,
 }: ProductGridProps) {
   return (
@@ -605,9 +682,11 @@ const ProductGrid = React.memo(function ProductGrid({
             p={p}
             inCartQty={cartQtyMap[p.id] ?? 0}
             resolvedImgSrc={resolvedImgMap[p.id] ?? null}
+            variantLines={cartVariantMap[p.id] ?? []}
             onAdd={onAdd}
             onRemove={onRemove}
             onDec={onDec}
+            onRemoveVariant={onRemoveVariant}
           />
         ))}
       </div>
@@ -837,6 +916,22 @@ export default function RegisterPage() {
     cart.forEach((i) => { m[i.id] = i.qty; });
     return m;
   }, [cart]);
+
+  // Map of base productId → variation CartItems (items whose id contains "__")
+  // Used to show variation badges on the product card grid
+  const cartVariantMap = useMemo(() => {
+    const m: Record<string, CartItem[]> = {};
+    cart.forEach((i) => {
+      if (i.id.includes("__")) {
+        const baseId = i.id.split("__")[0];
+        (m[baseId] ??= []).push(i);
+      }
+    });
+    return m;
+  }, [cart]);
+
+  const removeVariantItem = useCallback((cartKey: string) =>
+    setCart((c) => c.filter((i) => i.id !== cartKey)), []);
 
   // Stable fetch — always reads latest ownerId via ref
   const ownerIdRef = useRef(ownerId);
@@ -1432,9 +1527,11 @@ export default function RegisterPage() {
                 barOrdered={barOrdered}
                 cartQtyMap={cartQtyMap}
                 resolvedImgMap={resolvedImgMap}
+                cartVariantMap={cartVariantMap}
                 onAdd={addToCart}
                 onRemove={removeItem}
                 onDec={dec}
+                onRemoveVariant={removeVariantItem}
                 onEnterEditMode={barEnterEditMode}
                 showSortButton={cart.length === 0}
                 sortLabel={t("sort_item_order", "⇅ Sort Item Order")}
