@@ -947,6 +947,54 @@ export default function RegisterPage() {
       localStorage.removeItem(`pospro-edit-order-${ownerId}`);
     }
   }, [ownerId]);
+
+  // ── Step 2: once products are loaded, consume any pending edit payload ──────
+  useEffect(() => {
+    if (!products.length) return;
+    const payload = pendingEditRef.current;
+    if (!payload) return;
+    pendingEditRef.current = null;
+
+    // Map saved item names back to loaded products to restore full product data
+    const newCart: CartItem[] = payload.items
+      .map((saved) => {
+        const match = products.find((p) => p.name === saved.name);
+        if (!match) {
+          // Fallback: use saved data as-is so nothing is lost
+          return {
+            id: saved.name,
+            name: saved.name,
+            price: saved.price,
+            qty: saved.qty,
+            image_url: null,
+            category: undefined,
+            ...(saved.discount ? { _discount: saved.discount, _originalPrice: saved.original_price ?? saved.price } : {}),
+          } as CartItem;
+        }
+        return {
+          ...match,
+          qty: saved.qty,
+          ...(saved.discount ? { _discount: saved.discount, _originalPrice: saved.original_price ?? match.price } : {}),
+        } as CartItem;
+      })
+      .filter(Boolean);
+
+    setCart(newCart);
+    setEditOrder({
+      orderId:       payload.orderId,
+      originalTotal: payload.originalTotal,
+      paid:          payload.paid,
+      changeGiven:   payload.changeGiven,
+      discountAmount: payload.discountAmount,
+      type:          payload.type,
+      creditTxId:    payload.creditTxId,
+    });
+    setCashOpen(true);
+    toast.success("Edit mode — adjust items then confirm sale");
+  // products is the only dep we watch; pendingEditRef is a ref (stable)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products]);
+
   const [loading, setLoading] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
   const [creditOpen, setCreditOpen] = useState(false);
@@ -1621,7 +1669,10 @@ export default function RegisterPage() {
           onAdd={addToCart}
           onRemove={removeItem}
           onClearCart={() => { setCart([]); localStorage.removeItem(`bartap-cart-${ownerId}`); }}
-          onClose={() => { setCashOpen(false); }}
+          onClose={() => { setCashOpen(false); setEditOrder(null); }}
+          ownerId={ownerId}
+          editOrder={editOrder}
+          onEditComplete={() => setEditOrder(null)}
           ownerId={ownerId}
           onSuccess={async (paidAmt, changeAmt) => {
             // Optimistically decrement stock_qty in local state using the cart
@@ -1645,6 +1696,7 @@ export default function RegisterPage() {
             setCart([]);
             localStorage.removeItem(`bartap-cart-${ownerId}`);
             setCashOpen(false);
+            setEditOrder(null);
             refreshProfile();
           }}
         />
@@ -1727,6 +1779,7 @@ function CashItemActions({ item, onDec, onAdd, onRemove }: {
 
 function CashOverlay({
   total, cart, onDec, onAdd, onRemove, onClearCart, onClose, onSuccess, ownerId,
+  editOrder, onEditComplete,
 }: {
   total: number; cart: CartItem[];
   onDec: (id: string) => void; onAdd: (p: CartItem) => void;
@@ -1734,6 +1787,8 @@ function CashOverlay({
   onClearCart: () => void;
   onClose: () => void; onSuccess: (paid: number, change: number) => void;
   ownerId: string;
+  editOrder?: { orderId: string; type: "cash" | "credit"; creditTxId?: string } | null;
+  onEditComplete?: () => void;
 }) {
   const { profile } = useAuth();
   const { t } = useTranslation();
@@ -1855,8 +1910,19 @@ function CashOverlay({
       return;
     }
 
-    const { error } = await supabase.from("orders").insert(orderPayload);
+    const { error } = editOrder
+      ? await (supabase.rpc as any)("edit_order", {
+          p_order_id:        editOrder.orderId,
+          p_items:           orderPayload.items,
+          p_total:           discountedTotal,
+          p_paid:            paidNum,
+          p_change_given:    changeNum,
+          p_discount_amount: orderDiscount > 0 ? orderDiscount : null,
+          p_original_total:  orderDiscount > 0 ? total : null,
+        })
+      : await supabase.from("orders").insert(orderPayload);
     if (error) { setBusy(false); toast.error(error.message); return; }
+    if (editOrder) { onEditComplete?.(); }
     // Trigger handle_order_insert fires automatically — no separate stock RPC needed
 
     // If a customer was selected with cash, record history without changing balance

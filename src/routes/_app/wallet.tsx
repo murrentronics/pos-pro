@@ -2009,7 +2009,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
   }
 
   return (
-    <div className="space-y-5 pt-2 pb-24">
+    <div className="space-y-5 pt-2 pb-32">
 
       {/* ── Expense History by Month ──────────────────────────────────────── */}
       {/* Add Expense button + form */}
@@ -2457,7 +2457,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
   const newestOrderId = deletableOrderId;
 
   return (
-    <div className="space-y-3 pt-2">
+    <div className="space-y-3 pt-2 pb-32">
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">{total} total records</span>
       </div>
