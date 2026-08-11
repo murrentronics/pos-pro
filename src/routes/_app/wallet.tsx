@@ -16,9 +16,6 @@ import { toast } from "sonner";
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
 
-// ─── Typed supabase client ────────────────────────────────────────────────────
-import { supabase } from "@/integrations/supabase/client";
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Order = {
   id: string;
@@ -392,7 +389,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
 
     const hasShotOrPack = items.some((i: any) => i.id?.startsWith("shot-") || i.id?.startsWith("pack-"));
     if (hasShotOrPack) {
-      await supabase.rpc("reverse_order_shot_pack", { p_items: items });
+      await (supabase.rpc as any)("reverse_order_shot_pack", { p_items: items });
     }
 
     // Stock is restored by the handle_order_delete DB trigger — no separate RPC call needed.
@@ -406,7 +403,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
     if (error) { toast.error(error.message); return; }
 
     // Persist delete timestamp in DB — survives refresh, prevents button jumping
-    await supabase.from("cashier_last_delete").upsert(
+    await (supabase.from("cashier_last_delete") as any).upsert(
       { cashier_id: profile.id, deleted_at: new Date().toISOString() },
       { onConflict: "cashier_id" }
     );
@@ -1762,7 +1759,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
     try {
       const total = valid.reduce((s, l) => s + parseFloat(l.amount), 0);
       const description = "Non-Stock Expense\n" + valid.map(l => `${l.description.trim()} = $${parseFloat(l.amount).toFixed(2)}`).join("\n");
-      const insertData: Record<string, unknown> = {
+      const insertData: { owner_id: string; amount: number; description: string; expense_date: string; created_at?: string } = {
         owner_id: ownerId,
         amount: total,
         description,
@@ -2300,7 +2297,12 @@ function StaffBadge({ label = "Cashier" }: { label?: string }) {
   );
 }
 
-function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDeleted?: () => void }) {
+function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }: {
+  profile: { id: string };
+  onDeleted?: () => void;
+  onEditOrder?: (o: Order) => void;
+  onEditCreditCharge?: (tx: WalletTx) => void;
+}) {
   const { refreshProfile } = useAuth();
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [allTxs, setAllTxs] = useState<WalletTx[]>([]);
@@ -2421,7 +2423,7 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
     // 1. Reverse shots_sold / units_sold / revenue on any opened bottles or packs.
     const hasShotOrPack = items.some(i => i.id?.startsWith("shot-") || i.id?.startsWith("pack-"));
     if (hasShotOrPack) {
-      await supabase.rpc("reverse_order_shot_pack", { p_items: items });
+      await (supabase.rpc as any)("reverse_order_shot_pack", { p_items: items });
     }
 
     // 2. Stock is restored by the handle_order_delete DB trigger — no separate RPC call needed.
@@ -2438,7 +2440,7 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
     setDeletableOrderId(null);
 
     // Persist delete timestamp so button never reappears on refresh
-    await supabase.from("cashier_last_delete").upsert(
+    await (supabase.from("cashier_last_delete") as any).upsert(
       { cashier_id: profile.id, deleted_at: new Date().toISOString() },
       { onConflict: "cashier_id" }
     );
@@ -2579,9 +2581,9 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
                     {/* Credit charge: only show Staff badge if a cashier/manager did it */}
                     {!isPayment ? (
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        {tx.order_id && (
+                        {tx.order_id && onEditCreditCharge && (
                           <button
-                            onClick={() => handleOwnerEditCreditCharge(tx)}
+                            onClick={() => onEditCreditCharge(tx)}
                             className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
                             style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
                             title="Edit this sale"
@@ -2655,7 +2657,7 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
                       <div className="flex flex-col items-end gap-2 shrink-0">
                         <span className="font-black text-sm text-green-400">+${fmt(Number(o.total))}</span>
                         <button
-                          onClick={() => handleStatementEditOrder(o)}
+                          onClick={() => onEditOrder && onEditOrder(o)}
                           className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
                           style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
                           title="Edit this sale"
@@ -2836,7 +2838,7 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <span className="font-black text-lg text-green-400">+${fmt(Number(o.total))}</span>
                   <button
-                    onClick={() => handleOwnerEditOrder(o)}
+                    onClick={() => onEditOrder && onEditOrder(o)}
                     className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
                     style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
                     title="Edit this sale"
@@ -2961,7 +2963,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
         await supabase.from("store_sub_sessions")
           .update({ closed_at: now })
           .eq("owner_id", profile.id)
-          .eq("bar_session_id", openBarSession.id)
+          .eq("store_session_id", openBarSession.id)
           .is("closed_at", null);
         // Insert new sub-session
         await supabase.from("store_sub_sessions").insert({
@@ -3367,7 +3369,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                   </div>
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "oklch(0.18 0.02 60)" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.5)" }}>{t("session_gross", "Session\nGross Profit")}</div>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.5)" }}>{t("session_gross", "Session\nProfit")}</div>
                   {(() => {
                     const sgp = sessionIncome - sessionStockCost;
                     return (
@@ -3429,7 +3431,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                   </div>
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "oklch(0.18 0.02 60)" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.5)" }}>{t("today_gross", "Today's\nGross Profit")}</div>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.5)" }}>{t("today_gross", "Today's\nProfit")}</div>
                   {(() => {
                     const tgp = todayIncome - todayStockCost;
                     return (
@@ -3491,7 +3493,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                   </div>
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "oklch(0.18 0.02 60)" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.5)" }}>{t("alltime_gross", "Total\nGross Profit")}</div>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.5)" }}>{t("alltime_gross", "Total\nProfit")}</div>
                   {(() => {
                     const gsp = totalIncome - totalStockSoldCost;
                     return (
@@ -3572,7 +3574,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
 
       {/* ── Tab content ──────────────────────────────────────────────────── */}
       {activeTab === "transactions" ? (
-        <TransactionsTab profile={profile} onDeleted={loadSummary} />
+        <TransactionsTab profile={profile} onDeleted={loadSummary} onEditOrder={handleOwnerEditOrder} onEditCreditCharge={handleOwnerEditCreditCharge} />
       ) : (
         <FinancialsTab
           ownerId={profile.id}

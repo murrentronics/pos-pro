@@ -63,7 +63,7 @@ export async function setUserStatus(
 
   const { error } = await supabase
     .from("profiles")
-    .update({ status, ...extraFields })
+    .update({ status, ...extraFields } as any)
     .eq("id", user_id);
 
   if (error) throw new Error(error.message);

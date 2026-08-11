@@ -500,7 +500,7 @@ export default function BillingPage() {
               <span className="text-muted-foreground">/yr TT</span>
             </div>
             <ul className="space-y-2">
-              {["Full POS register","Unlimited products & categories","Cashier wallets & management","Credit accounts","Specials & bundle deals","Summary reports & PDFs","Music player","Real-time sync"].map(f => (
+              {["Full POS register","Unlimited products & categories","Cashier wallets & management","Credit accounts","Specials & bundle deals","Summary reports & PDFs","Real-time sync"].map(f => (
                 <li key={f} className="flex items-center gap-2 text-sm text-foreground">
                   <Check className="h-4 w-4 text-primary shrink-0" /> {f}
                 </li>

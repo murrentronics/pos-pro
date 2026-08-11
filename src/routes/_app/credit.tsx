@@ -912,7 +912,7 @@ function PaymentOverlay({
       .eq("id", chargeId)
       .single();
 
-    const { error } = await supabase.rpc("delete_credit_charge", {
+    const { error } = await (supabase.rpc as any)("delete_credit_charge", {
       p_credit_tx_id: chargeId,
       p_cashier_id: profile.id,
     });
@@ -922,7 +922,7 @@ function PaymentOverlay({
     // Call SECURITY DEFINER RPC to delete both owner + cashier wallet rows
     if (chargeTx?.created_at && ownerId) {
       const t = new Date(chargeTx.created_at);
-      await supabase.rpc("delete_credit_charge_wallet_rows", {
+      await (supabase.rpc as any)("delete_credit_charge_wallet_rows", {
         p_owner_id:   ownerId,
         p_cashier_id: profile.id,
         p_from_time:  new Date(t.getTime() - 5000).toISOString(),

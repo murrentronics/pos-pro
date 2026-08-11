@@ -9,7 +9,6 @@
  *
  * Pages that are EXCLUDED (always work offline):
  *   /register  — has full IndexedDB cache
- *   /music     — streams from YouTube but shows cached queue regardless
  *   /language  — pure local settings, no network needed
  */
 
@@ -19,7 +18,7 @@ import { WifiOff, ShoppingCart } from "lucide-react";
 import type { ReactNode } from "react";
 
 // Routes that work fully offline — let them through unconditionally
-const OFFLINE_OK = ["/register", "/music", "/language"];
+const OFFLINE_OK = ["/register", "/language"];
 
 interface Props {
   children: ReactNode;

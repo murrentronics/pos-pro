@@ -413,7 +413,7 @@ function StockCheckPage() {
           owner_id: ownerIdForQuery,
           product_id: productId,
           actual_qty: newActual,
-          updated_at: new Date().toISOString(),
+          checked_at: new Date().toISOString(),
         },
         { onConflict: "owner_id,product_id" }
       );
@@ -523,7 +523,7 @@ function StockCheckPage() {
       const now = new Date();
       const dateStr = now.toLocaleDateString("en-GB");
       const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-      const title = catFilter ? `Stock Check — ${categoryLabel(catFilter)}` : "Stock Check — All Items";
+      const title = catFilter ? `Stock Check — ${grouped.find(g => g.cat.value === catFilter)?.cat.label ?? catFilter}` : "Stock Check — All Items";
       let y = await drawHeader(doc, profile?.username ?? "Stock Check", title, dateStr, `${dateStr} ${timeStr}`);
 
       const COL = { name: LM, qty: 110, actual: 135, price: 160, loss: 185 };

@@ -299,7 +299,7 @@ export default function AdminBillingManagementPage() {
       await supabase
         .from("profiles")
         .update({
-          status: "rejected",
+          status: "rejected" as any,
           billing_status: "pending_setup",
           subscription_start_date: null,
           subscription_end_date: null,

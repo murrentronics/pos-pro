@@ -354,7 +354,7 @@ function BarSessionAccordion({ session, subSessions, products, categoryFilter, a
 
   const openedLabel = fmtTs(session.opened_at);
   const closedLabel = session.closed_at ? fmtTs(session.closed_at) : null;
-  const mySubs = subSessions.filter(s => s.bar_session_id === session.id);
+  const mySubs = subSessions.filter(s => s.store_session_id === session.id);
 
   const fallbackSub: SubSession = {
     id: `session-${session.id}`,

@@ -32,7 +32,7 @@ export default function FactoryResetPage() {
     setBusy(true);
     try {
       const rpc = mode === "full" ? "full_wipe_owner" : "soft_reset_owner";
-      const { error } = await supabase.rpc(rpc, { p_owner_id: profile.id });
+      const { error } = await (supabase.rpc as any)(rpc, { p_owner_id: profile.id });
       if (error) { toast.error(error.message); return; }
 
       toast.success(

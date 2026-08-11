@@ -144,7 +144,7 @@ function ManagerExpenses({
 
   const loadExpenses = useCallback(async () => {
     setLoading(true);
-    const { data } = await sb
+    const { data } = await supabase
       .from("owner_expenses")
       .select("*")
       .eq("owner_id", ownerId)
