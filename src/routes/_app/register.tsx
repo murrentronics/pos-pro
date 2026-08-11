@@ -860,6 +860,18 @@ export default function RegisterPage() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [category, setCategory] = useState<string>("__all__");
+
+  // Ref to hold a pending edit-order payload until products have loaded
+  const pendingEditRef = useRef<{
+    orderId: string;
+    items: { name: string; qty: number; price: number; discount?: number; original_price?: number }[];
+    originalTotal: number;
+    paid: number;
+    changeGiven: number;
+    discountAmount: number;
+    type: "cash" | "credit";
+    creditTxId?: string;
+  } | null>(null);
   // DB categories loaded from store_categories table
   const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
   // Stable array reference — only changes when the product list actually changes,
@@ -898,6 +910,43 @@ export default function RegisterPage() {
       return [];
     }
   });
+
+  // ── Edit-order state — set when user taps the pencil on a wallet record ──
+  const [editOrder, setEditOrder] = useState<{
+    orderId: string;
+    originalTotal: number;
+    paid: number;
+    changeGiven: number;
+    discountAmount: number;
+    type: "cash" | "credit";
+    creditTxId?: string;
+  } | null>(null);
+
+  // On mount (after ownerId is resolved), check for a pending edit-order payload
+  useEffect(() => {
+    if (!ownerId) return;
+    const raw = localStorage.getItem(`pospro-edit-order-${ownerId}`);
+    if (!raw) return;
+    try {
+      const payload = JSON.parse(raw) as {
+        orderId: string;
+        items: { name: string; qty: number; price: number; discount?: number; original_price?: number }[];
+        originalTotal: number;
+        paid: number;
+        changeGiven: number;
+        discountAmount: number;
+        type: "cash" | "credit";
+        creditTxId?: string;
+      };
+      localStorage.removeItem(`pospro-edit-order-${ownerId}`);
+      // Match each saved item name against loaded products to get full product data (price, cost_price etc.)
+      // We wait until products have loaded before trying to match, so this runs in a separate effect below.
+      // For now, store the payload in a ref for the products-loaded effect to pick up.
+      pendingEditRef.current = payload;
+    } catch {
+      localStorage.removeItem(`pospro-edit-order-${ownerId}`);
+    }
+  }, [ownerId]);
   const [loading, setLoading] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
   const [creditOpen, setCreditOpen] = useState(false);

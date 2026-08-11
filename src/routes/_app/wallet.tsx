@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { useTranslation } from "@/lib/i18n";
@@ -8,7 +9,7 @@ import {
   Wallet as WalletIcon, Receipt, ChevronLeft, ChevronRight,
   ArrowDownLeft, RotateCcw, Loader2, FileText, Download, X,
   TrendingUp, TrendingDown, DollarSign, ChevronDown,
-  BarChart3, List, Trash2,
+  BarChart3, List, Trash2, Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -171,6 +172,7 @@ function ExpenseRow({ expense: e }: { expense: OwnerExpense }) {
 function CashierWallet({ profile }: { profile: { id: string; wallet_balance: number; role: string; username?: string; parent_id?: string | null } }) {
   const { t } = useTranslation();
   const { refreshProfile } = useAuth();
+  const nav = useNavigate();
   const [cashierTab, setCashierTab] = useState<"sales" | "expenses">("sales");
   const [orders, setOrders] = useState<Order[]>([]);
   const [txs, setTxs] = useState<WalletTx[]>([]);
@@ -187,6 +189,52 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
   const [floatUsed, setFloatUsed] = useState<number>(0);
 
   const ownerId = profile.parent_id ?? profile.id;
+
+  // ── Edit order handler — stores order in localStorage then navigates to register ──
+  const handleEditOrder = (o: Order) => {
+    const editPayload = {
+      orderId: o.id,
+      items: o.items,
+      originalTotal: o.total,
+      paid: o.paid,
+      changeGiven: o.change_given,
+      discountAmount: o.discount_amount ?? 0,
+      type: "cash" as const,
+    };
+    localStorage.setItem(`pospro-edit-order-${ownerId}`, JSON.stringify(editPayload));
+    nav("/register");
+  };
+
+  // ── Edit credit charge handler — parses items from wallet_tx note ──
+  const handleEditCreditCharge = (tx: WalletTx) => {
+    if (!tx.order_id) { toast.error("This credit sale cannot be edited (no order reference)"); return; }
+    const parts = (tx.note ?? "").split(" | ");
+    const itemsPart = parts.find(p => p.startsWith("Items:"))?.replace("Items: ", "") ?? "";
+    // Try to reconstruct items from the Items: note fragment
+    // Format: "1x Name, 2x Name2"
+    const items = itemsPart
+      .split(", ")
+      .map((s) => {
+        const m = s.match(/^(\d+)[×x]\s*(.+)$/);
+        if (!m) return null;
+        return { name: m[2].trim(), qty: Number(m[1]), price: 0 };
+      })
+      .filter(Boolean) as { name: string; qty: number; price: number }[];
+    const amtStr = parts.find(p => p.startsWith("$")) ?? "";
+    const totalAmt = parseFloat(amtStr.replace("$", "")) || Number(tx.amount) || 0;
+    const editPayload = {
+      orderId: tx.order_id,
+      items,
+      originalTotal: totalAmt,
+      paid: 0,
+      changeGiven: 0,
+      discountAmount: 0,
+      type: "credit" as const,
+      creditTxId: tx.id,
+    };
+    localStorage.setItem(`pospro-edit-order-${ownerId}`, JSON.stringify(editPayload));
+    nav("/register");
+  };
 
   // Load owner float + cashier_float_set_at + how much spent SINCE last reset
   const loadFloat = useCallback(async () => {
@@ -824,7 +872,18 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                         )}
                         {ccBal && <div className="text-xs font-semibold mt-0.5" style={{ color: "var(--primary)" }}>{ccBal}</div>}
                       </div>
-                      {/* credit_charge is always read-only — no amount shown */}
+                      {tx.order_id && (
+                        <div className="flex flex-col items-end gap-2 shrink-0 ml-1">
+                          <button
+                            onClick={() => handleEditCreditCharge(tx)}
+                            className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
+                            style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
+                            title="Edit this sale"
+                          >
+                            <Pencil className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 }
@@ -873,6 +932,14 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     <span className="font-black text-sm text-green-400">+${fmt(Number(o.total))}</span>
+                    <button
+                      onClick={() => handleEditOrder(o)}
+                      className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
+                      style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
+                      title="Edit this sale"
+                    >
+                      <Pencil className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
+                    </button>
                     {o.id === deletableOrderId && (
                       <button
                         onClick={() => deleteLatestCashierOrder(o)}
@@ -1076,6 +1143,7 @@ type OwnerFlatRecord =
 
 function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: string; username?: string }; onClose: () => void; chainBarIds?: string[] }) {
   const { t } = useTranslation();
+  const nav = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [txs, setTxs] = useState<WalletTx[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1258,6 +1326,21 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
     }
   };
 
+  const handleStatementEditOrder = (o: Order) => {
+    const editPayload = {
+      orderId: o.id,
+      items: o.items,
+      originalTotal: o.total,
+      paid: o.paid,
+      changeGiven: o.change_given,
+      discountAmount: o.discount_amount ?? 0,
+      type: "cash" as const,
+    };
+    localStorage.setItem(`pospro-edit-order-${profile.id}`, JSON.stringify(editPayload));
+    onClose();
+    nav("/register");
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/70 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-lg rounded-3xl border border-border shadow-2xl mt-4 mb-8"
@@ -1417,6 +1500,25 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
                                         with cashier
                                       </span>
                                     ) : null
+                                  )}
+                                  {!isPayment && tx.order_id && (
+                                    <button
+                                      onClick={() => {
+                                        const parts2 = (tx.note ?? "").split(" | ");
+                                        const ip = parts2.find(p => p.startsWith("Items:"))?.replace("Items: ", "") ?? "";
+                                        const items2 = ip.split(", ").map((s) => { const m = s.match(/^(\d+)[×x]\s*(.+)$/); if (!m) return null; return { name: m[2].trim(), qty: Number(m[1]), price: 0 }; }).filter(Boolean) as { name: string; qty: number; price: number }[];
+                                        const amtStr2 = parts2.find(p => p.startsWith("$")) ?? "";
+                                        const totalAmt2 = parseFloat(amtStr2.replace("$", "")) || Number(tx.amount) || 0;
+                                        const ep = { orderId: tx.order_id!, items: items2, originalTotal: totalAmt2, paid: 0, changeGiven: 0, discountAmount: 0, type: "credit" as const, creditTxId: tx.id };
+                                        localStorage.setItem(`pospro-edit-order-${profile.id}`, JSON.stringify(ep));
+                                        onClose(); nav("/register");
+                                      }}
+                                      className="h-7 w-7 rounded-full flex items-center justify-center active:scale-95 transition shrink-0"
+                                      style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
+                                      title="Edit this sale"
+                                    >
+                                      <Pencil className="h-3 w-3" style={{ color: "var(--primary)" }} />
+                                    </button>
                                   )}
                                 </div>
                               );
@@ -2476,7 +2578,19 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
                     {/* Credit payment: +$X if owner collected, Staff/Manager badge if staff collected */}
                     {/* Credit charge: only show Staff badge if a cashier/manager did it */}
                     {!isPayment ? (
-                      cashierPart ? <StaffBadge label={(tx.note ?? "").includes("[Manager:") ? "Manager" : "Staff"} /> : null
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        {tx.order_id && (
+                          <button
+                            onClick={() => handleOwnerEditCreditCharge(tx)}
+                            className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
+                            style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
+                            title="Edit this sale"
+                          >
+                            <Pencil className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
+                          </button>
+                        )}
+                        {cashierPart && <StaffBadge label={(tx.note ?? "").includes("[Manager:") ? "Manager" : "Staff"} />}
+                      </div>
                     ) : isReadOnly && cashierPart ? (
                       <StaffBadge label={(tx.note ?? "").includes("[Manager:") ? "Manager" : "Staff"} />
                     ) : !isReadOnly ? (
@@ -2540,6 +2654,14 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
                       </div>
                       <div className="flex flex-col items-end gap-2 shrink-0">
                         <span className="font-black text-sm text-green-400">+${fmt(Number(o.total))}</span>
+                        <button
+                          onClick={() => handleStatementEditOrder(o)}
+                          className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
+                          style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
+                          title="Edit this sale"
+                        >
+                          <Pencil className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
+                        </button>
                         {isLatest && (
                           <button
                             onClick={() => deleteLatestOrder(o)}
@@ -2713,6 +2835,14 @@ function TransactionsTab({ profile, onDeleted }: { profile: { id: string }; onDe
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <span className="font-black text-lg text-green-400">+${fmt(Number(o.total))}</span>
+                  <button
+                    onClick={() => handleOwnerEditOrder(o)}
+                    className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
+                    style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
+                    title="Edit this sale"
+                  >
+                    <Pencil className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
+                  </button>
                   {isNewest && (
                     <button
                       onClick={() => deleteLatestOrder(o)}
@@ -2743,6 +2873,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
   const { chainBars } = useChain();
   const chainBarIds = chainBars.map((b) => b.id);
   const { refreshProfile } = useAuth();
+  const nav = useNavigate();
   const [activeTab, setActiveTab] = useState<"transactions" | "financials">("transactions");
   const [showStatement, setShowStatement] = useState(false);
   // Derive balance directly from the prop so it updates when refreshProfile() runs
@@ -3120,6 +3251,50 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
   const todayStockCost = financialSummary ? financialSummary.todayStockCost : 0;
   const todayExpenses = financialSummary ? financialSummary.todayExpenses : 0;
   const hasFinancials = financialSummary !== null && financialSummary.monthlyExpenses > 0;
+
+  // ── Edit order handler — stores order in localStorage then navigates to register ──
+  const handleOwnerEditOrder = (o: Order) => {
+    const editPayload = {
+      orderId: o.id,
+      items: o.items,
+      originalTotal: o.total,
+      paid: o.paid,
+      changeGiven: o.change_given,
+      discountAmount: o.discount_amount ?? 0,
+      type: "cash" as const,
+    };
+    localStorage.setItem(`pospro-edit-order-${profile.id}`, JSON.stringify(editPayload));
+    nav("/register");
+  };
+
+  // ── Edit credit charge handler for owner wallet ──
+  const handleOwnerEditCreditCharge = (tx: WalletTx) => {
+    if (!tx.order_id) { toast.error("This credit sale cannot be edited (no order reference)"); return; }
+    const parts = (tx.note ?? "").split(" | ");
+    const itemsPart = parts.find(p => p.startsWith("Items:"))?.replace("Items: ", "") ?? "";
+    const items = itemsPart
+      .split(", ")
+      .map((s) => {
+        const m = s.match(/^(\d+)[×x]\s*(.+)$/);
+        if (!m) return null;
+        return { name: m[2].trim(), qty: Number(m[1]), price: 0 };
+      })
+      .filter(Boolean) as { name: string; qty: number; price: number }[];
+    const amtStr = parts.find(p => p.startsWith("$")) ?? "";
+    const totalAmt = parseFloat(amtStr.replace("$", "")) || Number(tx.amount) || 0;
+    const editPayload = {
+      orderId: tx.order_id,
+      items,
+      originalTotal: totalAmt,
+      paid: 0,
+      changeGiven: 0,
+      discountAmount: 0,
+      type: "credit" as const,
+      creditTxId: tx.id,
+    };
+    localStorage.setItem(`pospro-edit-order-${profile.id}`, JSON.stringify(editPayload));
+    nav("/register");
+  };
 
   return (
     <div className="space-y-5 pt-3">
