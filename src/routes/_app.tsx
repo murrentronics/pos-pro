@@ -289,42 +289,40 @@ function AppLayout() {
         className="bg-background/90 backdrop-blur border-b border-border relative z-50"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <div className="max-w-2xl mx-auto px-3 h-11 flex items-center">
+        <div className="max-w-2xl mx-auto px-3 h-12 flex items-center relative">
           {/* Logo */}
-          <div className="flex flex-col leading-tight">
-            <span className="font-black tracking-tight text-sm">P.O.S. Pro</span>
+          <div className="flex flex-col leading-tight w-20 shrink-0">
+            <span className="font-black tracking-tight text-sm truncate">P.O.S. Pro</span>
             {profile.username && (
-              <span className="text-[10px] font-medium text-muted-foreground leading-tight truncate max-w-[140px]">
+              <span className="text-[10px] font-medium text-muted-foreground leading-tight truncate">
                 {profile.username}
               </span>
             )}
           </div>
 
           {/* Center: Open Drawer + Scan */}
-          <div className="flex-1 flex justify-center">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleOpenCashDrawer}
-                disabled={drawerBusy}
-                className="h-8 px-3 rounded-lg font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition disabled:opacity-50"
-                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
-              >
-                {drawerBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "💵 Open Drawer"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowScannerModal(true)}
-                className="h-8 px-3 rounded-lg font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition"
-                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
-              >
-                📷 Scan
-              </button>
-            </div>
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleOpenCashDrawer}
+              disabled={drawerBusy}
+              className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition disabled:opacity-50 whitespace-nowrap"
+              style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+            >
+              {drawerBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "💵 Open Drawer"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowScannerModal(true)}
+              className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition whitespace-nowrap"
+              style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+            >
+              📷 Scan
+            </button>
           </div>
 
           {/* Right: store toggle + hamburger */}
-          <div className="flex items-center gap-2" ref={menuRef}>
+          <div className="flex items-center gap-2 ml-auto" ref={menuRef}>
             {(isOwner || isManager) && (
               <button
                 type="button"
