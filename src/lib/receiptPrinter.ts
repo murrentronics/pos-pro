@@ -2,8 +2,7 @@
  * receiptPrinter.ts — prints a sale receipt to an ESC/POS thermal printer.
  *
  * Sends raw ESC/POS commands over the Web Serial API or, when running inside
- * the Capacitor Android app, falls back to opening a browser print window
- * (the native USB host path for printers is not yet wired up here).
+ * the Capacitor Android app, falls back to opening a browser print window.
  *
  * Hardware overrides (optional — set via localStorage):
  *   pospro-receipt-vid -> decimal USB vendor id filter
@@ -16,46 +15,112 @@ function esc(b: number): string {
   return String.fromCharCode(b);
 }
 
-function buildReceiptEscPos(data: {
+export interface ReceiptData {
   storeName: string;
+  locationName?: string;
+  orderNumber?: string | number;
+  serverName?: string;
   items: { name: string; qty: number; price: number }[];
   subtotal: number;
+  tax?: number;
   total: number;
   paid: number;
   change: number;
   payMode: string;
   customerName?: string;
-  date: string;
-}): string {
+  date?: string;
+}
+
+function buildReceiptEscPos(data: ReceiptData): string {
   const cmds: string[] = [];
 
+  // Reset printer
   cmds.push(esc(0x1b) + esc(0x40));
+  // Align center
   cmds.push(esc(0x1b) + esc(0x61) + esc(0x01));
 
-  cmds.push(center(data.storeName, true));
-  cmds.push(center("RECEIPT", true));
-  cmds.push(center(data.date));
-  cmds.push(hr());
+  // User Business Name Header (Bold & Uppercase)
+  cmds.push(center(data.storeName || "My Business", true));
 
-  for (const it of data.items) {
-    const line = `${padRight(it.qty + "x", 5)} ${padRight(it.name, 20)} ${padLeft("$" + it.price.toFixed(2), 12)}`;
-    cmds.push(line);
-    const total = it.qty * it.price;
-    cmds.push(`${padRight("", 5)} ${padRight("", 20)} ${padLeft("$" + total.toFixed(2), 12)}`);
+  // Location
+  if (data.locationName) {
+    cmds.push(center(data.locationName));
   }
 
+  // Date timestamp (e.g. 8/15/2026, 6:39:42 AM)
+  const dateStr =
+    data.date ||
+    new Date().toLocaleString("en-US", {
+      month: "numeric",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  cmds.push(center(dateStr));
+
+  // Server line
+  const server = data.serverName ? `Served by ${data.serverName}` : "Served by Staff";
+  cmds.push(center(server));
+
+  // Horizontal divider
   cmds.push(hr());
-  cmds.push(`${padRight("SUBTOTAL", 26)} ${padLeft("$" + data.subtotal.toFixed(2), 12)}`);
-  cmds.push(`${padRight("TOTAL", 26)} ${padLeft("$" + data.total.toFixed(2), 12)}`);
+
+  // ORDER #X (Centered, Double Size, Bold)
+  const orderNum = data.orderNumber ?? 1;
+  cmds.push(esc(0x1b) + esc(0x61) + esc(0x01)); // Center align
+  cmds.push(esc(0x1d) + esc(0x21) + esc(0x11)); // Double width & height
+  cmds.push(esc(0x1b) + esc(0x45) + esc(0x01)); // Bold ON
+  cmds.push(`ORDER #${orderNum}`);
+  cmds.push(esc(0x1d) + esc(0x21) + esc(0x00)); // Reset size
+  cmds.push(esc(0x1b) + esc(0x45) + esc(0x00)); // Bold OFF
+
+  // Horizontal divider
+  cmds.push(hr());
+
+  // Items List (Left align)
+  cmds.push(esc(0x1b) + esc(0x61) + esc(0x00));
+
+  for (const it of data.items) {
+    const qtyPrefix = `${it.qty}x `;
+    const priceStr = `$${(it.qty * it.price).toFixed(2)}`;
+    const maxNameLen = COL_WIDTH - qtyPrefix.length - priceStr.length;
+    const nameStr = padRight(it.name, Math.max(1, maxNameLen));
+    cmds.push(`${qtyPrefix}${nameStr}${priceStr}`);
+  }
+
+  // Divider
+  cmds.push(hr());
+
+  // Totals
+  const subtotalStr = `$${data.subtotal.toFixed(2)}`;
+  cmds.push(`${padRight("Subtotal", COL_WIDTH - subtotalStr.length)}${subtotalStr}`);
+
+  if (data.tax != null && data.tax > 0) {
+    const taxStr = `$${data.tax.toFixed(2)}`;
+    cmds.push(`${padRight("Tax", COL_WIDTH - taxStr.length)}${taxStr}`);
+  }
+
+  const totalStr = `$${data.total.toFixed(2)}`;
+  cmds.push(esc(0x1b) + esc(0x45) + esc(0x01)); // Bold ON
+  cmds.push(`${padRight("Total", COL_WIDTH - totalStr.length)}${totalStr}`);
+  cmds.push(esc(0x1b) + esc(0x45) + esc(0x00)); // Bold OFF
 
   cmds.push(hr());
-  cmds.push(`${padRight("PAYMENT", 26)} ${padLeft(data.payMode.toUpperCase(), 12)}`);
-  cmds.push(`${padRight("PAID", 26)} ${padLeft("$" + data.paid.toFixed(2), 12)}`);
-  cmds.push(`${padRight("CHANGE", 26)} ${padLeft("$" + data.change.toFixed(2), 12)}`);
+
+  // Payment & Change
+  const payLabel = data.payMode === "credit" ? "Credit" : "Cash Tendered";
+  const paidStr = `$${data.paid.toFixed(2)}`;
+  cmds.push(`${padRight(payLabel, COL_WIDTH - paidStr.length)}${paidStr}`);
+
+  const changeStr = `$${data.change.toFixed(2)}`;
+  cmds.push(`${padRight("Change", COL_WIDTH - changeStr.length)}${changeStr}`);
 
   if (data.customerName) {
     cmds.push(hr());
-    cmds.push(`CUSTOMER: ${data.customerName}`);
+    cmds.push(`Customer: ${data.customerName}`);
   }
 
   cmds.push(hr());
@@ -93,30 +158,27 @@ function readStorage(key: string): string | null {
   }
 }
 
-export interface ReceiptData {
-  storeName: string;
-  items: { name: string; qty: number; price: number }[];
-  subtotal: number;
-  total: number;
-  paid: number;
-  change: number;
-  payMode: string;
-  customerName?: string;
-}
-
 export async function printReceipt(
   data: ReceiptData,
 ): Promise<{ opened: boolean; method: string; error?: string }> {
-  const date = new Date().toLocaleString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  const dateStr =
+    data.date ||
+    new Date().toLocaleString("en-US", {
+      month: "numeric",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
 
-  const payload = buildReceiptEscPos({ ...data, date });
+  const fullData: ReceiptData = {
+    ...data,
+    date: dateStr,
+  };
+
+  const payload = buildReceiptEscPos(fullData);
   const vid = parseInt(readStorage("pospro-receipt-vid") ?? "", 10);
   const pid = parseInt(readStorage("pospro-receipt-pid") ?? "", 10);
 
@@ -131,7 +193,7 @@ export async function printReceipt(
     // fall through to browser fallback
   }
 
-  return printViaBrowserWindow(payload);
+  return printViaBrowserWindow(fullData, payload);
 }
 
 interface WebSerialPort {
@@ -160,7 +222,10 @@ async function printViaWebSerial(
 ): Promise<{ opened: boolean; method: string; error?: string }> {
   const serial = (navigator as unknown as { serial?: WebSerialAPI }).serial;
   if (!serial?.requestPort) {
-    return printViaBrowserWindow(payload);
+    return printViaBrowserWindow(
+      { storeName: "My Business", items: [], subtotal: 0, total: 0, paid: 0, change: 0, payMode: "cash" },
+      payload,
+    );
   }
 
   let port: WebSerialPort | undefined;
@@ -193,13 +258,16 @@ async function printViaWebSerial(
   return { opened: true, method: "webserial" };
 }
 
-function printViaBrowserWindow(payload: string): {
+function printViaBrowserWindow(
+  data: ReceiptData,
+  rawPayload: string,
+): {
   opened: boolean;
   method: string;
   error?: string;
 } {
   try {
-    const win = window.open("", "_blank", "width=400,height=600");
+    const win = window.open("", "_blank", "width=420,height=650");
     if (!win) {
       return {
         opened: false,
@@ -207,9 +275,173 @@ function printViaBrowserWindow(payload: string): {
         error: "Popup blocked — allow popups to print receipts",
       };
     }
-    win.document.write(`<!DOCTYPE html><html><head><title>Receipt</title><style>
-      body { font-family: monospace; font-size: 12px; margin: 0; padding: 10px; white-space: pre; }
-    </style></head><body>${escapeHtml(payload)}</body></html>`);
+
+    const itemsHtml = data.items
+      .map(
+        (it) => `
+      <tr>
+        <td class="item-qty-name">${it.qty}x  ${escapeHtml(it.name)}</td>
+        <td class="item-price">$${(it.qty * it.price).toFixed(2)}</td>
+      </tr>`,
+      )
+      .join("");
+
+    const taxHtml =
+      data.tax != null && data.tax > 0
+        ? `
+      <tr>
+        <td class="text-left">Tax</td>
+        <td class="text-right">$${data.tax.toFixed(2)}</td>
+      </tr>`
+        : "";
+
+    const customerHtml = data.customerName
+      ? `
+      <tr>
+        <td class="text-left">Customer</td>
+        <td class="text-right">${escapeHtml(data.customerName)}</td>
+      </tr>`
+      : "";
+
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Receipt - ORDER #${data.orderNumber || 1}</title>
+  <style>
+    @page {
+      size: 80mm auto;
+      margin: 0;
+    }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: #111;
+      background: #fff;
+      margin: 0 auto;
+      padding: 20px 16px;
+      width: 300px;
+      box-sizing: border-box;
+      line-height: 1.4;
+    }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .text-left { text-align: left; }
+
+    .brand-name {
+      font-size: 18px;
+      font-weight: 900;
+      color: #111;
+      letter-spacing: -0.5px;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    .header-info {
+      font-size: 12px;
+      color: #333;
+      margin-bottom: 2px;
+    }
+
+    .divider {
+      border-top: 1px dashed #333;
+      margin: 10px 0;
+    }
+
+    .order-title {
+      font-size: 22px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 8px 0;
+    }
+
+    .item-table, .totals-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 4px 0;
+    }
+    .item-table td, .totals-table td {
+      padding: 3px 0;
+      vertical-align: top;
+    }
+    .item-qty-name {
+      text-align: left;
+    }
+    .item-price {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .totals-table .total-row {
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    @media print {
+      body {
+        width: 100%;
+        padding: 4px 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="text-center brand-name">${escapeHtml(data.storeName || "My Business")}</div>
+  ${data.locationName ? `<div class="text-center header-info">${escapeHtml(data.locationName)}</div>` : ""}
+  <div class="text-center header-info">${escapeHtml(data.date || "")}</div>
+  <div class="text-center header-info">Served by ${escapeHtml(data.serverName || "Staff")}</div>
+
+  <div class="divider"></div>
+
+  <div class="text-center order-title">ORDER #${data.orderNumber || 1}</div>
+
+  <div class="divider"></div>
+
+  <table class="item-table">
+    <tbody>
+      ${itemsHtml}
+    </tbody>
+  </table>
+
+  <div class="divider"></div>
+
+  <table class="totals-table">
+    <tbody>
+      <tr>
+        <td class="text-left">Subtotal</td>
+        <td class="text-right">$${data.subtotal.toFixed(2)}</td>
+      </tr>
+      ${taxHtml}
+      <tr class="total-row">
+        <td class="text-left">Total</td>
+        <td class="text-right">$${data.total.toFixed(2)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="divider"></div>
+
+  <table class="totals-table">
+    <tbody>
+      <tr>
+        <td class="text-left">${data.payMode === "credit" ? "Credit" : "Cash Tendered"}</td>
+        <td class="text-right">$${data.paid.toFixed(2)}</td>
+      </tr>
+      <tr>
+        <td class="text-left">Change</td>
+        <td class="text-right">$${data.change.toFixed(2)}</td>
+      </tr>
+      ${customerHtml}
+    </tbody>
+  </table>
+
+</body>
+</html>`;
+
+    win.document.write(htmlContent);
     win.document.close();
     win.focus();
     setTimeout(() => {

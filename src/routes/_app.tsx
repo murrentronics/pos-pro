@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, UserMinus, Menu, X, Receipt, TrendingDown, ClipboardList } from "lucide-react";
+import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, UserMinus, Menu, X, Receipt, TrendingDown, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -240,8 +240,8 @@ function AppLayout() {
         { to: "/manager",     label: "Manage",      icon: TrendingDown  },
       ]
     : [
-        { to: "/register",    label: "Store",       icon: Wine          },
-        { to: "/credit",      label: "Customers",   icon: Receipt       },
+        { to: "/register",    label: "Store",       icon: ShoppingCart  },
+        { to: "/credit",      label: "Customers",   icon: User          },
         ...(isOwner ? [{ to: "/products",    label: "Items",       icon: Package       }] : []),
         ...(isOwner ? [{ to: "/stock-check", label: "Stock Check", icon: ClipboardList }] : []),
         ...(isOwner ? [{ to: "/cashiers",    label: "Staff",       icon: Users         }] : []),

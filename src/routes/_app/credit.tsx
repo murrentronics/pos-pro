@@ -10,14 +10,12 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   UserPlus, X, ChevronRight, Camera, CheckCircle2,
-  DollarSign, ClipboardList, FileDown, Loader2, Trash2, Pencil,
+  DollarSign, ClipboardList, FileDown, Loader2, Trash2, Pencil, Share2,
 } from "lucide-react";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
+import { printReceipt, type ReceiptData } from "@/lib/receiptPrinter";
+import { Capacitor } from "@capacitor/core";
 
 export const Route = createFileRoute("/_app/credit")({
   component: CreditPage,
@@ -37,28 +35,17 @@ type CreditAccount = {
 };
 
 // ── Print Bill ─────────────────────────────────────────────────────────────────
-async function printBill(account: CreditAccount, ownerName: string) {
+async function printBill(account: CreditAccount, ownerName: string, cashierName = "Staff") {
+  await printThermalBill(account, ownerName, cashierName);
+}
+
+async function buildBillPdf(account: CreditAccount, ownerName: string): Promise<string | null> {
   const { data: txs, error } = await supabase
     .from("credit_transactions")
     .select("id, type, amount, note, items, created_at")
     .eq("credit_account_id", account.id)
     .order("created_at", { ascending: true });
-
-  if (error) { toast.error("Failed to load transactions"); return; }
-
-  // Fetch product cost map as fallback for items that don't have cost_price stored
-  const { data: products } = await supabase
-    .from("products")
-    .select("id, name, cost_price, units_per_item")
-    .eq("owner_id", account.owner_id);
-  const prodCostById = new Map<string, number>(
-    ((products ?? []) as { id: string; cost_price: number; units_per_item: number }[])
-      .map(p => [p.id, p.units_per_item > 0 ? p.cost_price / p.units_per_item : p.cost_price])
-  );
-  const prodCostByName = new Map<string, number>(
-    ((products ?? []) as { name: string; cost_price: number; units_per_item: number }[])
-      .map(p => [p.name, p.units_per_item > 0 ? p.cost_price / p.units_per_item : p.cost_price])
-  );
+  if (error) { toast.error("Failed to load transactions"); return null; }
 
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -69,193 +56,353 @@ async function printBill(account: CreditAccount, ownerName: string) {
 
   let y = await drawHeader(doc, ownerName, "Credit Bill", "Full History", generated);
 
-  // ── Customer info block ───────────────────────────────────────────────────
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(0, 0, 0);
-  doc.text("Customer:", LM, y);
-  doc.setFont("helvetica", "normal");
-  doc.text(account.full_name, LM + 24, y);
-  y += 5;
-  if (account.contact_number) {
-    doc.text("Contact: " + account.contact_number, LM, y); y += 5;
-  }
-  if (account.id_number) {
-    doc.text("ID: " + account.id_number, LM, y); y += 5;
-  }
-  doc.text("Account opened: " + new Date(account.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }), LM, y);
-  y += 5;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(0,0,0);
+  doc.text("Customer: " + account.full_name, LM, y); y += 5;
+  if (account.contact_number) { doc.setFont("helvetica","normal"); doc.text("Contact: " + account.contact_number, LM, y); y += 5; }
+  if (account.id_number)      { doc.setFont("helvetica","normal"); doc.text("ID: " + account.id_number, LM, y); y += 5; }
 
-  // ── Balance summary box ────────────────────────────────────────────────────
-  const ORANGE = [232, 146, 42] as const;
-  const cashPurchases = (txs ?? []).filter(t => t.type === "charge").reduce((s, t) => s + Number(t.amount), 0);
+  const cashPurchases = (txs ?? []).filter(t => t.type === "charge").reduce((s,t) => s + Number(t.amount), 0);
   const creditBalance = Number(account.balance_owed);
+  const ORANGE = [232, 146, 42] as const;
 
-  doc.setFillColor(245, 240, 230);
-  doc.roundedRect(LM, y, RM - LM, 22, 2, 2, "F");
-  doc.setDrawColor(...ORANGE);
-  doc.setLineWidth(0.4);
-  doc.roundedRect(LM, y, RM - LM, 22, 2, 2, "S");
-
+  doc.setFillColor(245,240,230);
+  doc.roundedRect(LM, y, RM-LM, 22, 2, 2, "F");
+  doc.setDrawColor(...ORANGE); doc.setLineWidth(0.4);
+  doc.roundedRect(LM, y, RM-LM, 22, 2, 2, "S");
   const cols = [
-    { label: "Cash Purchases", value: "$" + cashPurchases.toFixed(2), red: false },
-    { label: "Credit Balance", value: "$" + creditBalance.toFixed(2), red: creditBalance > 0 },
+    { label: "Cash Purchases", value: "$"+cashPurchases.toFixed(2), red: false },
+    { label: "Credit Balance", value: "$"+creditBalance.toFixed(2), red: creditBalance > 0 },
   ];
-  const colW = (RM - LM) / 2;
+  const colW = (RM-LM)/2;
   cols.forEach((col, i) => {
-    const cx = LM + i * colW + colW / 2;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.5);
-    doc.setTextColor(100, 100, 100);
-    doc.text(col.label, cx, y + 7, { align: "center" });
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
+    const cx = LM + i*colW + colW/2;
+    doc.setFont("helvetica","normal"); doc.setFontSize(6.5); doc.setTextColor(100,100,100);
+    doc.text(col.label, cx, y+7, { align:"center" });
+    doc.setFont("helvetica","bold"); doc.setFontSize(9);
     doc.setTextColor(col.red ? 200 : 30, col.red ? 40 : 30, 40);
-    doc.text(col.value, cx, y + 17, { align: "center" });
+    doc.text(col.value, cx, y+17, { align:"center" });
   });
-  doc.setTextColor(0, 0, 0);
-  y += 27;
+  doc.setTextColor(0,0,0); y += 27;
 
-  // ── Column headers ────────────────────────────────────────────────────────
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  doc.setTextColor(130, 130, 130);
-  doc.text("DATE / DETAILS", LM, y);
-  doc.text("AMOUNT", RM, y, { align: "right" });
-  y += 3;
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineWidth(0.2);
-  doc.line(LM, y, RM, y);
-  y += 5;
+  doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(130,130,130);
+  doc.text("DATE / DETAILS", LM, y); doc.text("AMOUNT", RM, y, { align:"right" });
+  y += 3; doc.setDrawColor(200,200,200); doc.setLineWidth(0.2); doc.line(LM, y, RM, y); y += 5;
 
-  // ── Transaction rows ──────────────────────────────────────────────────────
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(0,0,0);
 
   for (const tx of txs ?? []) {
     if (y > CONTENT_BOTTOM) { doc.addPage(); y = 20; }
-
     const isCharge = tx.type === "charge";
-    const dateStr  = new Date(tx.created_at).toLocaleString("en-GB", {
-      hour: "2-digit", minute: "2-digit", hour12: true,
-      day: "2-digit", month: "short", year: "numeric",
-    });
+    const dateStr = new Date(tx.created_at).toLocaleString("en-GB", { hour:"2-digit", minute:"2-digit", hour12:true, day:"2-digit", month:"short", year:"numeric" });
 
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(isCharge ? 200 : 40, isCharge ? 60 : 140, 40);
-    doc.text(isCharge ? "CHARGE" : "PAYMENT", LM, y);
-    doc.setTextColor(0, 0, 0);
-    doc.setFont("helvetica", "normal");
-    doc.text(dateStr, LM + 22, y);
-
-    const amtStr = (isCharge ? "+" : "-") + "$" + Number(tx.amount).toFixed(2);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(isCharge ? 200 : 40, isCharge ? 60 : 140, 40);
-    doc.text(amtStr, RM, y, { align: "right" });
-    doc.setTextColor(0, 0, 0);
+    doc.setFont("helvetica","bold");
+    doc.setTextColor(isCharge?200:40, isCharge?60:140, 40);
+    doc.text(isCharge?"CHARGE":"PAYMENT", LM, y);
+    doc.setTextColor(0,0,0); doc.setFont("helvetica","normal");
+    doc.text(dateStr, LM+22, y);
+    doc.setFont("helvetica","bold");
+    doc.setTextColor(isCharge?200:40, isCharge?60:140, 40);
+    doc.text((isCharge?"+":"-")+"$"+Number(tx.amount).toFixed(2), RM, y, { align:"right" });
+    doc.setTextColor(0,0,0);
     y += 5;
 
-    // Items for charges — per-item table with name, qty, unit price, and row total
-    if (isCharge && tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+    if (isCharge && tx.items && Array.isArray(tx.items) && (tx.items as any[]).length > 0) {
       if (y > CONTENT_BOTTOM - 8) { doc.addPage(); y = 20; }
+      const C_ITEM  = LM + 4;
+      const C_QTY   = LM + 100;
+      const C_PRICE = LM + 140;
+      const C_TOTAL = RM;
 
-      // Column x positions (LM=15, RM=195, width=180)
-      const C_ITEM  = LM + 4;   // item name — left aligned
-      const C_QTY   = LM + 100; // qty — right aligned
-      const C_PRICE = LM + 140; // unit price — right aligned
-      const C_TOTAL = RM;       // row total — right edge
-
-      // Sub-header
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(6.5);
-      doc.setTextColor(150, 150, 150);
+      doc.setFont("helvetica","bold"); doc.setFontSize(6.5); doc.setTextColor(150,150,150);
       doc.text("ITEM",  C_ITEM,  y);
-      doc.text("QTY",   C_QTY,   y, { align: "right" });
-      doc.text("PRICE", C_PRICE, y, { align: "right" });
-      doc.text("TOTAL", C_TOTAL, y, { align: "right" });
+      doc.text("QTY",   C_QTY,   y, { align:"right" });
+      doc.text("PRICE", C_PRICE, y, { align:"right" });
+      doc.text("TOTAL", C_TOTAL, y, { align:"right" });
       y += 3.5;
-      doc.setDrawColor(210, 210, 210);
-      doc.setLineWidth(0.15);
-      doc.line(C_ITEM, y, RM, y);
-      y += 3;
+      doc.setDrawColor(210,210,210); doc.setLineWidth(0.15);
+      doc.line(C_ITEM, y, RM, y); y += 3;
 
-      let chargeTotal = 0;
+      let chargeTotalSP = 0;
 
       for (const it of tx.items as any[]) {
         if (y > CONTENT_BOTTOM - 6) { doc.addPage(); y = 20; }
-        const qty   = Number(it.qty ?? 1);
-        const price = Number(it.price ?? 0);
-        const total = price * qty;
-        chargeTotal += total;
+        const qty  = Number(it.qty ?? 1);
+        const sp   = Number(it.price ?? 0);
+        const rowTotal = sp * qty;
+        chargeTotalSP += rowTotal;
 
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(7.5);
-        doc.setTextColor(30, 30, 30);
-
+        doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(30,30,30);
         const nameStr = doc.splitTextToSize(it.name ?? "", 90)[0];
         doc.text(nameStr, C_ITEM, y);
-        doc.text(String(qty), C_QTY, y, { align: "right" });
+        doc.text(String(qty), C_QTY, y, { align:"right" });
 
         doc.setTextColor(...ORANGE);
-        doc.text("$" + price.toFixed(2), C_PRICE, y, { align: "right" });
-        doc.setFont("helvetica", "bold");
-        doc.text("$" + total.toFixed(2), C_TOTAL, y, { align: "right" });
-        doc.setTextColor(0, 0, 0);
-
+        doc.text("$"+sp.toFixed(2), C_PRICE, y, { align:"right" });
+        doc.setFont("helvetica","bold");
+        doc.text("$"+rowTotal.toFixed(2), C_TOTAL, y, { align:"right" });
+        doc.setTextColor(0,0,0);
         y += 4.5;
       }
 
-      // Subtotal row
       if (y > CONTENT_BOTTOM - 6) { doc.addPage(); y = 20; }
-      doc.setDrawColor(210, 210, 210);
-      doc.setLineWidth(0.15);
-      doc.line(C_ITEM, y, RM, y);
-      y += 3;
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.5);
-      doc.setTextColor(80, 80, 80);
+      doc.setDrawColor(210,210,210); doc.setLineWidth(0.15); doc.line(C_ITEM, y, RM, y); y += 3;
+      doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(80,80,80);
       doc.text("Subtotal", C_ITEM, y);
       doc.setTextColor(...ORANGE);
-      doc.text("$" + chargeTotal.toFixed(2), C_TOTAL, y, { align: "right" });
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(8.5);
+      doc.text("$"+chargeTotalSP.toFixed(2), C_TOTAL, y, { align:"right" });
+      doc.setTextColor(0,0,0); doc.setFontSize(8.5);
       y += 5;
     }
 
-    // Note — skip for charges that already have the item table (note is just a duplicate itemsDesc)
-    if (tx.note && !(isCharge && Array.isArray(tx.items) && tx.items.length > 0)) {
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(7.5);
-      doc.setTextColor(120, 120, 120);
-      doc.text("  " + tx.note, LM, y);
-      y += 4;
-      doc.setFontSize(8.5);
-      doc.setTextColor(0, 0, 0);
+    if (tx.note && !(isCharge && Array.isArray(tx.items) && (tx.items as any[]).length > 0)) {
+      doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(120,120,120);
+      const wrapped = doc.splitTextToSize("  "+tx.note, RM-LM-4);
+      doc.text(wrapped, LM, y); y += wrapped.length*4+1;
+      doc.setFontSize(8.5); doc.setTextColor(0,0,0);
     }
 
-    doc.setDrawColor(220, 220, 220);
-    doc.setLineWidth(0.1);
-    doc.line(LM, y, RM, y);
-    y += 4;
+    doc.setDrawColor(220,220,220); doc.setLineWidth(0.1); doc.line(LM, y, RM, y); y += 4;
   }
 
-  // ── Footer balance line ────────────────────────────────────────────────────
-  if (y > CONTENT_BOTTOM - 10) { doc.addPage(); y = 20; }
+  if (y > CONTENT_BOTTOM-10) { doc.addPage(); y = 20; }
   y += 4;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(...ORANGE);
+  doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...ORANGE);
   doc.text("Balance Remaining:", LM, y);
-  doc.setTextColor(creditBalance <= 0 ? 40 : 200, creditBalance <= 0 ? 140 : 40, 40);
-  doc.text("$" + creditBalance.toFixed(2), RM, y, { align: "right" });
+  doc.setTextColor(creditBalance<=0?40:200, creditBalance<=0?140:40, 40);
+  doc.text("$"+creditBalance.toFixed(2), RM, y, { align:"right" });
 
   addFootersToAllPages(doc);
+  return doc.output("datauristring");
+}
 
+async function printThermalBill(account: CreditAccount, ownerName: string, cashierName?: string) {
+  const { data: txs, error } = await supabase
+    .from("credit_transactions")
+    .select("id, type, amount, note, items, created_at")
+    .eq("credit_account_id", account.id)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    toast.error("Failed to load transactions");
+    return;
+  }
+
+  const items: { name: string; qty: number; price: number }[] = [];
+  let subtotal = 0;
+
+  for (const tx of txs ?? []) {
+    if (tx.type === "charge") {
+      if (tx.items && Array.isArray(tx.items) && (tx.items as any[]).length > 0) {
+        for (const it of (tx.items as any[])) {
+          const qty = Number(it?.qty ?? 1);
+          const price = Number(it?.price ?? 0);
+          items.push({
+            name: it?.name || "Item",
+            qty,
+            price,
+          });
+          subtotal += qty * price;
+        }
+      } else {
+        const itemTitle = tx.note ? tx.note.replace(/^\[CASH\]\s*/, "") : "Charge";
+        items.push({
+          name: itemTitle,
+          qty: 1,
+          price: Number(tx.amount),
+        });
+        subtotal += Number(tx.amount);
+      }
+    }
+  }
+
+  const payments = (txs ?? []).filter((t) => t.type === "payment").reduce((s, t) => s + Number(t.amount), 0);
+
+  const receiptData: ReceiptData = {
+    storeName: ownerName || "Store",
+    locationName: "Main location",
+    orderNumber: "BILL",
+    serverName: cashierName || "Staff",
+    customerName: account.full_name,
+    items: items.length > 0 ? items : [{ name: "Account Balance", qty: 1, price: Number(account.balance_owed) }],
+    subtotal: subtotal > 0 ? subtotal : Number(account.balance_owed),
+    total: Number(account.balance_owed),
+    paid: payments,
+    change: 0,
+    payMode: "credit",
+    date: new Date().toLocaleString("en-US", {
+      month: "numeric",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    }),
+  };
+
+  const res = await printReceipt(receiptData);
+  if (res.opened) {
+    toast.success("Sent to printer");
+  } else if (res.error) {
+    toast.error(res.error);
+  }
+}
+
+// ── Bill Action Modal ─────────────────────────────────────────────────────────
+function BillModal({ account, ownerName, onClose }: {
+  account: CreditAccount;
+  ownerName: string;
+  onClose: () => void;
+}) {
+  const { profile } = useAuth();
+  const [busy, setBusy] = useState<"download" | "print" | "share" | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
+  const [printed, setPrinted] = useState(false);
   const safeName = account.full_name.replace(/\s+/g, "-").toLowerCase();
-  await downloadPdf(`credit-bill-${safeName}.pdf`, doc.output("datauristring"));
-  toast.success("Bill saved");
+  const filename = `credit-bill-${safeName}.pdf`;
+
+  const handleDownload = async () => {
+    setBusy("download");
+    try {
+      const b64 = await buildBillPdf(account, ownerName);
+      if (b64) {
+        await downloadPdf(filename, b64);
+        setDownloaded(true);
+        toast.success(Capacitor.isNativePlatform() ? "Saved to Documents folder" : "PDF downloaded");
+        setTimeout(() => setDownloaded(false), 5000);
+      }
+    } catch (e: any) {
+      if (!String(e?.message ?? "").includes("cancel")) {
+        toast.error("Download failed: " + (e?.message ?? "unknown"));
+      }
+    }
+    setBusy(null);
+  };
+
+  const handlePrintThermal = async () => {
+    setBusy("print");
+    try {
+      const cashierName = profile?.username || "Staff";
+      await printThermalBill(account, ownerName, cashierName);
+      setPrinted(true);
+      setTimeout(() => setPrinted(false), 5000);
+    } catch (e: any) {
+      toast.error("Print failed: " + (e?.message ?? "unknown"));
+    }
+    setBusy(null);
+  };
+
+  const handleShare = async () => {
+    setBusy("share");
+    try {
+      const b64 = await buildBillPdf(account, ownerName);
+      if (!b64) { setBusy(null); return; }
+
+      if (Capacitor.isNativePlatform()) {
+        const { Filesystem, Directory } = await import("@capacitor/filesystem");
+        const { Share } = await import("@capacitor/share");
+
+        const base64Data = b64.replace(/^data:[^;]+;base64,/, "");
+        const writeResult = await Filesystem.writeFile({
+          path: filename,
+          data: base64Data,
+          directory: Directory.Cache,
+        });
+
+        const shareText = `Hi ${account.full_name}, please find your credit bill attached.`;
+
+        await Share.share({
+          title: `Credit Bill — ${account.full_name}`,
+          text: shareText,
+          url: writeResult.uri,
+          dialogTitle: "Send Bill",
+        });
+      } else {
+        await downloadPdf(filename, b64);
+        toast.success("Bill saved");
+      }
+    } catch (e: any) {
+      if (!String(e?.message ?? "").includes("cancel")) {
+        toast.error("Share failed: " + (e?.message ?? "unknown"));
+      }
+    }
+    setBusy(null);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/75 backdrop-blur-sm"
+      onClick={onClose}>
+      <div
+        className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center"
+        style={{ background: "var(--gradient-card)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border/40">
+          <div className="text-left">
+            <h3 className="font-black text-lg leading-tight">Customer Bill</h3>
+            <p className="text-xs text-muted-foreground font-semibold truncate max-w-[200px]">{account.full_name}</p>
+          </div>
+          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="rounded-2xl p-4 text-center border border-border/60 bg-muted/20">
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Balance Owed</div>
+            <div className="text-3xl font-black text-red-400 mt-0.5">
+              ${Number(account.balance_owed).toFixed(2)}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={handlePrintThermal}
+              disabled={!!busy}
+              className="h-20 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 text-white shadow-lg"
+              style={{ background: "var(--gradient-hero)" }}
+            >
+              {busy === "print" ? (
+                <Loader2 className="h-6 w-6 animate-spin text-white" />
+              ) : printed ? (
+                <CheckCircle2 className="h-6 w-6 text-white" />
+              ) : (
+                <span className="text-xl leading-none">🖨️</span>
+              )}
+              <span className="text-xs font-black">{printed ? "Printed!" : "Print (Thermal)"}</span>
+            </button>
+
+            <button
+              onClick={handleDownload}
+              disabled={!!busy}
+              className="h-20 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 text-foreground border border-border/80 shadow-sm hover:bg-muted/30"
+              style={{ background: "rgba(255,255,255,0.06)" }}
+            >
+              {busy === "download" ? (
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              ) : downloaded ? (
+                <CheckCircle2 className="h-6 w-6 text-green-400" />
+              ) : (
+                <FileDown className="h-6 w-6 text-primary" />
+              )}
+              <span className="text-xs font-black">{downloaded ? "Downloaded!" : "Download PDF"}</span>
+            </button>
+          </div>
+
+          <button
+            onClick={handleShare}
+            disabled={!!busy}
+            className="w-full h-11 rounded-2xl font-black text-xs flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 border border-green-500/40"
+            style={{ background: "rgba(37,211,102,0.12)", color: "#25D366" }}
+          >
+            {busy === "share" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+            Share via WhatsApp
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────────
@@ -278,6 +425,8 @@ function CreditPage() {
   const [payAccount, setPayAccount] = useState<CreditAccount | null>(null);
   // Edit customer modal state
   const [editAccount, setEditAccount] = useState<CreditAccount | null>(null);
+  // Bill action modal state
+  const [billAccount, setBillAccount] = useState<CreditAccount | null>(null);
 
   const fetchAccounts = useCallback(async () => {
     const id = ownerIdRef.current;
@@ -350,10 +499,11 @@ function CreditPage() {
           ownerName={ownerName}
           onSelect={setPayAccount}
           onEdit={setEditAccount}
+          onBill={setBillAccount}
         />
       )}
       {tab === "cleared" && (
-        <ClosedTab accounts={closed} loading={loading} ownerName={ownerName} onEdit={setEditAccount} ownerId={ownerId!} />
+        <ClosedTab accounts={closed} loading={loading} ownerName={ownerName} onEdit={setEditAccount} onBill={setBillAccount} ownerId={ownerId!} />
       )}
       {tab === "create" && (
         <CreateTab ownerId={ownerId!} onCreated={handleCreated} />
@@ -366,6 +516,15 @@ function CreditPage() {
           ownerId={ownerId!}
           onClose={() => setPayAccount(null)}
           onDone={handlePaymentDone}
+        />
+      )}
+
+      {/* Bill action modal */}
+      {billAccount && (
+        <BillModal
+          account={billAccount}
+          ownerName={ownerName}
+          onClose={() => setBillAccount(null)}
         />
       )}
 
@@ -387,13 +546,14 @@ function CreditPage() {
 
 // ── Opened Tab ─────────────────────────────────────────────────────────────────
 function OpenedTab({
-  accounts, loading, ownerName, onSelect, onEdit,
+  accounts, loading, ownerName, onSelect, onEdit, onBill,
 }: {
   accounts: CreditAccount[];
   loading: boolean;
   ownerName: string;
   onSelect: (a: CreditAccount) => void;
   onEdit: (a: CreditAccount) => void;
+  onBill: (a: CreditAccount) => void;
 }) {
   const [printing, setPrinting] = useState<string | null>(null);
   const [printed, setPrinted] = useState<string | null>(null);
@@ -433,17 +593,12 @@ function OpenedTab({
             </button>
             <div className="flex items-center gap-2">
               <button
-                onClick={async () => { setPrinting(a.id); await printBill(a, ownerName); setPrinting(null); setPrinted(a.id); setTimeout(() => setPrinted(null), 5000); }}
-                disabled={printing === a.id}
-                className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0 active:scale-90 transition disabled:opacity-50"
-                style={printed === a.id ? { background: "#16a34a", border: "1px solid #16a34a" } : { background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.35)" }}
-                title="Print Bill"
+                onClick={() => onBill(a)}
+                className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0 active:scale-90 transition"
+                style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.35)" }}
+                title="Bill / Print Options"
               >
-                {printing === a.id
-                  ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--primary)" }} />
-                  : printed === a.id
-                  ? <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                  : <FileDown className="h-4 w-4" style={{ color: "var(--primary)" }} />}
+                <FileDown className="h-4 w-4" style={{ color: "var(--primary)" }} />
               </button>
               <button
                 onClick={() => onEdit(a)}
@@ -462,7 +617,7 @@ function OpenedTab({
 }
 
 // ── Closed Tab ─────────────────────────────────────────────────────────────────
-function ClosedTab({ accounts, loading, ownerName, onEdit, ownerId }: { accounts: CreditAccount[]; loading: boolean; ownerName: string; onEdit: (a: CreditAccount) => void; ownerId: string }) {
+function ClosedTab({ accounts, loading, ownerName, onEdit, onBill, ownerId }: { accounts: CreditAccount[]; loading: boolean; ownerName: string; onEdit: (a: CreditAccount) => void; onBill: (a: CreditAccount) => void; ownerId: string }) {
   const [printing, setPrinting] = useState<string | null>(null);
   const [printed, setPrinted] = useState<string | null>(null);
   // Track which accounts have cash purchase records (charge txs with "[CASH]" note)
@@ -528,17 +683,12 @@ function ClosedTab({ accounts, loading, ownerName, onEdit, ownerId }: { accounts
             <div className="flex items-center gap-2">
               {hasCashPurchase && (
                 <button
-                  onClick={async () => { setPrinting(a.id); await printBill(a, ownerName); setPrinting(null); setPrinted(a.id); setTimeout(() => setPrinted(null), 5000); }}
-                  disabled={printing === a.id}
-                  className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0 active:scale-90 transition disabled:opacity-50"
-                  style={printed === a.id ? { background: "#16a34a", border: "1px solid #16a34a" } : { background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.35)" }}
-                  title="Print Bill"
+                  onClick={() => onBill(a)}
+                  className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0 active:scale-90 transition"
+                  style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.35)" }}
+                  title="Bill / Print Options"
                 >
-                  {printing === a.id
-                    ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--primary)" }} />
-                    : printed === a.id
-                    ? <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                    : <FileDown className="h-4 w-4" style={{ color: "var(--primary)" }} />}
+                  <FileDown className="h-4 w-4" style={{ color: "var(--primary)" }} />
                 </button>
               )}
               <button
@@ -967,7 +1117,7 @@ function PaymentOverlay({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={async () => { setPrinting(true); await printBill(account, ownerName); setPrinting(false); setPrinted(true); setTimeout(() => setPrinted(false), 5000); }}
+              onClick={async () => { setPrinting(true); await printBill(account, ownerName, profile?.username || "Staff"); setPrinting(false); setPrinted(true); setTimeout(() => setPrinted(false), 5000); }}
               disabled={printing}
               className="flex items-center gap-1.5 px-3 h-9 rounded-xl font-bold text-xs transition active:scale-95 disabled:opacity-50"
               style={printed ? { background: "#16a34a", color: "#fff", border: "1px solid #16a34a" } : { background: "rgba(251,146,60,0.15)", color: "var(--primary)", border: "1px solid rgba(251,146,60,0.3)" }}

@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
@@ -922,7 +922,8 @@ export default function RegisterPage() {
     }
   }, [profile]);
 
-  // ── Bar session state — blocks sales when bar is closed ────────────────────
+  // ── Store business name & Bar session state — blocks sales when bar is closed ──
+  const [storeBusinessName, setStoreBusinessName] = useState<string>("");
   const [barSessionStart, setBarSessionStart] = useState<string | null>(null);
   const [barClosedAt, setBarClosedAt] = useState<string | null>(null);
   // Start as false — only set true once we have an ownerId and kick off the fetch
@@ -937,7 +938,7 @@ export default function RegisterPage() {
     setBarOverlayReady(false);
     supabase
       .from("profiles")
-      .select("store_session_start, store_closed_at")
+      .select("username, store_session_start, store_closed_at")
       .eq("id", ownerId)
       .single()
       .then(
@@ -945,10 +946,11 @@ export default function RegisterPage() {
           data,
           error,
         }: {
-          data: { store_session_start: string | null; store_closed_at: string | null } | null;
+          data: { username?: string | null; store_session_start: string | null; store_closed_at: string | null } | null;
           error: unknown;
         }) => {
           if (data) {
+            if (data.username) setStoreBusinessName(data.username);
             // Network success — update state and refresh cache
             setBarSessionStart(data.store_session_start ?? null);
             setBarClosedAt(data.store_closed_at ?? null);
@@ -2185,8 +2187,37 @@ export default function RegisterPage() {
           editOrder={editOrder}
           onEditComplete={() => setEditOrder(null)}
           onSuccess={async ({ paid, change, orderDiscount, payMode, selectedCustomer }) => {
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const savedDate = localStorage.getItem("pospro_order_date");
+            let seq = parseInt(localStorage.getItem("pospro_order_seq") || "0", 10);
+            if (savedDate !== todayStr) {
+              seq = 1;
+              localStorage.setItem("pospro_order_date", todayStr);
+            } else {
+              seq += 1;
+            }
+            localStorage.setItem("pospro_order_seq", seq.toString());
+
+            const dateStr = new Date().toLocaleString("en-US", {
+              month: "numeric",
+              day: "numeric",
+              year: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: true,
+            });
+
+            // Cashier Name = active logged-in user username (e.g. Dasie)
+            const cashierName = profile?.username || "Cashier";
+            // Store / Business Name = storeBusinessName or profile username
+            const businessName = storeBusinessName || profile?.username || "Store";
+
             const saleData: ReceiptData = {
-              storeName: profile?.username ?? "Store",
+              storeName: businessName,
+              locationName: "Main location",
+              orderNumber: seq,
+              serverName: cashierName,
               items: cart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) })),
               subtotal: total,
               total: Math.max(0, total - orderDiscount),
@@ -2194,6 +2225,7 @@ export default function RegisterPage() {
               change,
               payMode: payMode ?? "cash",
               customerName: selectedCustomer?.full_name,
+              date: dateStr,
             };
             setLastSale(saleData);
             setShowSaleCompleteModal(true);
@@ -2328,65 +2360,106 @@ export default function RegisterPage() {
 
       {/* ── Sale Complete modal ── */}
       {showSaleCompleteModal && lastSale && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
           <div
-            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center"
+            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center my-auto flex flex-col max-h-[90vh]"
             style={{ background: "var(--gradient-card)" }}
           >
-            <div className="px-6 pt-7 pb-4 space-y-4">
+            {/* Header banner */}
+            <div className="px-6 pt-5 pb-2 shrink-0 space-y-1">
               <div className="flex justify-center">
-                <div className="h-16 w-16 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center">
-                  <CheckCircle2 className="h-9 w-9 text-green-400" strokeWidth={1.5} />
+                <div className="h-10 w-10 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
+                  <CheckCircle2 className="h-6 w-6 text-green-400" strokeWidth={1.5} />
                 </div>
               </div>
-              <h2 className="font-black text-xl">Sale Complete</h2>
+              <h2 className="font-black text-lg">Sale Complete</h2>
+            </div>
 
-              <div
-                className="rounded-2xl p-4 space-y-2 text-left"
-                style={{
-                  background: "oklch(0.18 0.04 145 / 0.4)",
-                  border: "1px solid rgba(74,222,128,0.3)",
-                }}
-              >
-                <div className="flex justify-between text-sm">
-                  <span className="text-green-300/70 font-semibold">Total</span>
-                  <span className="font-black text-green-100">${lastSale.total.toFixed(2)}</span>
+            {/* Thermal Receipt Paper Card */}
+            <div className="px-5 py-2 overflow-y-auto flex-1">
+              <div className="bg-white text-zinc-900 rounded-xl p-4 shadow-inner text-left font-mono text-xs leading-tight border border-zinc-300 select-none">
+                {/* Store Header */}
+                <div className="text-center font-black text-zinc-950 text-base font-sans tracking-tight uppercase mb-0.5">
+                  {lastSale.storeName || "My Business"}
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-green-300/70 font-semibold">Paid</span>
-                  <span className="font-black text-green-100">${lastSale.paid.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-green-300/70 font-semibold">Change</span>
-                  <span className="font-black text-green-300">${lastSale.change.toFixed(2)}</span>
-                </div>
-              </div>
+                {lastSale.locationName && (
+                  <div className="text-center text-[11px] text-zinc-700">{lastSale.locationName}</div>
+                )}
+                <div className="text-center text-[10px] text-zinc-600">{lastSale.date || ""}</div>
+                <div className="text-center text-[10px] text-zinc-600">Served by {lastSale.serverName || "Staff"}</div>
 
-              <div className="space-y-1.5 max-h-32 overflow-y-auto text-left">
-                {lastSale.items.map((it, idx) => (
-                  <div key={idx} className="flex justify-between text-xs px-1">
-                    <span className="font-semibold text-foreground/80">
-                      {it.qty}x {it.name}
-                    </span>
-                    <span className="font-black text-foreground">
-                      ${(it.qty * it.price).toFixed(2)}
-                    </span>
+                <div className="border-t border-dashed border-zinc-400 my-2" />
+
+                {/* Order Header */}
+                <div className="text-center font-black text-base tracking-wide text-zinc-950 my-1">
+                  ORDER #{lastSale.orderNumber || 1}
+                </div>
+
+                <div className="border-t border-dashed border-zinc-400 my-2" />
+
+                {/* Items */}
+                <div className="space-y-1 my-2">
+                  {lastSale.items.map((it, idx) => (
+                    <div key={idx} className="flex justify-between items-start">
+                      <span className="font-semibold text-zinc-900 pr-2 break-all">
+                        {it.qty}x {it.name}
+                      </span>
+                      <span className="font-bold text-zinc-950 whitespace-nowrap">
+                        ${(it.qty * it.price).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="border-t border-dashed border-zinc-400 my-2" />
+
+                {/* Subtotal & Total */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-zinc-700">
+                    <span>Subtotal</span>
+                    <span>${lastSale.subtotal.toFixed(2)}</span>
                   </div>
-                ))}
+                  {lastSale.tax != null && lastSale.tax > 0 && (
+                    <div className="flex justify-between text-zinc-700">
+                      <span>Tax</span>
+                      <span>${lastSale.tax.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-black text-sm text-zinc-950 pt-0.5">
+                    <span>Total</span>
+                    <span>${lastSale.total.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-dashed border-zinc-400 my-2" />
+
+                {/* Payment Breakdown */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-zinc-700">
+                    <span>{lastSale.payMode === "credit" ? "Credit" : "Cash Tendered"}</span>
+                    <span>${lastSale.paid.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-zinc-900">
+                    <span>Change</span>
+                    <span>${lastSale.change.toFixed(2)}</span>
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="px-6 pb-6 pt-2 space-y-3">
+
+            {/* Actions */}
+            <div className="px-6 pb-5 pt-2 space-y-2 shrink-0">
               <button
                 onClick={handlePrintAndDone}
                 disabled={printingReceipt}
-                className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground"
+                className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
                 style={{ background: "var(--gradient-hero)" }}
               >
                 {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : "🖨️ Print & Done"}
               </button>
               <button
                 onClick={handleSaleDone}
-                className="w-full h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95"
+                className="w-full h-11 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95 text-foreground/80"
               >
                 Done
               </button>

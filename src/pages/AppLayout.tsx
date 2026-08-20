@@ -8,7 +8,7 @@ import { usePushNotifications } from "@/lib/usePushNotifications";
 import { useTranslation } from "@/lib/i18n";
 import { useOffline } from "@/lib/OfflineProvider";
 import { OfflinePageGuard } from "@/components/OfflinePageGuard";
-import { Loader2, Wine, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw } from "lucide-react";
+import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const DEMO_EMAILS = ["isabel@gmail.com", "renard.sankersingh@gmail.com"];
@@ -199,12 +199,12 @@ export default function AppLayout() {
         // Manager: Items, Stock Check, Customers, Manager dashboard
         { to: "/products",    label: t("products_title", "Items"),      icon: Package      },
         { to: "/stock-check", label: t("stock_check", "Stock Check"),   icon: ClipboardList },
-        { to: "/credit",      label: t("customers_title", "Customers"), icon: Receipt      },
+        { to: "/credit",      label: t("customers_title", "Customers"), icon: User         },
         { to: "/manager",     label: t("manage", "Manage"),             icon: TrendingDown },
       ]
     : [
-        { to: "/register",  label: t("store", "Store"),                  icon: Wine       },
-        { to: "/credit",    label: t("customers_title", "Customers"),  icon: Receipt    },
+        { to: "/register",  label: t("store", "Store"),                  icon: ShoppingCart },
+        { to: "/credit",    label: t("customers_title", "Customers"),  icon: User         },
         ...(isOwner ? [{ to: "/products",    label: t("products_title", "Items"),    icon: Package      }] : []),
         ...(isOwner ? [{ to: "/stock-check", label: t("stock_check", "Stock Check"), icon: ClipboardList }] : []),
         ...(isOwner ? [{ to: "/categories",  label: t("categories", "Categories"),   icon: LayoutGrid   }] : []),
