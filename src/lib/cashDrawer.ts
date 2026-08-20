@@ -109,7 +109,7 @@ function openViaNative(cfg: CashDrawerConfig): Promise<CashDrawerResult> {
     return Promise.resolve({
       opened: false,
       method: "none" as CashDrawerMethod,
-      error: "CashDrawer native plugin not registered (rebuild the Android app)",
+      error: "CashDrawer native plugin not registered — rebuild the Android app or connect a USB/WebSerial printer",
     });
   }
   return api.open({
@@ -182,7 +182,12 @@ export async function openCashDrawer(options?: CashDrawerOptions): Promise<CashD
   const cfg = resolveConfig(options);
   try {
     if (Capacitor.isNativePlatform()) {
-      return await openViaNative(cfg);
+      const nativeResult = await openViaNative(cfg);
+      if (nativeResult.opened) return nativeResult;
+      if (nativeResult.error?.includes("not registered")) {
+        return await openViaWebSerial(cfg);
+      }
+      return nativeResult;
     }
     return await openViaWebSerial(cfg);
   } catch (e: unknown) {
