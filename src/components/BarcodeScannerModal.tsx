@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, X, Camera, RefreshCw, Flashlight, FlashlightOff, CheckCircle2, Aperture } from "lucide-react";
+import { Loader2, X, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { playBeep } from "@/lib/playBeep";
 
@@ -10,139 +10,12 @@ type BarcodeScannerModalProps = {
 };
 
 export function BarcodeScannerModal({ open, onClose, onScan }: BarcodeScannerModalProps) {
-  const [mode, setMode] = useState<"external" | "camera">("external");
-  const [scanning, setScanning] = useState(false);
-  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("user");
-  const [torchOn, setTorchOn] = useState(false);
-  const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [externalDetected, setExternalDetected] = useState(false);
-  const [flash, setFlash] = useState(false);
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [snapResult, setSnapResult] = useState<string | null>(null);
-
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const readerRef = useRef<any>(null);
-  const controlsRef = useRef<{ stop: () => void } | null>(null);
-  const torchTrackRef = useRef<MediaStreamTrack | null>(null);
+  const [lastScanned, setLastScanned] = useState<string | null>(null);
   const keyboardBufferRef = useRef<string>("");
 
-  const stopScan = () => {
-    if (controlsRef.current) {
-      try { controlsRef.current.stop(); } catch {}
-      controlsRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    readerRef.current = null;
-    setScanning(false);
-    setTorchOn(false);
-    torchTrackRef.current = null;
-  };
-
-  const startCamera = async () => {
-    stopScan();
-    setScanning(true);
-    setTorchOn(false);
-    setCapturedImage(null);
-    setSnapResult(null);
-    try {
-      const { BrowserMultiFormatReader } = await import("@zxing/browser");
-      const reader = new BrowserMultiFormatReader();
-      readerRef.current = reader;
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: cameraFacing, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      const track = stream.getVideoTracks()[0];
-      torchTrackRef.current = track;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-    } catch (e) {
-      console.error("Camera error:", e);
-      toast.error("Cannot access camera");
-      setScanning(false);
-    }
-  };
-
-  const snapBarcode = async () => {
-    if (!videoRef.current || !readerRef.current) return;
-    
-    // Flash effect
-    setFlash(true);
-    setTimeout(() => setFlash(false), 150);
-    
-    try {
-      // Draw current video frame to canvas for a clean snapshot
-      const canvas = document.createElement("canvas");
-      canvas.width = videoRef.current.videoWidth || 1920;
-      canvas.height = videoRef.current.videoHeight || 1080;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      
-      // Draw the video frame
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      
-      // Show captured image preview
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
-      setCapturedImage(dataUrl);
-      
-      // Decode from the clean canvas snapshot
-      try {
-        const result = readerRef.current.decodeFromCanvas(canvas);
-        const text = result.getText();
-        if (text) {
-          setSnapResult(text);
-          setLastScanned(text);
-          onScan(text);
-          playBeep();
-          window.dispatchEvent(new CustomEvent("pospro-raw-barcode", { detail: text }));
-          setTimeout(() => {
-            setLastScanned(null);
-            setSnapResult(null);
-            setCapturedImage(null);
-          }, 1500);
-        } else {
-          setSnapResult("not_found");
-          setTimeout(() => setSnapResult(null), 1500);
-        }
-      } catch (e) {
-        console.warn("Snap decode failed:", e);
-        setSnapResult("not_found");
-        setTimeout(() => setSnapResult(null), 1500);
-      }
-    } catch (e) {
-      console.error("Snap error:", e);
-      setFlash(false);
-    }
-  };
-
-  const toggleTorch = async () => {
-    if (!torchTrackRef.current) return;
-    try {
-      const newState = !torchOn;
-      await (torchTrackRef.current as MediaStreamTrack).applyConstraints({ advanced: [{ torch: newState } as any] });
-      setTorchOn(newState);
-    } catch (e) {
-      console.warn("Torch not supported:", e);
-      toast.error("Flashlight not available on this device");
-    }
-  };
-
-  const switchCamera = () => {
-    const newFacing = cameraFacing === "user" ? "environment" : "user";
-    setCameraFacing(newFacing);
-  };
-
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (mode !== "external" || !open) return;
+    if (!open) return;
     if (e.key === "Enter") {
       const code = keyboardBufferRef.current.trim();
       if (code) {
@@ -192,34 +65,20 @@ export function BarcodeScannerModal({ open, onClose, onScan }: BarcodeScannerMod
 
   useEffect(() => {
     if (!open) {
-      stopScan();
-      setMode("external");
       setExternalDetected(false);
       setLastScanned(null);
-      setTorchOn(false);
-      setFlash(false);
-      setCapturedImage(null);
-      setSnapResult(null);
+      keyboardBufferRef.current = "";
       return;
     }
 
     const initScanner = async () => {
       const hasExternal = await tryExternalScanner();
-      if (hasExternal) {
-        setMode("external");
-      } else {
+      if (!hasExternal) {
         const granted = await requestHidPermission();
-        if (granted) {
-          const hasExt = await tryExternalScanner();
-          if (hasExt) {
-            setMode("external");
-          } else {
-            setMode("camera");
-            await startCamera();
-          }
-        } else {
-          setMode("camera");
-          await startCamera();
+        if (!granted) {
+          toast.error("No external scanner detected. Please connect a POS scanner.");
+          onClose();
+          return;
         }
       }
     };
@@ -228,16 +87,9 @@ export function BarcodeScannerModal({ open, onClose, onScan }: BarcodeScannerMod
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      stopScan();
+      keyboardBufferRef.current = "";
     };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (mode === "camera" && !streamRef.current) {
-      startCamera();
-    }
-  }, [mode, open, cameraFacing]);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -247,17 +99,17 @@ export function BarcodeScannerModal({ open, onClose, onScan }: BarcodeScannerMod
       <div className="flex items-center justify-between px-4 h-12 bg-black/80 backdrop-blur shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-white font-black text-sm">
-            {mode === "external" ? (externalDetected ? "Scanner Ready" : "No Scanner Detected") : "Camera Scanner"}
+            {externalDetected ? "Scanner Ready" : "Waiting for Scanner..."}
           </span>
-          {mode === "camera" && scanning && !capturedImage && (
+          {externalDetected && (
             <span className="flex items-center gap-1 text-[10px] text-green-400 font-bold">
               <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
-              Ready
+              Connected
             </span>
           )}
         </div>
         <button
-          onClick={() => { stopScan(); onClose(); }}
+          onClick={onClose}
           className="h-8 w-8 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition"
         >
           <X className="h-5 w-5" />
@@ -266,148 +118,39 @@ export function BarcodeScannerModal({ open, onClose, onScan }: BarcodeScannerMod
 
       {/* Scanner Area */}
       <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
-        {mode === "camera" ? (
-          <>
-            <video 
-              ref={videoRef} 
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-150 ${capturedImage ? "opacity-0" : "opacity-100"}`} 
-              playsInline 
-              muted 
-            />
-            {/* Captured image preview */}
-            {capturedImage && (
-              <img 
-                src={capturedImage} 
-                className="absolute inset-0 w-full h-full object-contain" 
-                alt="captured" 
-              />
-            )}
-            {/* Scan overlay */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-64 h-64 border-2 border-white/60 rounded-2xl relative">
-                <div className="absolute inset-0 border-4 border-primary/80 rounded-2xl" />
-                <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-primary rounded-tl-lg" />
-                <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-primary rounded-tr-lg" />
-                <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-primary rounded-bl-lg" />
-                <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-primary rounded-br-lg" />
+        <div className="flex flex-col items-center justify-center gap-4 p-6 text-center">
+          {externalDetected ? (
+            <>
+              <div className="h-16 w-16 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center">
+                <CheckCircle2 className="h-8 w-8 text-green-400" />
               </div>
+              <p className="text-white font-black text-lg">External Scanner Ready</p>
+              <p className="text-white/60 text-sm">Scan a barcode now using your terminal scanner</p>
+              <p className="text-white/40 text-xs">The scanner will act as a keyboard input</p>
+            </>
+          ) : (
+            <>
+              <div className="h-16 w-16 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center">
+                <Loader2 className="h-8 w-8 text-amber-400 animate-spin" />
+              </div>
+              <p className="text-white font-black text-lg">Looking for Scanner...</p>
+              <p className="text-white/60 text-sm">Please connect your external barcode scanner</p>
+              <p className="text-white/40 text-xs">Or scan any barcode to auto-connect</p>
+            </>
+          )}
+
+          {lastScanned && (
+            <div className="mt-4 bg-green-500 text-white px-4 py-2 rounded-xl font-black text-sm shadow-lg">
+              Scanned: {lastScanned}
             </div>
-            {/* Flash overlay */}
-            {flash && (
-              <div className="absolute inset-0 bg-white/90 z-10" />
-            )}
-            {/* Snap result feedback */}
-            {snapResult && (
-              <div className="absolute bottom-8 left-0 right-0 flex justify-center z-20">
-                <div className={`px-4 py-2 rounded-xl font-black text-sm shadow-lg ${snapResult === "not_found" ? "bg-red-500 text-white" : "bg-green-500 text-white"}`}>
-                  {snapResult === "not_found" ? "No barcode found — try again" : `Scanned: ${snapResult}`}
-                </div>
-              </div>
-            )}
-            {lastScanned && !snapResult && (
-              <div className="absolute bottom-8 left-0 right-0 flex justify-center z-20">
-                <div className="bg-green-500 text-white px-4 py-2 rounded-xl font-black text-sm shadow-lg">
-                  Scanned: {lastScanned}
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="flex flex-col items-center justify-center gap-4 p-6 text-center">
-            {externalDetected ? (
-              <>
-                <div className="h-16 w-16 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center">
-                  <CheckCircle2 className="h-8 w-8 text-green-400" />
-                </div>
-                <p className="text-white font-black text-lg">External Scanner Detected</p>
-                <p className="text-white/60 text-sm">Scan a barcode now using your terminal scanner</p>
-              </>
-            ) : (
-              <>
-                <div className="h-16 w-16 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center">
-                  <span className="text-3xl">📷</span>
-                </div>
-                <p className="text-white font-black text-lg">No External Scanner</p>
-                <p className="text-white/60 text-sm">Use camera to scan barcodes</p>
-                <button
-                  onClick={async () => { setMode("camera"); await startCamera(); }}
-                  className="mt-2 px-6 h-12 rounded-2xl font-black text-sm text-primary-foreground transition active:scale-95"
-                  style={{ background: "var(--gradient-hero)" }}
-                >
-                  Open Camera Scanner
-                </button>
-              </>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Bottom Controls */}
-      <div className="shrink-0 bg-black/90 backdrop-blur border-t border-white/10 px-4 py-3 space-y-3">
-        {mode === "camera" && (
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={switchCamera}
-              className="h-12 w-12 rounded-xl bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition active:scale-95"
-              title="Switch camera"
-            >
-              <RefreshCw className="h-5 w-5" />
-            </button>
-            <button
-              onClick={snapBarcode}
-              disabled={!scanning || !!capturedImage}
-              className="h-14 w-14 rounded-full bg-white text-black flex items-center justify-center hover:bg-white/90 transition active:scale-95 disabled:opacity-50 shadow-lg"
-              title="Snap barcode"
-            >
-              <Aperture className="h-7 w-7" />
-            </button>
-            <button
-              onClick={toggleTorch}
-              className={`h-12 w-12 rounded-xl flex items-center justify-center transition active:scale-95 ${
-                torchOn ? "bg-amber-500 text-black" : "bg-white/10 text-white hover:bg-white/20"
-              }`}
-              title={torchOn ? "Turn off flashlight" : "Turn on flashlight"}
-            >
-              {torchOn ? <Flashlight className="h-5 w-5" /> : <FlashlightOff className="h-5 w-5" />}
-            </button>
-          </div>
-        )}
-
-        {/* Mode toggle */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={async () => {
-              stopScan();
-              const hasExt = await tryExternalScanner();
-              if (hasExt || await requestHidPermission()) {
-                setMode("external");
-              } else {
-                setMode("camera");
-                await startCamera();
-              }
-            }}
-            className={`flex-1 h-11 rounded-xl font-black text-xs transition active:scale-95 ${
-              mode === "external"
-                ? "bg-primary text-primary-foreground"
-                : "bg-white/10 text-white hover:bg-white/20"
-            }`}
-          >
-            External Scanner
-          </button>
-          <button
-            onClick={async () => { setMode("camera"); await startCamera(); }}
-            className={`flex-1 h-11 rounded-xl font-black text-xs transition active:scale-95 ${
-              mode === "camera"
-                ? "bg-primary text-primary-foreground"
-                : "bg-white/10 text-white hover:bg-white/20"
-            }`}
-          >
-            Camera
-          </button>
-        </div>
-
+      <div className="shrink-0 bg-black/90 backdrop-blur border-t border-white/10 px-4 py-3">
         <button
-          onClick={() => { stopScan(); onClose(); }}
+          onClick={onClose}
           className="w-full h-12 rounded-2xl bg-white/10 font-black text-sm text-white hover:bg-white/20 transition active:scale-95"
         >
           Done

@@ -2101,7 +2101,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                   <ImagePlus className="h-5 w-5 mr-2" /> Upload
                 </Button>
                 <div className="h-2" />
-                <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => document.dispatchEvent(new Event("pospro-open-scanner"))}>
+                <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => window.dispatchEvent(new Event("pospro-open-scanner"))}>
                   <span className="mr-2">🏷️</span> Add Barcode
                 </Button>
               </div>
