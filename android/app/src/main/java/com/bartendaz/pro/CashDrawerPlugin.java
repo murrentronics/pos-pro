@@ -3,6 +3,7 @@ package com.pospro.app;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.hardware.usb.UsbConstants;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbEndpoint;
@@ -36,7 +37,6 @@ public class CashDrawerPlugin extends Plugin {
     // ESC/POS open cash drawer #1: ESC p m t s  =>  1B 70 00 19 19
     private static final byte[] DEFAULT_PULSE = { 0x1b, 0x70, 0x00, 0x19, 0x19 };
 
-    @PluginMethod
     public void open(PluginCall call) {
         try {
             int vid = call.getInt("vid", -1);
@@ -79,7 +79,7 @@ public class CashDrawerPlugin extends Plugin {
 
             // First time the OS requires explicit USB permission from the user.
             if (!um.hasPermission(device)) {
-                Intent intent = new Intent(UsbManager.ACTION_USB_PERMISSION);
+                Intent intent = new Intent("android.hardware.usb.action.USB_PERMISSION");
                 intent.setPackage(getContext().getPackageName());
                 PendingIntent pi = PendingIntent.getBroadcast(
                         getContext(), 0, intent,
@@ -142,8 +142,8 @@ public class CashDrawerPlugin extends Plugin {
     private static UsbEndpoint getBulkOutEndpoint(UsbInterface intf) {
         for (int i = 0; i < intf.getEndpointCount(); i++) {
             UsbEndpoint ep = intf.getEndpoint(i);
-            if (ep.getType() == UsbEndpoint.USB_ENDPOINT_XFER_BULK
-                    && ep.getDirection() == UsbEndpoint.USB_DIR_OUT) {
+            if (ep.getType() == UsbConstants.USB_ENDPOINT_XFER_BULK
+                    && ep.getDirection() == UsbConstants.USB_DIR_OUT) {
                 return ep;
             }
         }

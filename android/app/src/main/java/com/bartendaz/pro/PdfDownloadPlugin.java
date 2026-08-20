@@ -9,7 +9,6 @@ import android.util.Base64;
 
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
-import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.File;
@@ -27,7 +26,6 @@ import java.io.FileOutputStream;
 @CapacitorPlugin(name = "PdfDownload")
 public class PdfDownloadPlugin extends Plugin {
 
-    @PluginMethod
     public void downloadPdf(PluginCall call) {
         String base64 = call.getString("base64");
         String filename = call.getString("filename", "statement.pdf");
