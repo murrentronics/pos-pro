@@ -272,7 +272,7 @@ export default function AppLayout() {
             </button>
             <button
               type="button"
-              onClick={() => setShowScannerModal(true)}
+              onClick={() => document.dispatchEvent(new Event("pospro-toggle-scanner-panel"))}
               className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition whitespace-nowrap"
               style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
             >
@@ -288,7 +288,7 @@ export default function AppLayout() {
               style={{ background: "var(--gradient-hero)" }}
             >
               {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-              {t("menu", "Menu")}
+              <span className="hidden sm:inline">{t("menu", "Menu")}</span>
             </button>
 
             {/* ── CASHIER MENU — full-width big-button grid + brown backdrop ── */}

@@ -335,7 +335,7 @@ function AppLayout() {
               style={{ background: "var(--gradient-hero)" }}
             >
               {menuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-              Menu
+              <span className="hidden sm:inline">Menu</span>
             </button>
 
             {menuOpen && (

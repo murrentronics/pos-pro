@@ -937,6 +937,108 @@ export default function RegisterPage() {
     return () => window.removeEventListener("pospro-barcode-scan", handler);
   }, []);
 
+  // ── Scanner panel state (left side of register page) ──────────────────────
+  const [showScannerPanel, setShowScannerPanel] = useState(false);
+  const [scannerExternalDetected, setScannerExternalDetected] = useState(false);
+  const [scannerLastScanned, setScannerLastScanned] = useState<string | null>(null);
+  const scannerKeyboardBuffer = useRef<string>("");
+
+  useEffect(() => {
+    const toggleHandler = () => setShowScannerPanel((prev) => !prev);
+    window.addEventListener("pospro-toggle-scanner-panel", toggleHandler);
+    return () => window.removeEventListener("pospro-toggle-scanner-panel", toggleHandler);
+  }, []);
+
+  const tryExternalScanner = async (): Promise<boolean> => {
+    try {
+      if ("hid" in navigator) {
+        const devices = await (navigator as any).hid.getDevices();
+        if (devices && devices.length > 0) {
+          setScannerExternalDetected(true);
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn("WebHID not available:", e);
+    }
+    return false;
+  };
+
+  const requestHidPermission = async (): Promise<boolean> => {
+    try {
+      if ("hid" in navigator) {
+        const devices = await (navigator as any).hid.requestDevice({ filters: [] });
+        if (devices && devices.length > 0) {
+          setScannerExternalDetected(true);
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn("HID permission denied:", e);
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    if (!showScannerPanel) return;
+    const initScanner = async () => {
+      const hasExternal = await tryExternalScanner();
+      if (!hasExternal) {
+        await requestHidPermission();
+      }
+    };
+    initScanner();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        const code = scannerKeyboardBuffer.current.trim();
+        if (code) {
+          setScannerLastScanned(code);
+          playBeep();
+          window.dispatchEvent(new CustomEvent("pospro-raw-barcode", { detail: code }));
+          setTimeout(() => setScannerLastScanned(null), 1500);
+          scannerKeyboardBuffer.current = "";
+        }
+        return;
+      }
+      if (e.key.length === 1) {
+        scannerKeyboardBuffer.current += e.key;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showScannerPanel]);
+
+  useEffect(() => {
+    if (!showScannerPanel) return;
+    const handler = async (e: Event) => {
+      const barcode = (e as CustomEvent).detail;
+      if (!barcode) return;
+      const { data: product } = await (supabase as any)
+        .from("products")
+        .select("*")
+        .eq("barcode", barcode)
+        .eq("owner_id", ownerId)
+        .maybeSingle();
+      if (!product) {
+        toast.error("Product not found for barcode: " + barcode);
+        return;
+      }
+      addToCartRef.current(product);
+    };
+    window.addEventListener("pospro-raw-barcode", handler);
+    return () => window.removeEventListener("pospro-raw-barcode", handler);
+  }, [showScannerPanel, ownerId]);
+
+  const handleChangeScannerDevice = async () => {
+    setScannerExternalDetected(false);
+    const granted = await requestHidPermission();
+    if (!granted) {
+      toast.error("No scanner selected. Please connect a POS scanner.");
+    }
+  };
+
   // ── Store business name & Bar session state — blocks sales when bar is closed ──
   const [storeBusinessName, setStoreBusinessName] = useState<string>("");
   const [barSessionStart, setBarSessionStart] = useState<string | null>(null);
@@ -1563,11 +1665,15 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (barEditModeRef.current) return;
+    if (lastTabCategory.current === category) {
+      lastTabCategory.current = null;
+      return;
+    }
     const sorted =
       allCategorySorted[category] ?? applyBarSort(products, category, barSortMapRef.current);
     barOrderedRef.current = sorted;
     setBarOrdered(sorted);
-  }, [products, barSortMap]); // category changes are handled synchronously in the tab click handler
+  }, [products, barSortMap, category, storeCategories]);
 
   // Track cart length via ref so handlers always see live value
   useEffect(() => {
@@ -1637,6 +1743,11 @@ export default function RegisterPage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   (window as any).__pospro_addToCart = addToCart;
 
+  const addToCartRef = useRef(addToCart);
+  addToCartRef.current = addToCart;
+
+  const lastTabCategory = useRef<string | null>(null);
+
   const dec = useCallback(
     (id: string) =>
       setCart((c) =>
@@ -1651,7 +1762,7 @@ export default function RegisterPage() {
   const [varPickerProduct, setVarPickerProduct] = useState<Product | null>(null);
 
   return (
-    <>
+    <React.Fragment>
       {/* ── Float Modal (Open Store) ── */}
       {showFloatModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
@@ -1847,6 +1958,7 @@ export default function RegisterPage() {
                   allCategorySorted[cat.id] ??
                   applyBarSort(products, cat.id, barSortMapRef.current);
                 barOrderedRef.current = sorted;
+                lastTabCategory.current = cat.id;
                 setCategory(cat.id);
                 setBarOrdered(sorted);
                 document.querySelector("main")?.scrollTo({ top: 0, behavior: "instant" });
@@ -1871,6 +1983,7 @@ export default function RegisterPage() {
                   allCategorySorted[cat.id] ??
                   applyBarSort(products, cat.id, barSortMapRef.current);
                 barOrderedRef.current = sorted;
+                lastTabCategory.current = cat.id;
                 setCategory(cat.id);
                 setBarOrdered(sorted);
                 document.querySelector("main")?.scrollTo({ top: 0, behavior: "instant" });
@@ -1888,14 +2001,74 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      {/* Items grid — bottom padding clears the fixed CASH + CREDIT buttons */}
-      <div className="pt-4 pb-36">
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      {/* Items grid + left scanner panel + right cart panel */}
+      <div className="flex gap-4 pt-4 pb-36">
+        {/* Left scanner panel */}
+        {showScannerPanel && (
+          <div className="w-72 shrink-0 flex flex-col bg-background/95 backdrop-blur border-r border-border">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <h2 className="font-black text-sm">Scanner</h2>
+              <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+              {scannerExternalDetected ? (
+                <div className="text-center space-y-2">
+                  <div className="h-12 w-12 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center mx-auto">
+                    <CheckCircle2 className="h-6 w-6 text-green-400" />
+                  </div>
+                  <p className="text-xs font-black text-green-400">Scanner Connected</p>
+                  <p className="text-[10px] text-muted-foreground">Ready to scan items — they will appear in Current Order</p>
+                </div>
+              ) : (
+                <div className="text-center space-y-2">
+                  <div className="h-12 w-12 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center mx-auto">
+                    <Loader2 className="h-6 w-6 text-amber-400 animate-spin" />
+                  </div>
+                  <p className="text-xs font-black text-amber-400">No Scanner</p>
+                  <p className="text-[10px] text-muted-foreground">Connect external scanner or scan barcode to auto-connect</p>
+                </div>
+              )}
+
+              {scannerLastScanned && (
+                <div className="bg-green-500 text-white px-3 py-2 rounded-xl font-black text-xs shadow-lg text-center">
+                  Scanned: {scannerLastScanned}
+                </div>
+              )}
+
+              <div className="text-center pt-2">
+                <p className="text-[10px] text-muted-foreground">Scanned items appear in the Current Order panel on the right</p>
+              </div>
+            </div>
+            <div className="p-3 border-t border-border space-y-2">
+              {scannerExternalDetected && (
+                <button
+                  onClick={handleChangeScannerDevice}
+                  className="w-full h-9 rounded-xl text-[11px] font-black border border-border hover:bg-muted/30 transition"
+                >
+                  Change Device
+                </button>
+              )}
+              <button
+                onClick={() => setShowScannerPanel(false)}
+                className="w-full h-10 rounded-xl font-black text-xs text-primary-foreground shadow-lg active:scale-[0.98] transition"
+                style={{ background: "var(--gradient-hero)" }}
+              >
+                Done
+              </button>
+            </div>
           </div>
-        ) : (
-          <>
+        )}
+
+        {/* Items grid — bottom padding clears the fixed CASH + CREDIT buttons */}
+        <div className="flex-1 min-w-0">
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : (
+            <>
             {/* ── Edit mode instruction banner — sticky just below category tabs ── */}
             {barEditMode && (
               <div
@@ -2133,11 +2306,59 @@ export default function RegisterPage() {
         )}
       </div>
 
-      {/* Sticky CASH button — fixed at bottom */}
+      {/* Right cart panel — visible on md+ screens */}
+      <aside className="hidden md:flex flex-col w-72 shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] bg-background/95 backdrop-blur border-l border-border">
+        <div className="px-4 py-3 border-b border-border">
+          <h2 className="font-black text-sm">Current Order</h2>
+          <p className="text-[11px] text-muted-foreground">{cartCount} items · ${total.toFixed(2)}</p>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+          {cart.length === 0 ? (
+            <p className="text-center text-muted-foreground text-xs py-8">Cart is empty</p>
+          ) : (
+            cart.map((item) => (
+              <div key={item.id} className="flex items-center gap-2 p-2 rounded-xl border border-border/60 bg-muted/20">
+                <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center shrink-0 overflow-hidden">
+                  {item.image_url ? (
+                    <img src={item.image_url} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-sm">📷</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold truncate">{item.name}</p>
+                  <p className="text-[10px] text-muted-foreground">${Number(item.price).toFixed(2)} each</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => dec(item.id)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+                    <Minus className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="text-xs font-black w-5 text-center">{item.qty}</span>
+                  <button onClick={() => addToCart(item)} className="h-7 w-7 rounded-md flex items-center justify-center transition active:scale-95" style={{ background: "var(--gradient-hero)" }}>
+                    <Plus className="h-3.5 w-3.5 text-black" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        {cartCount > 0 && (
+          <div className="p-3 border-t border-border space-y-2">
+            <button
+              onClick={() => setCashOpen(true)}
+              className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"
+              style={{ background: "var(--gradient-hero)" }}
+            >
+              Place Order · ${total.toFixed(2)}
+            </button>
+          </div>
+        )}
+      </aside>
+
+      {/* Mobile: sticky bottom CASH button */}
       {cartCount > 0 && (
-        <div className="fixed inset-x-0 z-[26] px-4 pb-2 pointer-events-none" style={{ bottom: 8 }}>
+        <div className="md:hidden fixed inset-x-0 z-[26] px-4 pb-2 pointer-events-none" style={{ bottom: 8 }}>
           <div className="max-w-2xl mx-auto pointer-events-auto space-y-2">
-            {/* Place Order button */}
             <button
               onClick={() => setCashOpen(true)}
               className="w-full h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
@@ -2154,6 +2375,7 @@ export default function RegisterPage() {
           </div>
         </div>
       )}
+      </div>
 
       {cashOpen && (
         <CashOverlay
@@ -2396,7 +2618,7 @@ export default function RegisterPage() {
           </div>
         </div>
       )}
-    </>
+    </React.Fragment>
   );
 }
 
