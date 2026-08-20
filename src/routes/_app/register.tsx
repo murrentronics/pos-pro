@@ -6,9 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  Trash2, Minus, Plus, Loader2, X, CheckCircle2,
-} from "lucide-react";
+import { Trash2, Minus, Plus, Loader2, X, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { categoryIcon } from "@/lib/categories";
 import { useTranslation } from "@/lib/i18n";
@@ -16,14 +14,33 @@ import { useNetworkStatus } from "@/lib/useNetworkStatus";
 import { enqueue } from "@/lib/offlineQueue";
 import { useImageCache } from "@/lib/useImageCache";
 import { productImageUrl } from "@/lib/imageUrl";
+import { openCashDrawer } from "@/lib/cashDrawer";
+import { printReceipt, type ReceiptData } from "@/lib/receiptPrinter";
 import {
-  cacheProducts, getCachedProducts,
-  cacheBarSession, getCachedBarSession,
-  cacheCreditAccounts, getCachedCreditAccounts,
+  cacheProducts,
+  getCachedProducts,
+  cacheBarSession,
+  getCachedBarSession,
+  cacheCreditAccounts,
+  getCachedCreditAccounts,
   type CachedProduct,
 } from "@/lib/offlineCache";
 
-type ProdVariation = { id: string; name: string; price: number; sort_order: number };type Product = { id: string; name: string; price: number; cost_price?: number; image_url: string | null; category?: string; stock_qty?: number; units_per_item?: number; bottle_variations?: { key: string; label: string; units_consumed: number; price: number }[] | null; product_variations?: ProdVariation[] | null };
+type ProdVariation = { id: string; name: string; price: number; sort_order: number };
+type Product = {
+  id: string;
+  name: string;
+  price: number;
+  cost_price?: number;
+  image_url: string | null;
+  category?: string;
+  stock_qty?: number;
+  units_per_item?: number;
+  bottle_variations?:
+    | { key: string; label: string; units_consumed: number; price: number }[]
+    | null;
+  product_variations?: ProdVariation[] | null;
+};
 type CartItem = Product & { qty: number; _discount?: number; _originalPrice?: number };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,19 +62,28 @@ type ProductCardProps = {
   onDec: (id: string) => void;
   onRemoveVariant: (cartKey: string) => void;
 };
-const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgSrc, variantLines, onAdd, onRemove, onDec, onRemoveVariant }: ProductCardProps) {
-  const hasVariants  = variantLines.length > 0;
+const ProductCard = React.memo(function ProductCard({
+  p,
+  inCartQty,
+  resolvedImgSrc,
+  variantLines,
+  onAdd,
+  onRemove,
+  onDec,
+  onRemoveVariant,
+}: ProductCardProps) {
+  const hasVariants = variantLines.length > 0;
   // Total units across variation lines (for stock remaining calc)
-  const variantQty   = variantLines.reduce((s, v) => s + v.qty, 0);
-  const totalInCart  = inCartQty + variantQty;
+  const variantQty = variantLines.reduce((s, v) => s + v.qty, 0);
+  const totalInCart = inCartQty + variantQty;
   const remainingQty = (p.stock_qty ?? 1) - totalInCart;
-  const outOfStock  = (p.stock_qty ?? 1) === 0 || remainingQty <= 0;
-  const noPrice     = !p.price || Number(p.price) <= 0;
-  const noCost      = !p.cost_price || Number(p.cost_price) <= 0;
-  const incomplete  = noPrice || noCost;
-  const inCart      = inCartQty > 0;
+  const outOfStock = (p.stock_qty ?? 1) === 0 || remainingQty <= 0;
+  const noPrice = !p.price || Number(p.price) <= 0;
+  const noCost = !p.cost_price || Number(p.cost_price) <= 0;
+  const incomplete = noPrice || noCost;
+  const inCart = inCartQty > 0;
   // Card is "active" (highlighted border) if either base or variants are in cart
-  const isActive    = inCart || hasVariants;
+  const isActive = inCart || hasVariants;
   return (
     <div data-bar-id={p.id} className="relative">
       <button
@@ -86,8 +112,10 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
               }}
             />
           ) : null}
-          <div className="absolute inset-0 items-center justify-center text-4xl"
-            style={{ display: p.image_url ? "none" : "flex" }}>
+          <div
+            className="absolute inset-0 items-center justify-center text-4xl"
+            style={{ display: p.image_url ? "none" : "flex" }}
+          >
             {categoryIcon(p.category ?? "drinks")}
           </div>
           {p.stock_qty !== undefined && !outOfStock && (
@@ -97,7 +125,10 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
           )}
           {inCart && (
             <button
-              onClick={(e) => { e.stopPropagation(); onRemove(p.id); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove(p.id);
+              }}
               className="absolute top-1.5 right-1.5 h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition text-black shadow z-10"
               style={{ background: "#dc2626" }}
             >
@@ -105,31 +136,42 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
             </button>
           )}
           {inCart && (
-            <div className="absolute top-10 left-0 right-0 flex items-center justify-center gap-4 py-3"
-              style={{ background: "rgba(0,0,0,0.75)" }}>
+            <div
+              className="absolute top-10 left-0 right-0 flex items-center justify-center gap-4 py-3"
+              style={{ background: "rgba(0,0,0,0.75)" }}
+            >
               <button
-                onClick={(e) => { e.stopPropagation(); onDec(p.id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDec(p.id);
+                }}
                 className="h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition"
                 style={{ background: "#ef4444" }}
               >
                 <Minus className="h-4 w-4 text-black" />
               </button>
-              <div className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-black text-black"
-                style={{ background: "var(--gradient-hero)" }}>
+              <div
+                className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-black text-black"
+                style={{ background: "var(--gradient-hero)" }}
+              >
                 {inCartQty}
               </div>
             </div>
           )}
           {/* ── Variation badges — shown when variant lines are in cart ── */}
           {hasVariants && !inCart && (
-            <div className="absolute inset-0 flex flex-col justify-end pointer-events-none"
-              style={{ background: "linear-gradient(to top, rgba(0,0,0,0.82) 0%, transparent 55%)" }}>
+            <div
+              className="absolute inset-0 flex flex-col justify-end pointer-events-none"
+              style={{
+                background: "linear-gradient(to top, rgba(0,0,0,0.82) 0%, transparent 55%)",
+              }}
+            >
               <div className="px-1.5 pb-1.5 flex flex-col gap-0.5 pointer-events-auto">
                 {variantLines.map((v) => {
                   // Extract the variant label from the cart item name: "Product (Variant)" → "Variant"
                   const parenMatch = v.name.match(/\(([^)]+)\)$/);
-                  const dashMatch  = v.name.match(/—\s*(.+)$/);
-                  const label      = parenMatch?.[1] ?? dashMatch?.[1] ?? v.name;
+                  const dashMatch = v.name.match(/—\s*(.+)$/);
+                  const label = parenMatch?.[1] ?? dashMatch?.[1] ?? v.name;
                   const shortLabel = label.length > 10 ? label.slice(0, 9) + "…" : label;
                   return (
                     <div
@@ -142,7 +184,10 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
                       </span>
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); onRemoveVariant(v.id); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemoveVariant(v.id);
+                        }}
                         className="h-4 w-4 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition"
                         style={{ background: "rgba(0,0,0,0.35)" }}
                       >
@@ -156,12 +201,14 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
           )}
           {/* When both base qty AND variants in cart, show variant badges above the base stepper overlay */}
           {hasVariants && inCart && (
-            <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-0.5 px-1.5 pb-1"
-              style={{ zIndex: 5 }}>
+            <div
+              className="absolute bottom-0 left-0 right-0 flex flex-col gap-0.5 px-1.5 pb-1"
+              style={{ zIndex: 5 }}
+            >
               {variantLines.map((v) => {
                 const parenMatch = v.name.match(/\(([^)]+)\)$/);
-                const dashMatch  = v.name.match(/—\s*(.+)$/);
-                const label      = parenMatch?.[1] ?? dashMatch?.[1] ?? v.name;
+                const dashMatch = v.name.match(/—\s*(.+)$/);
+                const label = parenMatch?.[1] ?? dashMatch?.[1] ?? v.name;
                 const shortLabel = label.length > 10 ? label.slice(0, 9) + "…" : label;
                 return (
                   <div
@@ -174,7 +221,10 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
                     </span>
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); onRemoveVariant(v.id); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveVariant(v.id);
+                      }}
                       className="h-4 w-4 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition"
                       style={{ background: "rgba(0,0,0,0.35)" }}
                     >
@@ -188,7 +238,9 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
           {outOfStock && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/75 backdrop-blur-[1px]">
               <div className="bg-red-600 rounded-xl px-2 py-1 shadow-lg">
-                <span className="text-white text-[10px] font-black uppercase tracking-wider leading-none">Out of Stock</span>
+                <span className="text-white text-[10px] font-black uppercase tracking-wider leading-none">
+                  Out of Stock
+                </span>
               </div>
             </div>
           )}
@@ -203,13 +255,28 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
           )}
           {!outOfStock && !incomplete && !inCart && remainingQty >= 1 && remainingQty <= 5 && (
             <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full bg-red-600 shadow">
-              <span className="text-[9px] font-black uppercase tracking-wide text-white leading-none">Low</span>
+              <span className="text-[9px] font-black uppercase tracking-wide text-white leading-none">
+                Low
+              </span>
             </div>
           )}
         </div>
-        <div className="px-1.5 py-1.5 border-t border-border/30" style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.10)", borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)" }}>
-          <div className="font-bold text-[11px] truncate leading-tight" style={{ color: "var(--primary)" }}>{p.name}</div>
-          <div className="font-black text-xs mt-0.5" style={{ color: "var(--primary)" }}>${Number(p.price).toFixed(2)}</div>
+        <div
+          className="px-1.5 py-1.5 border-t border-border/30"
+          style={{
+            background: "rgba(var(--primary-rgb,251 146 60)/0.10)",
+            borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)",
+          }}
+        >
+          <div
+            className="font-bold text-[11px] truncate leading-tight"
+            style={{ color: "var(--primary)" }}
+          >
+            {p.name}
+          </div>
+          <div className="font-black text-xs mt-0.5" style={{ color: "var(--primary)" }}>
+            ${Number(p.price).toFixed(2)}
+          </div>
         </div>
       </button>
     </div>
@@ -223,21 +290,27 @@ const ProductCard = React.memo(function ProductCard({ p, inCartQty, resolvedImgS
 // "Add to Order" commits all selected options to the cart as separate line items.
 type ItemModalLine = { cartKey: string; name: string; price: number; qty: number };
 function ItemModal({
-  product, onClose, onAddToOrder,
+  product,
+  onClose,
+  onAddToOrder,
 }: {
   product: Product;
   onClose: () => void;
   onAddToOrder: (lines: ItemModalLine[]) => void;
 }) {
   const bv = product.bottle_variations ?? [];
-  const groups: Array<{ id: string; name: string; options: Array<{ id: string; label: string; price: number }> }> =
-    bv.length === 1 && (bv[0] as any)._type === "vargroups"
-      ? (bv[0] as any).groups
-      : [];
-  const hasVarGroups = groups.length > 0 && groups.some((g) => g.options.some((o) => o.label.trim()));
+  const groups: Array<{
+    id: string;
+    name: string;
+    options: Array<{ id: string; label: string; price: number }>;
+  }> = bv.length === 1 && (bv[0] as any)._type === "vargroups" ? (bv[0] as any).groups : [];
+  const hasVarGroups =
+    groups.length > 0 && groups.some((g) => g.options.some((o) => o.label.trim()));
 
   // New eBay-style product_variations (qty + unit + price) — filter out the _unit: meta row
-  const prodVars = (product.product_variations ?? []).filter((v) => v.sort_order >= 0 && v.name.trim() && !v.name.startsWith("_unit:"));
+  const prodVars = (product.product_variations ?? []).filter(
+    (v) => v.sort_order >= 0 && v.name.trim() && !v.name.startsWith("_unit:"),
+  );
   const hasProdVars = prodVars.length > 0;
   // Base unit label from the _unit: row in product_variations (sort_order = -1)
   const baseUnitRow = (product.product_variations ?? []).find((v) => v.name.startsWith("_unit:"));
@@ -273,16 +346,30 @@ function ItemModal({
   const incOption = (cartKey: string) => {
     const cur = counts[cartKey] ?? 0;
     const multiplier = getMultiplier(cartKey);
-    if (totalSelected + multiplier > stock) { toast.error(`Only ${stock} in stock`); return; }
+    if (totalSelected + multiplier > stock) {
+      toast.error(`Only ${stock} in stock`);
+      return;
+    }
     setCounts((c) => ({ ...c, [cartKey]: cur + 1 }));
   };
   const decOption = (cartKey: string) => {
     const cur = counts[cartKey] ?? 0;
-    if (cur <= 1) { setCounts((c) => { const n = { ...c }; delete n[cartKey]; return n; }); return; }
+    if (cur <= 1) {
+      setCounts((c) => {
+        const n = { ...c };
+        delete n[cartKey];
+        return n;
+      });
+      return;
+    }
     setCounts((c) => ({ ...c, [cartKey]: cur - 1 }));
   };
   const clearOption = (cartKey: string) => {
-    setCounts((c) => { const n = { ...c }; delete n[cartKey]; return n; });
+    setCounts((c) => {
+      const n = { ...c };
+      delete n[cartKey];
+      return n;
+    });
   };
 
   const handleAdd = () => {
@@ -294,7 +381,12 @@ function ItemModal({
 
       // If cashier also tapped the "1× base price" card, add that first
       if (baseTaps > 0) {
-        lines.push({ cartKey: product.id, name: product.name, price: product.price, qty: baseTaps });
+        lines.push({
+          cartKey: product.id,
+          name: product.name,
+          price: product.price,
+          qty: baseTaps,
+        });
       }
 
       prodVars.forEach((v) => {
@@ -313,7 +405,10 @@ function ItemModal({
           unitsConsumed,
         } as ItemModalLine & { unitsConsumed: number });
       });
-      if (lines.length === 0) { toast.error("Select at least one option"); return; }
+      if (lines.length === 0) {
+        toast.error("Select at least one option");
+        return;
+      }
       onAddToOrder(lines);
     } else if (hasVarGroups) {
       const lines: ItemModalLine[] = [];
@@ -331,14 +426,19 @@ function ItemModal({
           }
         }
       }
-      if (lines.length === 0) { toast.error("Select at least one option"); return; }
+      if (lines.length === 0) {
+        toast.error("Select at least one option");
+        return;
+      }
       onAddToOrder(lines);
     } else {
-      onAddToOrder([{ cartKey: product.id, name: product.name, price: product.price, qty: baseQty }]);
+      onAddToOrder([
+        { cartKey: product.id, name: product.name, price: product.price, qty: baseQty },
+      ]);
     }
   };
 
-  const hasSelection = (hasProdVars || hasVarGroups) ? totalSelected > 0 : baseQty > 0;
+  const hasSelection = hasProdVars || hasVarGroups ? totalSelected > 0 : baseQty > 0;
 
   const orderTotal = hasProdVars
     ? (counts[product.id] ?? 0) * product.price +
@@ -347,15 +447,23 @@ function ItemModal({
         return s + qty * v.price;
       }, 0)
     : hasVarGroups
-    ? groups.reduce((s, g) => s + g.options.reduce((gs, opt) => {
-        const cartKey = `${product.id}__${g.id}__${opt.id}`;
-        const qty = counts[cartKey] ?? 0;
-        return gs + qty * (opt.price > 0 ? opt.price : product.price);
-      }, 0), 0)
-    : baseQty * product.price;
+      ? groups.reduce(
+          (s, g) =>
+            s +
+            g.options.reduce((gs, opt) => {
+              const cartKey = `${product.id}__${g.id}__${opt.id}`;
+              const qty = counts[cartKey] ?? 0;
+              return gs + qty * (opt.price > 0 ? opt.price : product.price);
+            }, 0),
+          0,
+        )
+      : baseQty * product.price;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/70 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
         className="w-full max-w-md mx-auto rounded-t-3xl border border-border shadow-2xl flex flex-col max-h-[88dvh]"
         style={{ background: "var(--gradient-card)" }}
@@ -363,36 +471,43 @@ function ItemModal({
       >
         {/* Header */}
         <div className="flex gap-3 px-4 pt-5 pb-3 items-center">
-          <div className="w-16 h-16 rounded-2xl overflow-hidden border border-border shrink-0 flex items-center justify-center text-3xl"
-            style={{ background: "rgba(255,255,255,0.04)" }}>
-            {imgSrc
-              ? <img src={imgSrc} className="w-full h-full object-contain" alt="" />
-              : <span>{categoryIcon(product.category ?? "miscellaneous")}</span>}
+          <div
+            className="w-16 h-16 rounded-2xl overflow-hidden border border-border shrink-0 flex items-center justify-center text-3xl"
+            style={{ background: "rgba(255,255,255,0.04)" }}
+          >
+            {imgSrc ? (
+              <img src={imgSrc} className="w-full h-full object-contain" alt="" />
+            ) : (
+              <span>{categoryIcon(product.category ?? "miscellaneous")}</span>
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-black text-base leading-tight">{product.name}</p>
             <p className="font-black text-sm mt-0.5" style={{ color: "#86efac" }}>
-              ${Number(product.price).toFixed(2)}{baseUnitLabel ? ` / ${baseUnitLabel}` : ""}
+              ${Number(product.price).toFixed(2)}
+              {baseUnitLabel ? ` / ${baseUnitLabel}` : ""}
             </p>
             {product.stock_qty !== undefined && (
               <p className="text-[11px] text-muted-foreground">{product.stock_qty} in stock</p>
             )}
           </div>
-          <button onClick={onClose}
-            className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+          <button
+            onClick={onClose}
+            className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-4 pb-3 space-y-4">
-
           {/* ── eBay-style product_variations ── */}
           {hasProdVars ? (
             <div className="space-y-2">
-              <p className="text-xs font-black text-muted-foreground uppercase tracking-wider">Select option</p>
+              <p className="text-xs font-black text-muted-foreground uppercase tracking-wider">
+                Select option
+              </p>
               <div className="grid grid-cols-2 gap-2">
-
                 {/* ── Base-price card — always first ── */}
                 {(() => {
                   const baseKey = product.id;
@@ -403,7 +518,9 @@ function ItemModal({
                       className="relative rounded-2xl border-2 overflow-hidden transition"
                       style={{
                         borderColor: baseSelected ? "var(--primary)" : "rgba(255,255,255,0.12)",
-                        background: baseSelected ? "rgba(var(--primary-rgb,251 146 60)/0.10)" : "rgba(255,255,255,0.04)",
+                        background: baseSelected
+                          ? "rgba(var(--primary-rgb,251 146 60)/0.10)"
+                          : "rgba(255,255,255,0.04)",
                       }}
                     >
                       {baseSelected && (
@@ -424,11 +541,17 @@ function ItemModal({
                         <span className="font-black text-sm text-center leading-tight pr-5">
                           {baseUnitLabel ? `1 ${baseUnitLabel}` : "Single"}
                         </span>
-                        <span className="font-black text-base mt-0.5" style={{ color: baseSelected ? "var(--primary)" : "#86efac" }}>
+                        <span
+                          className="font-black text-base mt-0.5"
+                          style={{ color: baseSelected ? "var(--primary)" : "#86efac" }}
+                        >
                           ${Number(product.price).toFixed(2)}
                         </span>
                         {baseSelected && (
-                          <span className="text-[11px] font-black mt-0.5" style={{ color: "var(--primary)" }}>
+                          <span
+                            className="text-[11px] font-black mt-0.5"
+                            style={{ color: "var(--primary)" }}
+                          >
                             ${(product.price * baseTaps).toFixed(2)} total
                           </span>
                         )}
@@ -440,14 +563,20 @@ function ItemModal({
                             onClick={() => decOption(baseKey)}
                             className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
                             style={{ background: "#ef4444" }}
-                          >−</button>
-                          <span className="font-black text-lg" style={{ color: "var(--primary)" }}>{baseTaps}</span>
+                          >
+                            −
+                          </button>
+                          <span className="font-black text-lg" style={{ color: "var(--primary)" }}>
+                            {baseTaps}
+                          </span>
                           <button
                             type="button"
                             onClick={() => incOption(baseKey)}
                             className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
                             style={{ background: "var(--gradient-hero)" }}
-                          >+</button>
+                          >
+                            +
+                          </button>
                         </div>
                       )}
                     </div>
@@ -466,7 +595,9 @@ function ItemModal({
                       className="relative rounded-2xl border-2 overflow-hidden transition"
                       style={{
                         borderColor: isSelected ? "var(--primary)" : "rgba(255,255,255,0.12)",
-                        background: isSelected ? "rgba(var(--primary-rgb,251 146 60)/0.10)" : "rgba(255,255,255,0.04)",
+                        background: isSelected
+                          ? "rgba(var(--primary-rgb,251 146 60)/0.10)"
+                          : "rgba(255,255,255,0.04)",
                       }}
                     >
                       {/* X to clear — top right, only when selected */}
@@ -486,12 +617,20 @@ function ItemModal({
                         onClick={() => incOption(cartKey)}
                         className="w-full pt-3 pb-2 px-3 flex flex-col items-center gap-0.5 active:bg-white/5 transition"
                       >
-                        <span className="font-black text-sm text-center leading-tight pr-5">{v.name}</span>
-                        <span className="font-black text-base mt-0.5" style={{ color: isSelected ? "var(--primary)" : "#86efac" }}>
+                        <span className="font-black text-sm text-center leading-tight pr-5">
+                          {v.name}
+                        </span>
+                        <span
+                          className="font-black text-base mt-0.5"
+                          style={{ color: isSelected ? "var(--primary)" : "#86efac" }}
+                        >
                           ${Number(v.price).toFixed(2)}
                         </span>
                         {isSelected && (
-                          <span className="text-[11px] font-black mt-0.5" style={{ color: "var(--primary)" }}>
+                          <span
+                            className="text-[11px] font-black mt-0.5"
+                            style={{ color: "var(--primary)" }}
+                          >
                             ${(v.price * taps).toFixed(2)} total
                           </span>
                         )}
@@ -504,11 +643,20 @@ function ItemModal({
                             onClick={() => decOption(cartKey)}
                             className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
                             style={{ background: "#ef4444" }}
-                          >−</button>
+                          >
+                            −
+                          </button>
                           <div className="flex flex-col items-center">
-                            <span className="font-black text-lg" style={{ color: "var(--primary)" }}>{taps}</span>
+                            <span
+                              className="font-black text-lg"
+                              style={{ color: "var(--primary)" }}
+                            >
+                              {taps}
+                            </span>
                             {multiplier > 1 && (
-                              <span className="text-[9px] text-muted-foreground leading-none">{unitsSelected} units</span>
+                              <span className="text-[9px] text-muted-foreground leading-none">
+                                {unitsSelected} units
+                              </span>
                             )}
                           </div>
                           <button
@@ -516,7 +664,9 @@ function ItemModal({
                             onClick={() => incOption(cartKey)}
                             className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
                             style={{ background: "var(--gradient-hero)" }}
-                          >+</button>
+                          >
+                            +
+                          </button>
                         </div>
                       )}
                     </div>
@@ -524,71 +674,93 @@ function ItemModal({
                 })}
               </div>
             </div>
-
           ) : hasVarGroups ? (
             groups.map((group) => (
               <div key={group.id} className="space-y-2">
-                <p className="text-xs font-black text-muted-foreground uppercase tracking-wider">{group.name}</p>
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-wider">
+                  {group.name}
+                </p>
                 <div className="grid grid-cols-2 gap-2">
-                  {group.options.filter((o) => o.label.trim()).map((opt) => {
-                    const cartKey = `${product.id}__${group.id}__${opt.id}`;
-                    const qty = counts[cartKey] ?? 0;
-                    const isSelected = qty > 0;
-                    const optPrice = opt.price > 0 ? opt.price : product.price;
-                    return (
-                      <div
-                        key={opt.id}
-                        className="relative rounded-2xl border-2 overflow-hidden transition"
-                        style={{
-                          borderColor: isSelected ? "var(--primary)" : "rgba(255,255,255,0.12)",
-                          background: isSelected ? "rgba(var(--primary-rgb,251 146 60)/0.10)" : "rgba(255,255,255,0.04)",
-                        }}
-                      >
-                        {isSelected && (
+                  {group.options
+                    .filter((o) => o.label.trim())
+                    .map((opt) => {
+                      const cartKey = `${product.id}__${group.id}__${opt.id}`;
+                      const qty = counts[cartKey] ?? 0;
+                      const isSelected = qty > 0;
+                      const optPrice = opt.price > 0 ? opt.price : product.price;
+                      return (
+                        <div
+                          key={opt.id}
+                          className="relative rounded-2xl border-2 overflow-hidden transition"
+                          style={{
+                            borderColor: isSelected ? "var(--primary)" : "rgba(255,255,255,0.12)",
+                            background: isSelected
+                              ? "rgba(var(--primary-rgb,251 146 60)/0.10)"
+                              : "rgba(255,255,255,0.04)",
+                          }}
+                        >
+                          {isSelected && (
+                            <button
+                              type="button"
+                              onClick={() => clearOption(cartKey)}
+                              className="absolute top-1.5 right-1.5 h-6 w-6 rounded-full flex items-center justify-center z-10 text-white shadow"
+                              style={{ background: "#dc2626" }}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => clearOption(cartKey)}
-                            className="absolute top-1.5 right-1.5 h-6 w-6 rounded-full flex items-center justify-center z-10 text-white shadow"
-                            style={{ background: "#dc2626" }}
+                            onClick={() => incOption(cartKey)}
+                            className="w-full pt-3 pb-2 px-3 flex flex-col items-center gap-0.5 active:bg-white/5 transition"
                           >
-                            <X className="h-3 w-3" />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => incOption(cartKey)}
-                          className="w-full pt-3 pb-2 px-3 flex flex-col items-center gap-0.5 active:bg-white/5 transition"
-                        >
-                          <span className="font-black text-sm text-center leading-tight pr-5">{opt.label}</span>
-                          <span className="font-black text-base mt-0.5" style={{ color: isSelected ? "var(--primary)" : "#86efac" }}>
-                            ${optPrice.toFixed(2)}
-                          </span>
-                          {isSelected && (
-                            <span className="text-[11px] font-black mt-0.5" style={{ color: "var(--primary)" }}>
-                              ${(optPrice * qty).toFixed(2)} total
+                            <span className="font-black text-sm text-center leading-tight pr-5">
+                              {opt.label}
                             </span>
+                            <span
+                              className="font-black text-base mt-0.5"
+                              style={{ color: isSelected ? "var(--primary)" : "#86efac" }}
+                            >
+                              ${optPrice.toFixed(2)}
+                            </span>
+                            {isSelected && (
+                              <span
+                                className="text-[11px] font-black mt-0.5"
+                                style={{ color: "var(--primary)" }}
+                              >
+                                ${(optPrice * qty).toFixed(2)} total
+                              </span>
+                            )}
+                          </button>
+                          {isSelected && (
+                            <div className="flex items-center justify-between px-3 pb-2.5 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => decOption(cartKey)}
+                                className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
+                                style={{ background: "#ef4444" }}
+                              >
+                                −
+                              </button>
+                              <span
+                                className="font-black text-lg"
+                                style={{ color: "var(--primary)" }}
+                              >
+                                {qty}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => incOption(cartKey)}
+                                className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
+                                style={{ background: "var(--gradient-hero)" }}
+                              >
+                                +
+                              </button>
+                            </div>
                           )}
-                        </button>
-                        {isSelected && (
-                          <div className="flex items-center justify-between px-3 pb-2.5 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => decOption(cartKey)}
-                              className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
-                              style={{ background: "#ef4444" }}
-                            >−</button>
-                            <span className="font-black text-lg" style={{ color: "var(--primary)" }}>{qty}</span>
-                            <button
-                              type="button"
-                              onClick={() => incOption(cartKey)}
-                              className="h-7 w-7 rounded-full flex items-center justify-center font-black text-sm active:scale-90 transition"
-                              style={{ background: "var(--gradient-hero)" }}
-                            >+</button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                        </div>
+                      );
+                    })}
                 </div>
               </div>
             ))
@@ -605,7 +777,9 @@ function ItemModal({
                   onClick={() => setBaseQty((q) => Math.max(1, q - 1))}
                   className="h-11 w-11 rounded-full flex items-center justify-center font-black text-xl active:scale-90 transition disabled:opacity-30"
                   style={{ background: "#ef4444" }}
-                >−</button>
+                >
+                  −
+                </button>
                 <span className="font-black text-3xl w-12 text-center">{baseQty}</span>
                 <button
                   type="button"
@@ -613,7 +787,9 @@ function ItemModal({
                   onClick={() => setBaseQty((q) => q + 1)}
                   className="h-11 w-11 rounded-full flex items-center justify-center font-black text-xl active:scale-90 transition disabled:opacity-30"
                   style={{ background: "var(--gradient-hero)" }}
-                >+</button>
+                >
+                  +
+                </button>
               </div>
             </div>
           )}
@@ -621,10 +797,14 @@ function ItemModal({
 
         {/* Order total */}
         {orderTotal > 0 && (
-          <div className="mx-4 rounded-xl px-4 py-2.5 flex items-center justify-between mb-2"
-            style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.08)" }}>
+          <div
+            className="mx-4 rounded-xl px-4 py-2.5 flex items-center justify-between mb-2"
+            style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.08)" }}
+          >
             <span className="text-sm font-bold text-muted-foreground">Order Total</span>
-            <span className="font-black text-lg" style={{ color: "var(--primary)" }}>${orderTotal.toFixed(2)}</span>
+            <span className="font-black text-lg" style={{ color: "var(--primary)" }}>
+              ${orderTotal.toFixed(2)}
+            </span>
           </div>
         )}
 
@@ -635,14 +815,18 @@ function ItemModal({
             onClick={onClose}
             className="flex-1 h-12 rounded-2xl font-black text-base border border-border transition active:scale-[0.98]"
             style={{ background: "rgba(255,255,255,0.04)" }}
-          >Cancel</button>
+          >
+            Cancel
+          </button>
           <button
             type="button"
             disabled={!hasSelection}
             onClick={handleAdd}
             className="flex-1 h-12 rounded-2xl font-black text-base text-primary-foreground transition active:scale-[0.98] disabled:opacity-40"
             style={{ background: "var(--gradient-hero)" }}
-          >Add to Order</button>
+          >
+            Add to Order
+          </button>
         </div>
       </div>
     </div>
@@ -667,8 +851,17 @@ type ProductGridProps = {
   sortLabel: string;
 };
 const ProductGrid = React.memo(function ProductGrid({
-  barOrdered, cartQtyMap, resolvedImgMap, cartVariantMap, onAdd, onRemove, onDec, onRemoveVariant,
-  onEnterEditMode, showSortButton, sortLabel,
+  barOrdered,
+  cartQtyMap,
+  resolvedImgMap,
+  cartVariantMap,
+  onAdd,
+  onRemove,
+  onDec,
+  onRemoveVariant,
+  onEnterEditMode,
+  showSortButton,
+  sortLabel,
 }: ProductGridProps) {
   return (
     <>
@@ -695,7 +888,11 @@ const ProductGrid = React.memo(function ProductGrid({
           <button
             onClick={onEnterEditMode}
             className="w-full h-12 rounded-2xl font-black text-sm active:scale-[0.98] transition border"
-            style={{ background: "rgba(251,146,60,0.08)", color: "var(--primary)", borderColor: "rgba(251,146,60,0.30)" }}
+            style={{
+              background: "rgba(251,146,60,0.08)",
+              color: "var(--primary)",
+              borderColor: "rgba(251,146,60,0.30)",
+            }}
           >
             {sortLabel}
           </button>
@@ -712,7 +909,9 @@ export default function RegisterPage() {
   const { isOnline } = useNetworkStatus();
   const nav = useNavigate();
 
-  const ownerId = effectiveOwnerId(profile?.role === "owner" ? profile.id : (profile?.parent_id ?? ""));
+  const ownerId = effectiveOwnerId(
+    profile?.role === "owner" ? profile.id : (profile?.parent_id ?? ""),
+  );
 
   // Managers have no register page — send them to /products
   useEffect(() => {
@@ -725,7 +924,7 @@ export default function RegisterPage() {
 
   // ── Bar session state — blocks sales when bar is closed ────────────────────
   const [barSessionStart, setBarSessionStart] = useState<string | null>(null);
-  const [barClosedAt,     setBarClosedAt]     = useState<string | null>(null);
+  const [barClosedAt, setBarClosedAt] = useState<string | null>(null);
   // Start as false — only set true once we have an ownerId and kick off the fetch
   const [barSessionLoading, setBarSessionLoading] = useState(false);
   // Delay showing the overlay so we don't flash it during initial profile/ownerId resolution
@@ -736,56 +935,75 @@ export default function RegisterPage() {
     if (!ownerId) return;
     setBarSessionLoading(true);
     setBarOverlayReady(false);
-    supabase.from("profiles")
+    supabase
+      .from("profiles")
       .select("store_session_start, store_closed_at")
       .eq("id", ownerId)
       .single()
-      .then(async ({ data, error }: { data: { store_session_start: string | null; store_closed_at: string | null } | null; error: unknown }) => {
-        if (data) {
-          // Network success — update state and refresh cache
-          setBarSessionStart(data.store_session_start ?? null);
-          setBarClosedAt(data.store_closed_at ?? null);
-          cacheBarSession(ownerId, {
-            store_session_start: data.store_session_start ?? null,
-            store_closed_at: data.store_closed_at ?? null,
-          });
-        } else {
-          // Network failed (offline) — serve from IndexedDB cache
-          console.warn("[register] bar session fetch failed, using cache:", error);
-          const cached = await getCachedBarSession(ownerId);
-          if (cached) {
-            setBarSessionStart(cached.store_session_start);
-            setBarClosedAt(cached.store_closed_at);
+      .then(
+        async ({
+          data,
+          error,
+        }: {
+          data: { store_session_start: string | null; store_closed_at: string | null } | null;
+          error: unknown;
+        }) => {
+          if (data) {
+            // Network success — update state and refresh cache
+            setBarSessionStart(data.store_session_start ?? null);
+            setBarClosedAt(data.store_closed_at ?? null);
+            cacheBarSession(ownerId, {
+              store_session_start: data.store_session_start ?? null,
+              store_closed_at: data.store_closed_at ?? null,
+            });
+          } else {
+            // Network failed (offline) — serve from IndexedDB cache
+            console.warn("[register] bar session fetch failed, using cache:", error);
+            const cached = await getCachedBarSession(ownerId);
+            if (cached) {
+              setBarSessionStart(cached.store_session_start);
+              setBarClosedAt(cached.store_closed_at);
+            }
           }
-        }
-        setBarSessionLoading(false);
-        // Small delay so the overlay only appears after the data is confirmed — no flash
-        setTimeout(() => setBarOverlayReady(true), 150);
-      });
+          setBarSessionLoading(false);
+          // Small delay so the overlay only appears after the data is confirmed — no flash
+          setTimeout(() => setBarOverlayReady(true), 150);
+        },
+      );
 
     // Realtime: watch for bar open/close changes on the owner profile
     const ch = supabase
       .channel(`bar-session-register-${ownerId}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${ownerId}` },
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${ownerId}` },
         (payload) => {
           const rec = payload.new as Record<string, unknown>;
-          const newStart = "store_session_start" in rec ? (rec.store_session_start as string | null) ?? null : undefined;
-          const newClosed = "store_closed_at" in rec ? (rec.store_closed_at as string | null) ?? null : undefined;
+          const newStart =
+            "store_session_start" in rec
+              ? ((rec.store_session_start as string | null) ?? null)
+              : undefined;
+          const newClosed =
+            "store_closed_at" in rec ? ((rec.store_closed_at as string | null) ?? null) : undefined;
           if (newStart !== undefined) setBarSessionStart(newStart);
           if (newClosed !== undefined) setBarClosedAt(newClosed);
           // Keep IndexedDB cache in sync with realtime updates
           if (newStart !== undefined || newClosed !== undefined) {
             getCachedBarSession(ownerId).then((prev) => {
               cacheBarSession(ownerId, {
-                store_session_start: newStart !== undefined ? newStart : (prev?.store_session_start ?? null),
-                store_closed_at:     newClosed !== undefined ? newClosed : (prev?.store_closed_at ?? null),
+                store_session_start:
+                  newStart !== undefined ? newStart : (prev?.store_session_start ?? null),
+                store_closed_at:
+                  newClosed !== undefined ? newClosed : (prev?.store_closed_at ?? null),
               });
             });
           }
-        }
+        },
       )
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, [ownerId]);
 
   // ── Bar open / close toggle (owner only) ─────────────────────────────────
@@ -803,28 +1021,48 @@ export default function RegisterPage() {
 
   const confirmOpenBarWithFloat = async () => {
     const barFloatVal = parseInt(floatBarAmount, 10);
-    if (isNaN(barFloatVal) || barFloatVal < 0) { toast.error("Enter a valid store float amount"); return; }
+    if (isNaN(barFloatVal) || barFloatVal < 0) {
+      toast.error("Enter a valid store float amount");
+      return;
+    }
     setBarToggleBusy(true);
 
     // Guard: do not create a new session if one is already open
-    const { data: existingOpen } = await supabase.from("store_sessions")
-      .select("id").eq("owner_id", ownerId).is("closed_at", null).limit(1).maybeSingle();
+    const { data: existingOpen } = await supabase
+      .from("store_sessions")
+      .select("id")
+      .eq("owner_id", ownerId)
+      .is("closed_at", null)
+      .limit(1)
+      .maybeSingle();
     if (existingOpen) {
       setBarToggleBusy(false);
-    toast.error("Store is already open — close the current session first");
+      toast.error("Store is already open — close the current session first");
       return;
     }
 
     const now = new Date().toISOString();
-    const { error } = await supabase.from("profiles")
-      .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now })
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        store_session_start: now,
+        store_closed_at: null,
+        cashier_float: barFloatVal,
+        cashier_float_set_at: now,
+      })
       .eq("id", ownerId);
-    if (error) { setBarToggleBusy(false); toast.error("Failed to open store: " + error.message); return; }
+    if (error) {
+      setBarToggleBusy(false);
+      toast.error("Failed to open store: " + error.message);
+      return;
+    }
 
     // Insert store_sessions parent row + first sub-session
-    const { data: newSession } = await supabase.from("store_sessions")
+    const { data: newSession } = await supabase
+      .from("store_sessions")
       .insert({ owner_id: ownerId, opened_at: now })
-      .select("id").single();
+      .select("id")
+      .single();
     if (newSession?.id) {
       await supabase.from("store_sub_sessions").insert({
         owner_id: ownerId,
@@ -838,7 +1076,14 @@ export default function RegisterPage() {
     setShowFloatModal(false);
     setBarSessionStart(now);
     setBarClosedAt(null);
-    toast.success("🟢 Store opened at " + new Date(now).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true }));
+    toast.success(
+      "🟢 Store opened at " +
+        new Date(now).toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        }),
+    );
     setShowBarOpenedOverlay(true);
   };
 
@@ -846,16 +1091,62 @@ export default function RegisterPage() {
     setBarToggleBusy(true);
     const now = new Date().toISOString();
     // Close open sub-sessions
-    await supabase.from("store_sub_sessions")
-      .update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
+    await supabase
+      .from("store_sub_sessions")
+      .update({ closed_at: now })
+      .eq("owner_id", ownerId)
+      .is("closed_at", null);
     // Close open store_session row
-    await supabase.from("store_sessions")
-      .update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
-    const { error } = await supabase.from("profiles").update({ store_closed_at: now }).eq("id", ownerId);
+    await supabase
+      .from("store_sessions")
+      .update({ closed_at: now })
+      .eq("owner_id", ownerId)
+      .is("closed_at", null);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ store_closed_at: now })
+      .eq("id", ownerId);
     setBarToggleBusy(false);
-    if (error) { toast.error("Failed to close store: " + error.message); return; }
+    if (error) {
+      toast.error("Failed to close store: " + error.message);
+      return;
+    }
     setBarClosedAt(now);
     toast.success("🔴 Store closed");
+  };
+
+  const handleOpenCashDrawer = async () => {
+    setDrawerBusy(true);
+    setShowDrawerModal(true);
+    setDrawerResult(null);
+    const result = await openCashDrawer();
+    setDrawerResult(result);
+    setDrawerBusy(false);
+    if (result.opened) {
+      toast.success("Cash drawer opened");
+    } else {
+      toast.error(result.error ?? "Could not open cash drawer");
+    }
+  };
+
+  const handleSaleDone = () => {
+    setShowSaleCompleteModal(false);
+    setLastSale(null);
+  };
+
+  const handlePrintAndDone = async () => {
+    if (!lastSale) return;
+    setPrintingReceipt(true);
+    try {
+      await printReceipt(lastSale);
+      toast.success("Receipt sent to printer");
+    } catch {
+      toast.error("Failed to print receipt");
+    } finally {
+      setPrintingReceipt(false);
+      setShowSaleCompleteModal(false);
+      setLastSale(null);
+    }
   };
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -864,7 +1155,13 @@ export default function RegisterPage() {
   // Ref to hold a pending edit-order payload until products have loaded
   const pendingEditRef = useRef<{
     orderId: string;
-    items: { name: string; qty: number; price: number; discount?: number; original_price?: number }[];
+    items: {
+      name: string;
+      qty: number;
+      price: number;
+      discount?: number;
+      original_price?: number;
+    }[];
     originalTotal: number;
     paid: number;
     changeGiven: number;
@@ -879,7 +1176,7 @@ export default function RegisterPage() {
   // create a new array and re-trigger the entire IndexedDB read pipeline.
   const productImageUrls = useMemo(
     () => products.map((p) => productImageUrl(p.image_url)),
-    [products]
+    [products],
   );
   // Preload all product images — returns imgSrc() helper that serves objectURLs
   // from IndexedDB instantly, falling back to the network URL while loading.
@@ -896,10 +1193,10 @@ export default function RegisterPage() {
       m[p.id] = url ? imgSrc(url) : null;
     });
     return m;
-  // imgSrc is stable (empty deps []); products changes trigger productImageUrls
-  // → useImageCache effect → new objectUrlMap → imgSrc reads fresh ref value.
-  // We rebuild this map whenever either products or the imgSrc function changes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // imgSrc is stable (empty deps []); products changes trigger productImageUrls
+    // → useImageCache effect → new objectUrlMap → imgSrc reads fresh ref value.
+    // We rebuild this map whenever either products or the imgSrc function changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products, imgSrc]);
   // Initialize cart from localStorage on mount
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -930,7 +1227,13 @@ export default function RegisterPage() {
     try {
       const payload = JSON.parse(raw) as {
         orderId: string;
-        items: { name: string; qty: number; price: number; discount?: number; original_price?: number }[];
+        items: {
+          name: string;
+          qty: number;
+          price: number;
+          discount?: number;
+          original_price?: number;
+        }[];
         originalTotal: number;
         paid: number;
         changeGiven: number;
@@ -968,36 +1271,52 @@ export default function RegisterPage() {
             qty: saved.qty,
             image_url: null,
             category: undefined,
-            ...(saved.discount ? { _discount: saved.discount, _originalPrice: saved.original_price ?? saved.price } : {}),
+            ...(saved.discount
+              ? { _discount: saved.discount, _originalPrice: saved.original_price ?? saved.price }
+              : {}),
           } as CartItem;
         }
         return {
           ...match,
           qty: saved.qty,
-          ...(saved.discount ? { _discount: saved.discount, _originalPrice: saved.original_price ?? match.price } : {}),
+          ...(saved.discount
+            ? { _discount: saved.discount, _originalPrice: saved.original_price ?? match.price }
+            : {}),
         } as CartItem;
       })
       .filter(Boolean);
 
     setCart(newCart);
     setEditOrder({
-      orderId:       payload.orderId,
+      orderId: payload.orderId,
       originalTotal: payload.originalTotal,
-      paid:          payload.paid,
-      changeGiven:   payload.changeGiven,
+      paid: payload.paid,
+      changeGiven: payload.changeGiven,
       discountAmount: payload.discountAmount,
-      type:          payload.type,
-      creditTxId:    payload.creditTxId,
+      type: payload.type,
+      creditTxId: payload.creditTxId,
     });
     setCashOpen(true);
     toast.success("Edit mode — adjust items then confirm sale");
-  // products is the only dep we watch; pendingEditRef is a ref (stable)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // products is the only dep we watch; pendingEditRef is a ref (stable)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products]);
 
   const [loading, setLoading] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
   const [creditOpen, setCreditOpen] = useState(false);
+  const [showDrawerModal, setShowDrawerModal] = useState(false);
+  const [drawerBusy, setDrawerBusy] = useState(false);
+  const [drawerResult, setDrawerResult] = useState<{
+    opened: boolean;
+    method: string;
+    device?: string;
+    error?: string;
+  } | null>(null);
+
+  const [showSaleCompleteModal, setShowSaleCompleteModal] = useState(false);
+  const [lastSale, setLastSale] = useState<ReceiptData | null>(null);
+  const [printingReceipt, setPrintingReceipt] = useState(false);
 
   // Persist cart to localStorage whenever it changes
   useEffect(() => {
@@ -1010,7 +1329,9 @@ export default function RegisterPage() {
   // without triggering full re-renders on every cart change
   const cartQtyMap = useMemo(() => {
     const m: Record<string, number> = {};
-    cart.forEach((i) => { m[i.id] = i.qty; });
+    cart.forEach((i) => {
+      m[i.id] = i.qty;
+    });
     return m;
   }, [cart]);
 
@@ -1027,27 +1348,43 @@ export default function RegisterPage() {
     return m;
   }, [cart]);
 
-  const removeVariantItem = useCallback((cartKey: string) =>
-    setCart((c) => c.filter((i) => i.id !== cartKey)), []);
+  const removeVariantItem = useCallback(
+    (cartKey: string) => setCart((c) => c.filter((i) => i.id !== cartKey)),
+    [],
+  );
 
   // Stable fetch — always reads latest ownerId via ref
   const ownerIdRef = useRef(ownerId);
-  useEffect(() => { ownerIdRef.current = ownerId; }, [ownerId]);
+  useEffect(() => {
+    ownerIdRef.current = ownerId;
+  }, [ownerId]);
 
   const fetchProducts = useCallback(async () => {
     const id = ownerIdRef.current;
     if (!id) return;
     const [{ data, error }, { data: varRows }] = await Promise.all([
       supabase.from("products").select("*").eq("owner_id", id).order("name", { ascending: true }),
-      supabase.from("product_variations").select("id, product_id, name, price, sort_order").eq("owner_id", id).order("sort_order", { ascending: true }),
+      supabase
+        .from("product_variations")
+        .select("id, product_id, name, price, sort_order")
+        .eq("owner_id", id)
+        .order("sort_order", { ascending: true }),
     ]);
     if (data) {
       // Attach product_variations to each product
       const varsByProduct: Record<string, ProdVariation[]> = {};
       for (const v of varRows ?? []) {
-        (varsByProduct[v.product_id] ??= []).push({ id: v.id, name: v.name, price: v.price, sort_order: v.sort_order });
+        (varsByProduct[v.product_id] ??= []).push({
+          id: v.id,
+          name: v.name,
+          price: v.price,
+          sort_order: v.sort_order,
+        });
       }
-      const products = (data as Product[]).map((p) => ({ ...p, product_variations: varsByProduct[p.id] ?? null }));
+      const products = (data as Product[]).map((p) => ({
+        ...p,
+        product_variations: varsByProduct[p.id] ?? null,
+      }));
       setProducts(products);
       setLoading(false);
       cacheProducts(id, data as CachedProduct[]);
@@ -1071,23 +1408,35 @@ export default function RegisterPage() {
     // Note: no filter on DELETE events — deleted rows can't match column filters
     const ch = supabase
       .channel(`products-register-${ownerId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "products", filter: `owner_id=eq.${ownerId}` },
-        () => { fetchProducts(); }
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "products", filter: `owner_id=eq.${ownerId}` },
+        () => {
+          fetchProducts();
+        },
       )
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "products", filter: `owner_id=eq.${ownerId}` },
-        () => { fetchProducts(); }
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "products", filter: `owner_id=eq.${ownerId}` },
+        () => {
+          fetchProducts();
+        },
       )
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "products" },
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "products" },
         (payload) => {
           // Only act if the deleted product belonged to this owner
           if (payload.old?.owner_id && payload.old.owner_id !== ownerId) return;
           setProducts((prev) => prev.filter((p) => p.id !== payload.old?.id));
           setCart((c) => c.filter((i) => i.id !== payload.old?.id));
-        }
+        },
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, [ownerId, fetchProducts]);
 
   const filtered = useMemo(() => {
@@ -1104,7 +1453,9 @@ export default function RegisterPage() {
   const barSortMapRef = useRef<Record<string, number>>({});
   const barOrderedRef = useRef<Product[]>([]);
   const profileIdRef = useRef(profile?.id);
-  useEffect(() => { profileIdRef.current = profile?.id; }, [profile?.id]);
+  useEffect(() => {
+    profileIdRef.current = profile?.id;
+  }, [profile?.id]);
   const cartLengthRef = useRef(0);
   // Ref for the edit-mode grid — used to block native long-press browser behaviour
   const barEditGridRef = useRef<HTMLDivElement>(null);
@@ -1112,11 +1463,11 @@ export default function RegisterPage() {
   // Pre-sort all categories at once so switching tabs is a map lookup, not a re-sort
   const allCategorySorted = useMemo(() => {
     const map: Record<string, Product[]> = {};
-    for (const cat of storeCategories.map(c => c.id)) {
+    for (const cat of storeCategories.map((c) => c.id)) {
       map[cat] = applyBarSort(products, cat, barSortMapRef.current);
     }
     return map;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products, barSortMap, storeCategories]);
 
   // Block the browser's built-in long-press (context menu / text-selection grab)
@@ -1136,10 +1487,16 @@ export default function RegisterPage() {
     const pid = profileIdRef.current;
     if (!pid) return;
     const { data } = await supabase
-      .from("bar_sort_order").select("order_json").eq("owner_id", pid).maybeSingle();
-    const arr: string[] = data?.order_json && Array.isArray(data.order_json) ? (data.order_json as string[]) : [];
+      .from("bar_sort_order")
+      .select("order_json")
+      .eq("owner_id", pid)
+      .maybeSingle();
+    const arr: string[] =
+      data?.order_json && Array.isArray(data.order_json) ? (data.order_json as string[]) : [];
     const map: Record<string, number> = {};
-    arr.forEach((id: string, i: number) => { map[id] = i; });
+    arr.forEach((id: string, i: number) => {
+      map[id] = i;
+    });
     barSortMapRef.current = map;
     setBarSortMap(map);
   };
@@ -1150,19 +1507,24 @@ export default function RegisterPage() {
     // Merge the new category order into the full map, keeping all other categories' positions
     const currentMap = barSortMapRef.current;
     const newMap = { ...currentMap };
-    newCatIds.forEach((id, idx) => { newMap[id] = idx; });
+    newCatIds.forEach((id, idx) => {
+      newMap[id] = idx;
+    });
     // Rebuild a flat ordered array: all ids sorted by their position in the map
     const allIds = Object.entries(newMap)
       .sort(([, a], [, b]) => a - b)
       .map(([id]) => id);
-    supabase.from("bar_sort_order").upsert(
-      { owner_id: pid, order_json: allIds, updated_at: new Date().toISOString() },
-      { onConflict: "owner_id" }
-    ).then(() => {});
+    supabase
+      .from("bar_sort_order")
+      .upsert(
+        { owner_id: pid, order_json: allIds, updated_at: new Date().toISOString() },
+        { onConflict: "owner_id" },
+      )
+      .then(() => {});
   };
 
   function applyBarSort(prods: Product[], cat: string, map: Record<string, number>) {
-    const catProds = cat === "__all__" ? prods : prods.filter(p => p.category === cat);
+    const catProds = cat === "__all__" ? prods : prods.filter((p) => p.category === cat);
     return [...catProds].sort((a, b) => {
       const ia = map[a.id] ?? Infinity;
       const ib = map[b.id] ?? Infinity;
@@ -1206,7 +1568,8 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (barEditModeRef.current) return;
-    const sorted = allCategorySorted[category] ?? applyBarSort(products, category, barSortMapRef.current);
+    const sorted =
+      allCategorySorted[category] ?? applyBarSort(products, category, barSortMapRef.current);
     barOrderedRef.current = sorted;
     setBarOrdered(sorted);
   }, [products, barSortMap]); // category changes are handled synchronously in the tab click handler
@@ -1237,11 +1600,13 @@ export default function RegisterPage() {
     // Check for any variation types
     const bv = p.bottle_variations ?? [];
     const hasVarGroups =
-      bv.length === 1 && (bv[0] as any)._type === "vargroups" &&
+      bv.length === 1 &&
+      (bv[0] as any)._type === "vargroups" &&
       (bv[0] as any).groups?.some((g: any) => g.options?.some((o: any) => o.label?.trim()));
-    const hasProdVars = (p.product_variations ?? []).filter(
-      (v) => v.sort_order >= 0 && v.name.trim() && !v.name.startsWith("_unit:")
-    ).length > 0;
+    const hasProdVars =
+      (p.product_variations ?? []).filter(
+        (v) => v.sort_order >= 0 && v.name.trim() && !v.name.startsWith("_unit:"),
+      ).length > 0;
 
     if (hasVarGroups || hasProdVars) {
       // Has variations — open the picker modal
@@ -1259,21 +1624,29 @@ export default function RegisterPage() {
         return c;
       }
       if (existing) {
-        return c.map((i) => i.id === p.id ? { ...i, qty: i.qty + 1 } : i);
+        return c.map((i) => (i.id === p.id ? { ...i, qty: i.qty + 1 } : i));
       }
-      return [...c, {
-        id: p.id,
-        name: p.name,
-        price: p.price,
-        cost_price: p.cost_price ?? 0,
-        image_url: p.image_url,
-        qty: 1,
-      }];
+      return [
+        ...c,
+        {
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          cost_price: p.cost_price ?? 0,
+          image_url: p.image_url,
+          qty: 1,
+        },
+      ];
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const dec = useCallback((id: string) =>
-    setCart((c) => c.flatMap((i) => (i.id === id ? (i.qty > 1 ? [{ ...i, qty: i.qty - 1 }] : []) : [i]))), []);
+  const dec = useCallback(
+    (id: string) =>
+      setCart((c) =>
+        c.flatMap((i) => (i.id === id ? (i.qty > 1 ? [{ ...i, qty: i.qty - 1 }] : []) : [i])),
+      ),
+    [],
+  );
 
   const removeItem = useCallback((id: string) => setCart((c) => c.filter((i) => i.id !== id)), []);
 
@@ -1285,26 +1658,38 @@ export default function RegisterPage() {
       {/* ── Float Modal (Open Store) ── */}
       {showFloatModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
-            style={{ background: "var(--gradient-card)" }}>
+          <div
+            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
+            style={{ background: "var(--gradient-card)" }}
+          >
             <div className="px-6 pt-6 pb-2 text-center">
-              <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3"
-                style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac" }}>
+              <div
+                className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3"
+                style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac" }}
+              >
                 <span className="text-2xl">🟢</span>
               </div>
               <h2 className="font-black text-xl">Open Store</h2>
-              <p className="text-xs text-muted-foreground mt-1">Set float before starting the session</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Set float before starting the session
+              </p>
             </div>
             <div className="px-6 pb-6 pt-4 space-y-4">
               {/* Store Float */}
               <div className="space-y-1">
-                <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Store Float</label>
+                <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">
+                  Store Float
+                </label>
                 <div
                   onClick={() => setActiveFloatField(activeFloatField === "bar" ? null : "bar")}
                   className="w-full h-11 rounded-xl border bg-background px-4 flex items-center cursor-pointer transition"
-                  style={{ borderColor: activeFloatField === "bar" ? "var(--primary)" : "var(--border)" }}
+                  style={{
+                    borderColor: activeFloatField === "bar" ? "var(--primary)" : "var(--border)",
+                  }}
                 >
-                  <span className={`text-base font-black ${activeFloatField === "bar" ? "text-primary" : floatBarAmount ? "text-foreground" : "text-muted-foreground"}`}>
+                  <span
+                    className={`text-base font-black ${activeFloatField === "bar" ? "text-primary" : floatBarAmount ? "text-foreground" : "text-muted-foreground"}`}
+                  >
                     {floatBarAmount || "0"}
                   </span>
                 </div>
@@ -1312,34 +1697,50 @@ export default function RegisterPage() {
               {/* Inline numpad — integers only */}
               {activeFloatField !== null && (
                 <div className="grid grid-cols-3 gap-1.5">
-                  {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k, i) => (
-                    k === "" ? <div key={i} /> :
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => {
-                        const current = floatBarAmount;
-                        if (k === "⌫") { setFloatBarAmount(current.slice(0, -1)); return; }
-                        setFloatBarAmount(current === "0" || current === "" ? k : current + k);
-                      }}
-                      className={`h-12 rounded-xl font-black text-lg transition active:scale-95 ${
-                        k === "⌫"
-                          ? "bg-destructive/20 text-destructive hover:bg-destructive/30"
-                          : "bg-muted hover:bg-muted/70 text-foreground"
-                      }`}
-                    >{k}</button>
-                  ))}
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].map((k, i) =>
+                    k === "" ? (
+                      <div key={i} />
+                    ) : (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          const current = floatBarAmount;
+                          if (k === "⌫") {
+                            setFloatBarAmount(current.slice(0, -1));
+                            return;
+                          }
+                          setFloatBarAmount(current === "0" || current === "" ? k : current + k);
+                        }}
+                        className={`h-12 rounded-xl font-black text-lg transition active:scale-95 ${
+                          k === "⌫"
+                            ? "bg-destructive/20 text-destructive hover:bg-destructive/30"
+                            : "bg-muted hover:bg-muted/70 text-foreground"
+                        }`}
+                      >
+                        {k}
+                      </button>
+                    ),
+                  )}
                 </div>
               )}
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setShowFloatModal(false)}
-                  className="flex-1 h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition">
+                <button
+                  onClick={() => setShowFloatModal(false)}
+                  className="flex-1 h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition"
+                >
                   Cancel
                 </button>
-                <button onClick={confirmOpenBarWithFloat}
+                <button
+                  onClick={confirmOpenBarWithFloat}
                   disabled={barToggleBusy || !floatBarAmount}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                  style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
+                  style={{
+                    background: "rgba(134,239,172,0.15)",
+                    border: "1.5px solid #86efac",
+                    color: "#86efac",
+                  }}
+                >
                   {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open Store"}
                 </button>
               </div>
@@ -1351,8 +1752,10 @@ export default function RegisterPage() {
       {/* ── Store Opened overlay ── */}
       {showBarOpenedOverlay && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
-            style={{ background: "var(--gradient-card)" }}>
+          <div
+            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
+            style={{ background: "var(--gradient-card)" }}
+          >
             <div className="px-6 pt-7 pb-4 text-center space-y-2">
               <div className="text-5xl">🟢</div>
               <h2 className="font-black text-xl">Store is Open!</h2>
@@ -1361,9 +1764,11 @@ export default function RegisterPage() {
               </p>
             </div>
             <div className="px-6 pb-6 pt-2">
-              <button onClick={() => setShowBarOpenedOverlay(false)}
+              <button
+                onClick={() => setShowBarOpenedOverlay(false)}
                 className="w-full h-12 rounded-2xl font-black text-sm transition active:scale-95 text-primary-foreground"
-                style={{ background: "var(--gradient-hero)" }}>
+                style={{ background: "var(--gradient-hero)" }}
+              >
                 Let's Go
               </button>
             </div>
@@ -1381,8 +1786,10 @@ export default function RegisterPage() {
       {/* ── Store Closed overlay — blocks all selling ── */}
       {barOverlayReady && !barSessionLoading && !barIsOpen && (
         <div className="fixed inset-0 z-40 flex flex-col items-center justify-center bg-black/85 backdrop-blur-sm px-6">
-          <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center"
-            style={{ background: "var(--gradient-card)" }}>
+          <div
+            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center"
+            style={{ background: "var(--gradient-card)" }}
+          >
             <div className="px-6 pt-8 pb-4">
               <div className="text-5xl mb-4">🔒</div>
               <h2 className="font-black text-xl mb-2">Store is Closed</h2>
@@ -1399,14 +1806,30 @@ export default function RegisterPage() {
                   disabled={barToggleBusy}
                   onClick={handleOpenBar}
                   className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50"
-                  style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}
+                  style={{
+                    background: "rgba(134,239,172,0.15)",
+                    border: "1.5px solid #86efac",
+                    color: "#86efac",
+                  }}
                 >
-                  {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "🟢 Open Store Now"}
+                  {barToggleBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "🟢 Open Store Now"
+                  )}
                 </button>
               ) : (
-                <div className="rounded-xl px-4 py-3 text-xs text-muted-foreground"
-                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)" }}>
-                  Ask the owner to go to <span className="font-black text-foreground">Wallet → Update Float → New Session</span>
+                <div
+                  className="rounded-xl px-4 py-3 text-xs text-muted-foreground"
+                  style={{
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  Ask the owner to go to{" "}
+                  <span className="font-black text-foreground">
+                    Wallet → Update Float → New Session
+                  </span>
                 </div>
               )}
             </div>
@@ -1414,25 +1837,25 @@ export default function RegisterPage() {
         </div>
       )}
 
-      {/* Sticky category tabs — sits below the app header */}
-      <div className="sticky top-0 z-20 -mx-3 px-3 py-2 bg-background/95 backdrop-blur border-b border-border">
+      {/* ── Cash Drawer action bar ── */}
+      <div className="sticky top-0 z-20 -mx-3 px-3 py-2 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between gap-2">
         {/* Mobile: horizontal scroll strip; sm+: fixed grid */}
-        <div className="sm:hidden flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+        <div className="sm:hidden flex gap-1.5 overflow-x-auto scrollbar-none flex-1">
           {storeCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => {
                 handleBarDone();
-                const sorted = allCategorySorted[cat.id] ?? applyBarSort(products, cat.id, barSortMapRef.current);
+                const sorted =
+                  allCategorySorted[cat.id] ??
+                  applyBarSort(products, cat.id, barSortMapRef.current);
                 barOrderedRef.current = sorted;
                 setCategory(cat.id);
                 setBarOrdered(sorted);
                 document.querySelector("main")?.scrollTo({ top: 0, behavior: "instant" });
               }}
               className={`h-10 shrink-0 rounded-xl font-black transition flex items-center justify-center px-4 ${
-                category === cat.id
-                  ? "text-primary-foreground"
-                  : "bg-muted text-muted-foreground"
+                category === cat.id ? "text-primary-foreground" : "bg-muted text-muted-foreground"
               }`}
               style={category === cat.id ? { background: "var(--gradient-hero)" } : {}}
             >
@@ -1441,19 +1864,21 @@ export default function RegisterPage() {
           ))}
         </div>
         {/* Tablet / desktop: fixed grid, all tabs visible */}
-        <div className="hidden sm:flex flex-wrap gap-1.5 max-w-2xl lg:max-w-4xl mx-auto">
+        <div className="hidden sm:flex flex-wrap gap-1.5 flex-1">
           {storeCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => {
                 handleBarDone();
-                const sorted = allCategorySorted[cat.id] ?? applyBarSort(products, cat.id, barSortMapRef.current);
+                const sorted =
+                  allCategorySorted[cat.id] ??
+                  applyBarSort(products, cat.id, barSortMapRef.current);
                 barOrderedRef.current = sorted;
                 setCategory(cat.id);
                 setBarOrdered(sorted);
                 document.querySelector("main")?.scrollTo({ top: 0, behavior: "instant" });
               }}
-              className={`h-10 lg:h-11 rounded-xl font-black transition flex items-center justify-center px-4 ${
+              className={`h-10 shrink-0 rounded-xl font-black transition flex items-center justify-center px-4 ${
                 category === cat.id
                   ? "text-primary-foreground"
                   : "bg-muted text-muted-foreground hover:text-foreground"
@@ -1464,6 +1889,14 @@ export default function RegisterPage() {
             </button>
           ))}
         </div>
+        <button
+          onClick={handleOpenCashDrawer}
+          disabled={drawerBusy}
+          className="shrink-0 h-10 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 active:scale-95 transition disabled:opacity-50"
+          style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+        >
+          {drawerBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "💵 Open Drawer"}
+        </button>
       </div>
 
       {/* Items grid — bottom padding clears the fixed CASH + CREDIT buttons */}
@@ -1495,146 +1928,217 @@ export default function RegisterPage() {
               </div>
             )}
 
-
             {filtered.length === 0 && !loading ? (
               <div className="text-center py-20 text-muted-foreground">
-                {products.length === 0 ? "No items yet. Add some on the Items page." : `No ${storeCategories.find(c => c.id === category)?.name ?? "items"} found.`}
+                {products.length === 0
+                  ? "No items yet. Add some on the Items page."
+                  : `No ${storeCategories.find((c) => c.id === category)?.name ?? "items"} found.`}
               </div>
             ) : (
-          <div>
-            {barEditMode ? (
-              /* ── Edit mode: tap-to-select then tap-to-swap ── */
               <div>
-                {/* Grid — normal scrolling, taps drive selection/swap */}
-                <div
-                  ref={barEditGridRef}
-                  className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2"
-                  onContextMenu={(e) => e.preventDefault()}
-                  style={{ touchAction: "pan-y" }}
-                >
-                  {barOrdered.map((p) => {
-                    const inCart = cart.find((i) => i.id === p.id);
-                    const outOfStock = (p.stock_qty ?? 1) === 0;
-                    const missingPrice = !p.price || Number(p.price) <= 0;
-                    const incomplete   = missingPrice;
-                    const isSelected = barSelectedId === p.id;
-                    return (
-                      <div key={p.id}
-                        data-bar-id={p.id}
-                        className="relative"
-                        onContextMenu={(e) => e.preventDefault()}
-                        style={{ userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none", touchAction: "manipulation" } as React.CSSProperties}
-                      >
-                        <button
-                          onClick={() => {
-                            if (!barEditModeRef.current) return;
-                            const current = barOrderedRef.current;
-                            if (!barSelectedId) {
-                              setBarSelectedId(p.id);
-                              return;
+                {barEditMode ? (
+                  /* ── Edit mode: tap-to-select then tap-to-swap ── */
+                  <div>
+                    {/* Grid — normal scrolling, taps drive selection/swap */}
+                    <div
+                      ref={barEditGridRef}
+                      className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2"
+                      onContextMenu={(e) => e.preventDefault()}
+                      style={{ touchAction: "pan-y" }}
+                    >
+                      {barOrdered.map((p) => {
+                        const inCart = cart.find((i) => i.id === p.id);
+                        const outOfStock = (p.stock_qty ?? 1) === 0;
+                        const missingPrice = !p.price || Number(p.price) <= 0;
+                        const incomplete = missingPrice;
+                        const isSelected = barSelectedId === p.id;
+                        return (
+                          <div
+                            key={p.id}
+                            data-bar-id={p.id}
+                            className="relative"
+                            onContextMenu={(e) => e.preventDefault()}
+                            style={
+                              {
+                                userSelect: "none",
+                                WebkitUserSelect: "none",
+                                WebkitTouchCallout: "none",
+                                touchAction: "manipulation",
+                              } as React.CSSProperties
                             }
-                            if (barSelectedId === p.id) {
-                              setBarSelectedId(null);
-                              return;
-                            }
-                            const from = current.findIndex(x => x.id === barSelectedId);
-                            const to = current.findIndex(x => x.id === p.id);
-                            if (from === -1 || to === -1) { setBarSelectedId(null); return; }
-                            const next = [...current];
-                            const [moved] = next.splice(from, 1);
-                            next.splice(to, 0, moved);
-                            barOrderedRef.current = next;
-                            setBarOrdered(next);
-                            // Rebuild the full sort map: keep other categories' positions, update this category
-                            const newMap = { ...barSortMapRef.current };
-                            next.forEach((item, idx) => { newMap[item.id] = idx; });
-                            barSortMapRef.current = newMap;
-                            setBarSortMap(newMap);
-                            saveBarSortIds(next.map(x => x.id));
-                            setBarSelectedId(null);
-                          }}
-                          className={`group relative rounded-2xl overflow-hidden border flex flex-col transition w-full ${outOfStock ? "opacity-80" : ""} ${incomplete ? "opacity-50 grayscale" : ""}`}
-                          style={{
-                            background: "var(--gradient-card)",
-                            boxShadow: isSelected ? "0 0 0 3px rgba(251,191,36,0.95), var(--shadow-elegant)" : "var(--shadow-elegant)",
-                            borderColor: isSelected ? "rgb(251,191,36)" : "rgba(251,146,60,0.8)",
-                          }}
-                        >
-                          <div className="aspect-[3/4] relative w-full">
-                            {p.image_url ? (
-                              <img src={imgSrc(p.image_url) ?? productImageUrl(p.image_url)!} alt="" loading="eager" decoding="sync" fetchPriority="high" className="absolute inset-0 w-full h-full object-cover"
-                                onError={(e) => { const img = e.currentTarget as HTMLImageElement; img.style.display = "none"; const fb = img.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = "flex"; }} />
-                            ) : null}
-                            <div className="absolute inset-0 items-center justify-center text-4xl"
-                              style={{ display: p.image_url ? "none" : "flex" }}>
-                              {categoryIcon(p.category ?? "drinks")}
-                            </div>
-                            {p.stock_qty !== undefined && !outOfStock && (
-                              <div className="absolute top-1.5 left-1.5 h-6 min-w-[1.5rem] px-1.5 rounded-full flex items-center justify-center bg-black/70 shadow">
-                                <span className="text-[10px] font-black text-white leading-none">{p.stock_qty}</span>
+                          >
+                            <button
+                              onClick={() => {
+                                if (!barEditModeRef.current) return;
+                                const current = barOrderedRef.current;
+                                if (!barSelectedId) {
+                                  setBarSelectedId(p.id);
+                                  return;
+                                }
+                                if (barSelectedId === p.id) {
+                                  setBarSelectedId(null);
+                                  return;
+                                }
+                                const from = current.findIndex((x) => x.id === barSelectedId);
+                                const to = current.findIndex((x) => x.id === p.id);
+                                if (from === -1 || to === -1) {
+                                  setBarSelectedId(null);
+                                  return;
+                                }
+                                const next = [...current];
+                                const [moved] = next.splice(from, 1);
+                                next.splice(to, 0, moved);
+                                barOrderedRef.current = next;
+                                setBarOrdered(next);
+                                // Rebuild the full sort map: keep other categories' positions, update this category
+                                const newMap = { ...barSortMapRef.current };
+                                next.forEach((item, idx) => {
+                                  newMap[item.id] = idx;
+                                });
+                                barSortMapRef.current = newMap;
+                                setBarSortMap(newMap);
+                                saveBarSortIds(next.map((x) => x.id));
+                                setBarSelectedId(null);
+                              }}
+                              className={`group relative rounded-2xl overflow-hidden border flex flex-col transition w-full ${outOfStock ? "opacity-80" : ""} ${incomplete ? "opacity-50 grayscale" : ""}`}
+                              style={{
+                                background: "var(--gradient-card)",
+                                boxShadow: isSelected
+                                  ? "0 0 0 3px rgba(251,191,36,0.95), var(--shadow-elegant)"
+                                  : "var(--shadow-elegant)",
+                                borderColor: isSelected
+                                  ? "rgb(251,191,36)"
+                                  : "rgba(251,146,60,0.8)",
+                              }}
+                            >
+                              <div className="aspect-[3/4] relative w-full">
+                                {p.image_url ? (
+                                  <img
+                                    src={imgSrc(p.image_url) ?? productImageUrl(p.image_url)!}
+                                    alt=""
+                                    loading="eager"
+                                    decoding="sync"
+                                    fetchPriority="high"
+                                    className="absolute inset-0 w-full h-full object-cover"
+                                    onError={(e) => {
+                                      const img = e.currentTarget as HTMLImageElement;
+                                      img.style.display = "none";
+                                      const fb = img.nextElementSibling as HTMLElement | null;
+                                      if (fb) fb.style.display = "flex";
+                                    }}
+                                  />
+                                ) : null}
+                                <div
+                                  className="absolute inset-0 items-center justify-center text-4xl"
+                                  style={{ display: p.image_url ? "none" : "flex" }}
+                                >
+                                  {categoryIcon(p.category ?? "drinks")}
+                                </div>
+                                {p.stock_qty !== undefined && !outOfStock && (
+                                  <div className="absolute top-1.5 left-1.5 h-6 min-w-[1.5rem] px-1.5 rounded-full flex items-center justify-center bg-black/70 shadow">
+                                    <span className="text-[10px] font-black text-white leading-none">
+                                      {p.stock_qty}
+                                    </span>
+                                  </div>
+                                )}
+                                {inCart && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      removeItem(p.id);
+                                    }}
+                                    className="absolute top-1.5 right-1.5 h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition text-black shadow z-10"
+                                    style={{ background: "#dc2626" }}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                )}
+                                {inCart && (
+                                  <div
+                                    className="absolute top-10 left-0 right-0 flex items-center justify-center gap-4 py-3"
+                                    style={{ background: "rgba(0,0,0,0.75)" }}
+                                  >
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        dec(p.id);
+                                      }}
+                                      className="h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition"
+                                      style={{ background: "#ef4444" }}
+                                    >
+                                      <Minus className="h-4 w-4 text-black" />
+                                    </button>
+                                    <div
+                                      className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-black text-black"
+                                      style={{ background: "var(--gradient-hero)" }}
+                                    >
+                                      {inCart.qty}
+                                    </div>
+                                  </div>
+                                )}
+                                {outOfStock && (
+                                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/75 backdrop-blur-[1px]">
+                                    <div className="bg-red-600 rounded-xl px-2 py-1 shadow-lg">
+                                      <span className="text-white text-[10px] font-black uppercase tracking-wider leading-none">
+                                        Out of Stock
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                                {!outOfStock &&
+                                  !inCart &&
+                                  (p.stock_qty ?? 1) >= 1 &&
+                                  (p.stock_qty ?? 1) <= 5 && (
+                                    <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full bg-red-600 shadow">
+                                      <span className="text-[9px] font-black uppercase tracking-wide text-white leading-none">
+                                        Low
+                                      </span>
+                                    </div>
+                                  )}
                               </div>
-                            )}
-                            {inCart && (
-                              <button onClick={(e) => { e.stopPropagation(); removeItem(p.id); }}
-                                className="absolute top-1.5 right-1.5 h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition text-black shadow z-10"
-                                style={{ background: "#dc2626" }}>
-                                <X className="h-4 w-4" />
-                              </button>
-                            )}
-                            {inCart && (
-                              <div className="absolute top-10 left-0 right-0 flex items-center justify-center gap-4 py-3"
-                                style={{ background: "rgba(0,0,0,0.75)" }}>
-                                <button onClick={(e) => { e.stopPropagation(); dec(p.id); }}
-                                  className="h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition"
-                                  style={{ background: "#ef4444" }}>
-                                  <Minus className="h-4 w-4 text-black" />
-                                </button>
-                                <div className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-black text-black"
-                                  style={{ background: "var(--gradient-hero)" }}>
-                                  {inCart.qty}
+                              <div
+                                className="px-1.5 py-1.5 border-t border-border/30"
+                                style={{
+                                  background: "rgba(var(--primary-rgb,251 146 60)/0.10)",
+                                  borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)",
+                                }}
+                              >
+                                <div
+                                  className="font-bold text-[11px] truncate leading-tight"
+                                  style={{ color: "var(--primary)" }}
+                                >
+                                  {p.name}
+                                </div>
+                                <div
+                                  className="font-black text-xs mt-0.5"
+                                  style={{ color: "var(--primary)" }}
+                                >
+                                  ${Number(p.price).toFixed(2)}
                                 </div>
                               </div>
-                            )}
-                            {outOfStock && (
-                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/75 backdrop-blur-[1px]">
-                                <div className="bg-red-600 rounded-xl px-2 py-1 shadow-lg">
-                                  <span className="text-white text-[10px] font-black uppercase tracking-wider leading-none">Out of Stock</span>
-                                </div>
-                              </div>
-                            )}
-                            {!outOfStock && !inCart && (p.stock_qty ?? 1) >= 1 && (p.stock_qty ?? 1) <= 5 && (
-                              <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full bg-red-600 shadow">
-                                <span className="text-[9px] font-black uppercase tracking-wide text-white leading-none">Low</span>
-                              </div>
-                            )}
+                            </button>
                           </div>
-                          <div className="px-1.5 py-1.5 border-t border-border/30" style={{ background: "rgba(var(--primary-rgb,251 146 60)/0.10)", borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)" }}>
-                            <div className="font-bold text-[11px] truncate leading-tight" style={{ color: "var(--primary)" }}>{p.name}</div>
-                            <div className="font-black text-xs mt-0.5" style={{ color: "var(--primary)" }}>${Number(p.price).toFixed(2)}</div>
-                          </div>
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Normal mode: memoized grid — only re-renders when barOrdered/cart changes ── */
+                  <ProductGrid
+                    barOrdered={barOrdered}
+                    cartQtyMap={cartQtyMap}
+                    resolvedImgMap={resolvedImgMap}
+                    cartVariantMap={cartVariantMap}
+                    onAdd={addToCart}
+                    onRemove={removeItem}
+                    onDec={dec}
+                    onRemoveVariant={removeVariantItem}
+                    onEnterEditMode={barEnterEditMode}
+                    showSortButton={cart.length === 0}
+                    sortLabel={t("sort_item_order", "⇅ Sort Item Order")}
+                  />
+                )}
               </div>
-            ) : (
-              /* ── Normal mode: memoized grid — only re-renders when barOrdered/cart changes ── */
-              <ProductGrid
-                barOrdered={barOrdered}
-                cartQtyMap={cartQtyMap}
-                resolvedImgMap={resolvedImgMap}
-                cartVariantMap={cartVariantMap}
-                onAdd={addToCart}
-                onRemove={removeItem}
-                onDec={dec}
-                onRemoveVariant={removeVariantItem}
-                onEnterEditMode={barEnterEditMode}
-                showSortButton={cart.length === 0}
-                sortLabel={t("sort_item_order", "⇅ Sort Item Order")}
-              />
-            )}
-          </div>
             )}
           </>
         )}
@@ -1642,10 +2146,7 @@ export default function RegisterPage() {
 
       {/* Sticky CASH button — fixed at bottom */}
       {cartCount > 0 && (
-        <div
-          className="fixed inset-x-0 z-[26] px-4 pb-2 pointer-events-none"
-          style={{ bottom: 8 }}
-        >
+        <div className="fixed inset-x-0 z-[26] px-4 pb-2 pointer-events-none" style={{ bottom: 8 }}>
           <div className="max-w-2xl mx-auto pointer-events-auto space-y-2">
             {/* Place Order button */}
             <button
@@ -1653,9 +2154,13 @@ export default function RegisterPage() {
               className="w-full h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
               style={{ background: "var(--gradient-hero)" }}
             >
-              <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">{cartCount}</span>
+              <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">
+                {cartCount}
+              </span>
               <span>Place Order</span>
-              <span className="text-primary-foreground/80 text-base font-bold">${total.toFixed(2)}</span>
+              <span className="text-primary-foreground/80 text-base font-bold">
+                ${total.toFixed(2)}
+              </span>
             </button>
           </div>
         </div>
@@ -1668,13 +2173,31 @@ export default function RegisterPage() {
           onDec={dec}
           onAdd={addToCart}
           onRemove={removeItem}
-          onClearCart={() => { setCart([]); localStorage.removeItem(`bartap-cart-${ownerId}`); }}
-          onClose={() => { setCashOpen(false); setEditOrder(null); }}
+          onClearCart={() => {
+            setCart([]);
+            localStorage.removeItem(`bartap-cart-${ownerId}`);
+          }}
+          onClose={() => {
+            setCashOpen(false);
+            setEditOrder(null);
+          }}
           ownerId={ownerId}
           editOrder={editOrder}
           onEditComplete={() => setEditOrder(null)}
-          ownerId={ownerId}
-          onSuccess={async (paidAmt, changeAmt) => {
+          onSuccess={async ({ paid, change, orderDiscount, payMode, selectedCustomer }) => {
+            const saleData: ReceiptData = {
+              storeName: profile?.username ?? "Store",
+              items: cart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) })),
+              subtotal: total,
+              total: Math.max(0, total - orderDiscount),
+              paid,
+              change,
+              payMode: payMode ?? "cash",
+              customerName: selectedCustomer?.full_name,
+            };
+            setLastSale(saleData);
+            setShowSaleCompleteModal(true);
+
             // Optimistically decrement stock_qty in local state using the cart
             // that's about to be cleared. This prevents the badge snapping back
             // to the old value while waiting for the DB realtime event to arrive.
@@ -1688,9 +2211,11 @@ export default function RegisterPage() {
                 qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + units;
               }
               return prev.map((p) =>
-                qtyByProduct[p.id] !== undefined && p.stock_qty !== undefined && p.stock_qty !== null
+                qtyByProduct[p.id] !== undefined &&
+                p.stock_qty !== undefined &&
+                p.stock_qty !== null
                   ? { ...p, stock_qty: Math.max(0, p.stock_qty - qtyByProduct[p.id]) }
-                  : p
+                  : p,
               );
             });
             setCart([]);
@@ -1713,19 +2238,28 @@ export default function RegisterPage() {
               setCart((c) => {
                 const existing = c.find((i) => i.id === line.cartKey);
                 if (existing) {
-                  return c.map((i) => i.id === line.cartKey
-                    ? { ...i, qty: i.qty + line.qty, _units_consumed: ((i as any)._units_consumed ?? i.qty) + (uc ?? line.qty) }
-                    : i);
+                  return c.map((i) =>
+                    i.id === line.cartKey
+                      ? {
+                          ...i,
+                          qty: i.qty + line.qty,
+                          _units_consumed: ((i as any)._units_consumed ?? i.qty) + (uc ?? line.qty),
+                        }
+                      : i,
+                  );
                 }
-                return [...c, {
-                  id: line.cartKey,
-                  name: line.name,
-                  price: line.price,
-                  cost_price: varPickerProduct.cost_price ?? 0,
-                  image_url: varPickerProduct.image_url,
-                  qty: line.qty,
-                  ...(uc !== undefined ? { _units_consumed: uc } : {}),
-                }];
+                return [
+                  ...c,
+                  {
+                    id: line.cartKey,
+                    name: line.name,
+                    price: line.price,
+                    cost_price: varPickerProduct.cost_price ?? 0,
+                    image_url: varPickerProduct.image_url,
+                    qty: line.qty,
+                    ...(uc !== undefined ? { _units_consumed: uc } : {}),
+                  },
+                ];
               });
             });
             setVarPickerProduct(null);
@@ -1733,13 +2267,145 @@ export default function RegisterPage() {
         />
       )}
 
+      {/* ── Cash Drawer result modal ── */}
+      {showDrawerModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
+          <div
+            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center"
+            style={{ background: "var(--gradient-card)" }}
+          >
+            <div className="px-6 pt-7 pb-4 space-y-3">
+              {drawerBusy ? (
+                <>
+                  <div className="flex justify-center">
+                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                  </div>
+                  <h2 className="font-black text-xl">Opening Drawer...</h2>
+                </>
+              ) : drawerResult?.opened ? (
+                <>
+                  <div className="flex justify-center">
+                    <div className="h-16 w-16 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center">
+                      <CheckCircle2 className="h-9 w-9 text-green-400" strokeWidth={1.5} />
+                    </div>
+                  </div>
+                  <h2 className="font-black text-xl">Drawer Opened</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {drawerResult.method === "native"
+                      ? "Native plugin"
+                      : drawerResult.method === "webserial"
+                        ? "Web Serial"
+                        : "No method"}{" "}
+                    {drawerResult.device ? `· ${drawerResult.device}` : ""}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-center">
+                    <div className="h-16 w-16 rounded-full bg-red-500/20 border-2 border-red-500/40 flex items-center justify-center text-3xl">
+                      ⚠️
+                    </div>
+                  </div>
+                  <h2 className="font-black text-xl">Could Not Open Drawer</h2>
+                  <p className="text-xs text-red-400 font-semibold">
+                    {drawerResult?.error ?? "Unknown error"}
+                  </p>
+                </>
+              )}
+            </div>
+            <div className="px-6 pb-6 pt-2">
+              <button
+                onClick={() => setShowDrawerModal(false)}
+                className="w-full h-12 rounded-2xl font-black text-sm transition active:scale-95 text-primary-foreground"
+                style={{ background: "var(--gradient-hero)" }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sale Complete modal ── */}
+      {showSaleCompleteModal && lastSale && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
+          <div
+            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center"
+            style={{ background: "var(--gradient-card)" }}
+          >
+            <div className="px-6 pt-7 pb-4 space-y-4">
+              <div className="flex justify-center">
+                <div className="h-16 w-16 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center">
+                  <CheckCircle2 className="h-9 w-9 text-green-400" strokeWidth={1.5} />
+                </div>
+              </div>
+              <h2 className="font-black text-xl">Sale Complete</h2>
+
+              <div
+                className="rounded-2xl p-4 space-y-2 text-left"
+                style={{
+                  background: "oklch(0.18 0.04 145 / 0.4)",
+                  border: "1px solid rgba(74,222,128,0.3)",
+                }}
+              >
+                <div className="flex justify-between text-sm">
+                  <span className="text-green-300/70 font-semibold">Total</span>
+                  <span className="font-black text-green-100">${lastSale.total.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-green-300/70 font-semibold">Paid</span>
+                  <span className="font-black text-green-100">${lastSale.paid.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-green-300/70 font-semibold">Change</span>
+                  <span className="font-black text-green-300">${lastSale.change.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 max-h-32 overflow-y-auto text-left">
+                {lastSale.items.map((it, idx) => (
+                  <div key={idx} className="flex justify-between text-xs px-1">
+                    <span className="font-semibold text-foreground/80">
+                      {it.qty}x {it.name}
+                    </span>
+                    <span className="font-black text-foreground">
+                      ${(it.qty * it.price).toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="px-6 pb-6 pt-2 space-y-3">
+              <button
+                onClick={handlePrintAndDone}
+                disabled={printingReceipt}
+                className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground"
+                style={{ background: "var(--gradient-hero)" }}
+              >
+                {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : "🖨️ Print & Done"}
+              </button>
+              <button
+                onClick={handleSaleDone}
+                className="w-full h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
 // ─── Cash Overlay ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // ── CashItemActions — shared action bar for cash & credit order item rows ──────
-function CashItemActions({ item, onDec, onAdd, onRemove }: {
+function CashItemActions({
+  item,
+  onDec,
+  onAdd,
+  onRemove,
+}: {
   item: CartItem;
   onDec: (id: string) => void;
   onAdd: (p: CartItem) => void;
@@ -1751,26 +2417,31 @@ function CashItemActions({ item, onDec, onAdd, onRemove }: {
       <button
         onClick={() => onDec(item.id)}
         className="h-11 w-11 ml-3 rounded-full flex items-center justify-center active:scale-90 transition shrink-0"
-        style={{ background: "#ef4444" }}>
+        style={{ background: "#ef4444" }}
+      >
         <Minus className="h-5 w-5 text-white" />
       </button>
       {/* qty */}
-      <div className="h-11 min-w-[2.75rem] px-2 rounded-full flex items-center justify-center text-base font-black text-white shrink-0"
-        style={{ background: "#1a1a1a" }}>
+      <div
+        className="h-11 min-w-[2.75rem] px-2 rounded-full flex items-center justify-center text-base font-black text-white shrink-0"
+        style={{ background: "#1a1a1a" }}
+      >
         {item.qty}
       </div>
       {/* + */}
       <button
         onClick={() => onAdd(item)}
         className="h-11 w-11 rounded-full flex items-center justify-center active:scale-90 transition shrink-0"
-        style={{ background: "var(--gradient-hero)" }}>
+        style={{ background: "var(--gradient-hero)" }}
+      >
         <Plus className="h-5 w-5 text-black" />
       </button>
       {/* X — removes item */}
       <button
         onClick={() => onRemove(item.id)}
         className="h-11 w-11 rounded-full flex items-center justify-center active:scale-90 transition shrink-0"
-        style={{ background: "rgba(239,68,68,0.12)", border: "1.5px solid rgba(239,68,68,0.35)" }}>
+        style={{ background: "rgba(239,68,68,0.12)", border: "1.5px solid rgba(239,68,68,0.35)" }}
+      >
         <X className="h-5 w-5 text-red-400" />
       </button>
     </div>
@@ -1778,14 +2449,32 @@ function CashItemActions({ item, onDec, onAdd, onRemove }: {
 }
 
 function CashOverlay({
-  total, cart, onDec, onAdd, onRemove, onClearCart, onClose, onSuccess, ownerId,
-  editOrder, onEditComplete,
+  total,
+  cart,
+  onDec,
+  onAdd,
+  onRemove,
+  onClearCart,
+  onClose,
+  onSuccess,
+  ownerId,
+  editOrder,
+  onEditComplete,
 }: {
-  total: number; cart: CartItem[];
-  onDec: (id: string) => void; onAdd: (p: CartItem) => void;
+  total: number;
+  cart: CartItem[];
+  onDec: (id: string) => void;
+  onAdd: (p: CartItem) => void;
   onRemove: (id: string) => void;
   onClearCart: () => void;
-  onClose: () => void; onSuccess: (paid: number, change: number) => void;
+  onClose: () => void;
+  onSuccess: (data: {
+    paid: number;
+    change: number;
+    orderDiscount: number;
+    payMode: string | null;
+    selectedCustomer: CreditAccount | null;
+  }) => void;
   ownerId: string;
   editOrder?: { orderId: string; type: "cash" | "credit"; creditTxId?: string } | null;
   onEditComplete?: () => void;
@@ -1813,7 +2502,8 @@ function CashOverlay({
   useEffect(() => {
     if (!ownerId) return;
     setLoadingCustomers(true);
-    supabase.from("credit_accounts")
+    supabase
+      .from("credit_accounts")
       .select("id, full_name, contact_number, balance_owed, status")
       .eq("owner_id", ownerId)
       .order("full_name")
@@ -1824,7 +2514,10 @@ function CashOverlay({
           cacheCreditAccounts(ownerId, data as CreditAccount[]);
         } else {
           // Network failed (offline) — serve from IndexedDB cache
-          console.warn("[CashOverlay] customers fetch failed, using cache:", error?.message ?? "offline");
+          console.warn(
+            "[CashOverlay] customers fetch failed, using cache:",
+            error?.message ?? "offline",
+          );
           const cached = await getCachedCreditAccounts(ownerId);
           setCustomers(cached as CreditAccount[]);
         }
@@ -1858,35 +2551,72 @@ function CashOverlay({
       // ── Credit order ──────────────────────────────────────────────────
       // record_credit_charge RPC handles stock decrement internally — no separate call needed.
       const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
-      const discountNote = orderDiscount > 0 ? ` | Disc: -$${orderDiscount.toFixed(2)} (orig $${total.toFixed(2)})` : "";
+      const discountNote =
+        orderDiscount > 0
+          ? ` | Disc: -$${orderDiscount.toFixed(2)} (orig $${total.toFixed(2)})`
+          : "";
       const creditPayload = {
         p_credit_account_id: selectedCustomer.id,
         p_cashier_id: profile.id,
         p_amount: discountedTotal,
-        p_items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, cost_price: (c as any).cost_price ?? 0, qty: c.qty })),
+        p_items: cart.map((c) => ({
+          id: c.id,
+          name: c.name,
+          price: c.price,
+          cost_price: (c as any).cost_price ?? 0,
+          qty: c.qty,
+        })),
         p_note: itemsDesc + discountNote,
       };
       if (!isOnline) {
         await enqueue("rpc_record_credit_charge", creditPayload, groupId);
         setBusy(false);
         toast.success(`💾 Saved offline — will sync when reconnected`);
-        onSuccess(paidNum, changeNum);
+        onSuccess({
+          paid: paidNum,
+          change: changeNum,
+          orderDiscount,
+          payMode: "cash",
+          selectedCustomer: selectedCustomer,
+        });
         return;
       }
       const { error } = await supabase.rpc("record_credit_charge", creditPayload);
-      if (error) { setBusy(false); toast.error(error.message); return; }
+      if (error) {
+        setBusy(false);
+        toast.error(error.message);
+        return;
+      }
       setBusy(false);
       toast.success(`Charged $${discountedTotal.toFixed(2)} to ${selectedCustomer.full_name}`);
-      onSuccess(paidNum, changeNum);
+      onSuccess({
+        paid: paidNum,
+        change: changeNum,
+        orderDiscount,
+        payMode: "cash",
+        selectedCustomer: selectedCustomer,
+      });
       return;
     }
 
     // ── Cash order (guest or customer) ────────────────────────────────
     // Stock is decremented by the handle_order_insert DB trigger — no separate RPC call needed.
     const orderPayload = {
-      owner_id: ownerId, cashier_id: profile.id,
-      items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, units_consumed: (c as any)._units_consumed ?? null, ...(c._discount ? { discount: c._discount, original_price: c._originalPrice ?? c.price } : {}) })),
-      total: discountedTotal, paid: paidNum, change_given: changeNum,
+      owner_id: ownerId,
+      cashier_id: profile.id,
+      items: cart.map((c) => ({
+        id: c.id,
+        name: c.name,
+        price: c.price,
+        qty: c.qty,
+        units_consumed: (c as any)._units_consumed ?? null,
+        ...(c._discount
+          ? { discount: c._discount, original_price: c._originalPrice ?? c.price }
+          : {}),
+      })),
+      total: discountedTotal,
+      paid: paidNum,
+      change_given: changeNum,
       ...(orderDiscount > 0 ? { discount_amount: orderDiscount, original_total: total } : {}),
     };
 
@@ -1894,35 +2624,57 @@ function CashOverlay({
       await enqueue("orders_insert", orderPayload, groupId);
       if (payMode === "cash" && selectedCustomer) {
         const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
-        await enqueue("credit_transactions_insert", {
-          credit_account_id: selectedCustomer.id,
-          owner_id: ownerId,
-          cashier_id: profile.id,
-          type: "charge",
-          amount: discountedTotal,
-          items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, units_consumed: (c as any)._units_consumed ?? null })),
-          note: "[CASH] " + itemsDesc,
-        }, groupId);
+        await enqueue(
+          "credit_transactions_insert",
+          {
+            credit_account_id: selectedCustomer.id,
+            owner_id: ownerId,
+            cashier_id: profile.id,
+            type: "charge",
+            amount: discountedTotal,
+            items: cart.map((c) => ({
+              id: c.id,
+              name: c.name,
+              price: c.price,
+              qty: c.qty,
+              units_consumed: (c as any)._units_consumed ?? null,
+            })),
+            note: "[CASH] " + itemsDesc,
+          },
+          groupId,
+        );
       }
       setBusy(false);
       toast.success(`💾 Saved offline — will sync when reconnected`);
-      onSuccess(paidNum, changeNum);
+      onSuccess({
+        paid: paidNum,
+        change: changeNum,
+        orderDiscount,
+        payMode: "cash",
+        selectedCustomer: selectedCustomer,
+      });
       return;
     }
 
     const { error } = editOrder
       ? await (supabase.rpc as any)("edit_order", {
-          p_order_id:        editOrder.orderId,
-          p_items:           orderPayload.items,
-          p_total:           discountedTotal,
-          p_paid:            paidNum,
-          p_change_given:    changeNum,
+          p_order_id: editOrder.orderId,
+          p_items: orderPayload.items,
+          p_total: discountedTotal,
+          p_paid: paidNum,
+          p_change_given: changeNum,
           p_discount_amount: orderDiscount > 0 ? orderDiscount : null,
-          p_original_total:  orderDiscount > 0 ? total : null,
+          p_original_total: orderDiscount > 0 ? total : null,
         })
       : await supabase.from("orders").insert(orderPayload);
-    if (error) { setBusy(false); toast.error(error.message); return; }
-    if (editOrder) { onEditComplete?.(); }
+    if (error) {
+      setBusy(false);
+      toast.error(error.message);
+      return;
+    }
+    if (editOrder) {
+      onEditComplete?.();
+    }
     // Trigger handle_order_insert fires automatically — no separate stock RPC needed
 
     // If a customer was selected with cash, record history without changing balance
@@ -1934,20 +2686,34 @@ function CashOverlay({
         cashier_id: profile.id,
         type: "charge",
         amount: discountedTotal,
-        items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, units_consumed: (c as any)._units_consumed ?? null })),
+        items: cart.map((c) => ({
+          id: c.id,
+          name: c.name,
+          price: c.price,
+          qty: c.qty,
+          units_consumed: (c as any)._units_consumed ?? null,
+        })),
         note: "[CASH] " + itemsDesc,
       });
     }
 
     setBusy(false);
-    onSuccess(paidNum, changeNum);
+    onSuccess({
+      paid: paidNum,
+      change: changeNum,
+      orderDiscount,
+      payMode: "cash",
+      selectedCustomer: selectedCustomer,
+    });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
       {/* Outer container: side-by-side on md+, stacked on mobile */}
-      <div className="relative w-full max-w-3xl max-h-[90dvh] flex flex-col md:flex-row rounded-3xl overflow-hidden border border-border shadow-2xl" style={{ background: "var(--gradient-card)" }}>
-
+      <div
+        className="relative w-full max-w-3xl max-h-[90dvh] flex flex-col md:flex-row rounded-3xl overflow-hidden border border-border shadow-2xl"
+        style={{ background: "var(--gradient-card)" }}
+      >
         {/* ── Left panel: order review ── */}
         <div className="flex flex-col flex-1 min-h-0 md:border-r md:border-border">
           <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
@@ -1956,14 +2722,21 @@ function CashOverlay({
               {/* Customer toggle — mobile only */}
               {step === 1 && (
                 <button
-                  onClick={() => setShowRightPanel(v => !v)}
+                  onClick={() => setShowRightPanel((v) => !v)}
                   className="md:hidden h-11 px-4 rounded-xl font-black text-sm flex items-center gap-1.5 active:scale-95 transition"
-                  style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>
+                  style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+                >
                   👤
-                  {selectedCustomer ? selectedCustomer.full_name.split(" ")[0] : payMode ?? "Guest"}
+                  {selectedCustomer
+                    ? selectedCustomer.full_name.split(" ")[0]
+                    : (payMode ?? "Guest")}
                 </button>
               )}
-              <button onClick={onClose} className="h-11 w-11 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition" aria-label="Close">
+              <button
+                onClick={onClose}
+                className="h-11 w-11 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition"
+                aria-label="Close"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -1972,62 +2745,132 @@ function CashOverlay({
           {step === 1 && (
             <>
               <div className="flex-1 overflow-y-auto px-5 space-y-4 pb-4">
-                <div className="rounded-2xl p-5 text-center" style={{ background: "var(--gradient-hero)" }}>
+                <div
+                  className="rounded-2xl p-5 text-center"
+                  style={{ background: "var(--gradient-hero)" }}
+                >
                   <div className="text-sm font-medium text-primary-foreground/80">Total Due</div>
                   {orderDiscount > 0 && (
-                    <div className="text-xs line-through text-primary-foreground/50 mb-0.5">${total.toFixed(2)}</div>
+                    <div className="text-xs line-through text-primary-foreground/50 mb-0.5">
+                      ${total.toFixed(2)}
+                    </div>
                   )}
-                  <div className="text-5xl font-black text-primary-foreground">${discountedTotal.toFixed(2)}</div>
+                  <div className="text-5xl font-black text-primary-foreground">
+                    ${discountedTotal.toFixed(2)}
+                  </div>
                   {orderDiscount > 0 && (
-                    <div className="text-xs font-semibold text-white/90 mt-0.5">-${orderDiscount.toFixed(2)} discount</div>
+                    <div className="text-xs font-semibold text-white/90 mt-0.5">
+                      -${orderDiscount.toFixed(2)} discount
+                    </div>
                   )}
                   {selectedCustomer && (
                     <div className="mt-2 text-xs font-black text-primary-foreground/70">
-                      {payMode === "credit" ? "🧾 Credit" : "💵 Cash"} · {selectedCustomer.full_name}
+                      {payMode === "credit" ? "🧾 Credit" : "💵 Cash"} ·{" "}
+                      {selectedCustomer.full_name}
                     </div>
                   )}
-                  {!selectedCustomer && <div className="mt-2 text-xs text-primary-foreground/50">Guest</div>}
+                  {!selectedCustomer && (
+                    <div className="mt-2 text-xs text-primary-foreground/50">Guest</div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Order</span>
+                    <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                      Order
+                    </span>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => { if (orderDiscount > 0) { setOrderDiscount(0); setDiscountVal(""); setDiscountOpen(false); } else { setDiscountOpen(v => !v); } }}
+                        onClick={() => {
+                          if (orderDiscount > 0) {
+                            setOrderDiscount(0);
+                            setDiscountVal("");
+                            setDiscountOpen(false);
+                          } else {
+                            setDiscountOpen((v) => !v);
+                          }
+                        }}
                         className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-black transition active:scale-95"
-                        style={orderDiscount > 0
-                          ? { background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.4)", color: "#4ade80" }
-                          : { background: "rgba(250,204,21,0.1)", border: "1px solid rgba(250,204,21,0.25)", color: "#facc15" }}>
-                        {orderDiscount > 0 ? `✕ -$${orderDiscount.toFixed(2)}` : <><span className="text-base font-black leading-none">+</span> Discount</>}
+                        style={
+                          orderDiscount > 0
+                            ? {
+                                background: "rgba(34,197,94,0.15)",
+                                border: "1px solid rgba(34,197,94,0.4)",
+                                color: "#4ade80",
+                              }
+                            : {
+                                background: "rgba(250,204,21,0.1)",
+                                border: "1px solid rgba(250,204,21,0.25)",
+                                color: "#facc15",
+                              }
+                        }
+                      >
+                        {orderDiscount > 0 ? (
+                          `✕ -$${orderDiscount.toFixed(2)}`
+                        ) : (
+                          <>
+                            <span className="text-base font-black leading-none">+</span> Discount
+                          </>
+                        )}
                       </button>
-                      <button onClick={onClearCart} className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-black text-destructive transition active:scale-95" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)" }}>
+                      <button
+                        onClick={onClearCart}
+                        className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-black text-destructive transition active:scale-95"
+                        style={{
+                          background: "rgba(239,68,68,0.1)",
+                          border: "1px solid rgba(239,68,68,0.25)",
+                        }}
+                      >
                         <Trash2 className="h-4 w-4" /> Clear all
                       </button>
                     </div>
                   </div>
                   {discountOpen && orderDiscount === 0 && (
-                    <div className="rounded-xl border border-yellow-500/30 p-3 space-y-2" style={{ background: "oklch(0.18 0.04 80 / 0.5)" }}>
-                      <div className="text-xs font-semibold text-yellow-300/70 uppercase tracking-widest text-center">Order Discount ($)</div>
-                      <div className="rounded-lg border border-yellow-500/20 px-3 py-2 text-center text-xl font-black text-yellow-100" style={{ background: "oklch(0.12 0.02 80)" }}>
+                    <div
+                      className="rounded-xl border border-yellow-500/30 p-3 space-y-2"
+                      style={{ background: "oklch(0.18 0.04 80 / 0.5)" }}
+                    >
+                      <div className="text-xs font-semibold text-yellow-300/70 uppercase tracking-widest text-center">
+                        Order Discount ($)
+                      </div>
+                      <div
+                        className="rounded-lg border border-yellow-500/20 px-3 py-2 text-center text-xl font-black text-yellow-100"
+                        style={{ background: "oklch(0.12 0.02 80)" }}
+                      >
                         {discountVal || "0"}
                       </div>
                       <div className="grid grid-cols-3 gap-1.5">
-                        {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => (
-                          <button key={k} type="button"
+                        {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"].map((k) => (
+                          <button
+                            key={k}
+                            type="button"
                             onClick={() => {
-                              if (k === "⌫") setDiscountVal(v => v.slice(0, -1));
-                              else if (k === ".") { if (!discountVal.includes(".")) setDiscountVal(v => v + "."); }
-                              else { const dot = discountVal.indexOf("."); if (dot !== -1 && discountVal.length - dot > 2) return; setDiscountVal(v => v === "0" ? k : v + k); }
+                              if (k === "⌫") setDiscountVal((v) => v.slice(0, -1));
+                              else if (k === ".") {
+                                if (!discountVal.includes(".")) setDiscountVal((v) => v + ".");
+                              } else {
+                                const dot = discountVal.indexOf(".");
+                                if (dot !== -1 && discountVal.length - dot > 2) return;
+                                setDiscountVal((v) => (v === "0" ? k : v + k));
+                              }
                             }}
-                            className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}>
+                            className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
+                          >
                             {k}
                           </button>
                         ))}
                       </div>
                       <button
                         className="w-full h-10 rounded-xl font-black text-sm transition active:scale-95"
-                        style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
-                        onClick={() => { const d = Math.min(parseFloat(discountVal) || 0, total); setOrderDiscount(d); setDiscountOpen(false); }}>
+                        style={{
+                          background: "var(--gradient-hero)",
+                          color: "var(--primary-foreground)",
+                        }}
+                        onClick={() => {
+                          const d = Math.min(parseFloat(discountVal) || 0, total);
+                          setOrderDiscount(d);
+                          setDiscountOpen(false);
+                        }}
+                      >
                         Apply Discount
                       </button>
                     </div>
@@ -2035,16 +2878,31 @@ function CashOverlay({
                   {cart.map((i) => (
                     <div key={i.id} className="flex gap-3 p-3 rounded-xl bg-background/50">
                       <div className="h-20 w-14 sm:h-28 sm:w-20 md:h-32 md:w-24 shrink-0 rounded-xl overflow-hidden bg-muted flex items-center justify-center">
-                        {i.image_url ? <img src={productImageUrl(i.image_url)!} alt={i.name} className="h-full w-full object-cover" />
-                          : i.id.startsWith("shot-") ? <span className="text-2xl">🥃</span>
-                          : <span className="text-2xl">{categoryIcon(i.category ?? "drinks")}</span>}
+                        {i.image_url ? (
+                          <img
+                            src={productImageUrl(i.image_url)!}
+                            alt={i.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : i.id.startsWith("shot-") ? (
+                          <span className="text-2xl">🥃</span>
+                        ) : (
+                          <span className="text-2xl">{categoryIcon(i.category ?? "drinks")}</span>
+                        )}
                       </div>
                       <div className="flex-1 min-w-0 flex flex-col gap-2">
                         <div className="flex items-start justify-between gap-2">
                           <div className="font-black text-sm leading-tight flex-1">{i.name}</div>
                           <div className="flex flex-col items-end shrink-0">
-                            <span className="font-black text-base" style={{ color: "var(--primary)" }}>${(i.qty * Number(i.price)).toFixed(2)}</span>
-                            <span className="text-[11px] text-muted-foreground">${Number(i.price).toFixed(2)} each</span>
+                            <span
+                              className="font-black text-base"
+                              style={{ color: "var(--primary)" }}
+                            >
+                              ${(i.qty * Number(i.price)).toFixed(2)}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              ${Number(i.price).toFixed(2)} each
+                            </span>
                           </div>
                         </div>
                         <CashItemActions item={i} onDec={onDec} onAdd={onAdd} onRemove={onRemove} />
@@ -2054,8 +2912,16 @@ function CashOverlay({
                 </div>
               </div>
               <div className="shrink-0 px-5 pb-5 pt-3 border-t border-border flex gap-3">
-                <Button variant="outline" className="flex-1 h-12" onClick={onClose}>{t("cancel", "Cancel")}</Button>
-                <Button className="flex-1 h-12 font-black text-base" onClick={() => setStep(2)} style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>{t("proceed", "Proceed")}</Button>
+                <Button variant="outline" className="flex-1 h-12" onClick={onClose}>
+                  {t("cancel", "Cancel")}
+                </Button>
+                <Button
+                  className="flex-1 h-12 font-black text-base"
+                  onClick={() => setStep(2)}
+                  style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+                >
+                  {t("proceed", "Proceed")}
+                </Button>
               </div>
             </>
           )}
@@ -2065,36 +2931,78 @@ function CashOverlay({
               <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-3">
                 {payMode === "credit" && selectedCustomer ? (
                   /* Credit — no cash collection needed, confirm directly */
-                  <div className="rounded-2xl p-6 text-center space-y-2" style={{ background: "oklch(0.18 0.04 45)", border: "2px solid var(--primary)" }}>
-                    <div className="text-sm font-semibold" style={{ color: "var(--primary)" }}>Charging to</div>
-                    <div className="text-2xl font-black" style={{ color: "var(--primary)" }}>{selectedCustomer.full_name}</div>
-                    <div className="text-4xl font-black" style={{ color: "var(--primary)" }}>${discountedTotal.toFixed(2)}</div>
+                  <div
+                    className="rounded-2xl p-6 text-center space-y-2"
+                    style={{
+                      background: "oklch(0.18 0.04 45)",
+                      border: "2px solid var(--primary)",
+                    }}
+                  >
+                    <div className="text-sm font-semibold" style={{ color: "var(--primary)" }}>
+                      Charging to
+                    </div>
+                    <div className="text-2xl font-black" style={{ color: "var(--primary)" }}>
+                      {selectedCustomer.full_name}
+                    </div>
+                    <div className="text-4xl font-black" style={{ color: "var(--primary)" }}>
+                      ${discountedTotal.toFixed(2)}
+                    </div>
                     {orderDiscount > 0 && (
-                      <div className="text-xs text-green-400 font-semibold">-${orderDiscount.toFixed(2)} discount applied</div>
+                      <div className="text-xs text-green-400 font-semibold">
+                        -${orderDiscount.toFixed(2)} discount applied
+                      </div>
                     )}
                     {Number(selectedCustomer.balance_owed) > 0 && (
-                      <div className="text-sm text-red-400 font-semibold">Current balance: ${Number(selectedCustomer.balance_owed).toFixed(2)}</div>
+                      <div className="text-sm text-red-400 font-semibold">
+                        Current balance: ${Number(selectedCustomer.balance_owed).toFixed(2)}
+                      </div>
                     )}
                   </div>
                 ) : (
                   <>
-                    <div className="rounded-xl border border-green-500/30 px-4 py-3 text-center" style={{ background: "oklch(0.22 0.06 145 / 0.4)" }}>
-                      <div className="text-xs font-semibold text-green-300/70 uppercase tracking-widest mb-1">Amount Received</div>
+                    <div
+                      className="rounded-xl border border-green-500/30 px-4 py-3 text-center"
+                      style={{ background: "oklch(0.22 0.06 145 / 0.4)" }}
+                    >
+                      <div className="text-xs font-semibold text-green-300/70 uppercase tracking-widest mb-1">
+                        Amount Received
+                      </div>
                       <div className="text-3xl font-black text-green-100">${paid || "0.00"}</div>
                     </div>
-                    <div className={`rounded-xl px-4 py-4 text-center border transition-all ${Number(paid) === 0 ? "opacity-40 bg-green-500/10 border-green-500/20" : enough ? "bg-green-500/25 border-green-500/40" : "bg-red-500/25 border-red-500/40"}`}>
-                      <div className={`text-xs font-semibold uppercase tracking-widest mb-1 ${enough ? "text-green-300/70" : "text-red-300/70"}`}>{enough ? "Change to Give" : "Short by"}</div>
-                      <div className={`text-5xl font-black ${enough ? "text-green-300" : "text-red-400"}`}>
-                        ${Number(paid) === 0 ? "0.00" : (enough ? change : discountedTotal - Number(paid)).toFixed(2)}
+                    <div
+                      className={`rounded-xl px-4 py-4 text-center border transition-all ${Number(paid) === 0 ? "opacity-40 bg-green-500/10 border-green-500/20" : enough ? "bg-green-500/25 border-green-500/40" : "bg-red-500/25 border-red-500/40"}`}
+                    >
+                      <div
+                        className={`text-xs font-semibold uppercase tracking-widest mb-1 ${enough ? "text-green-300/70" : "text-red-300/70"}`}
+                      >
+                        {enough ? "Change to Give" : "Short by"}
+                      </div>
+                      <div
+                        className={`text-5xl font-black ${enough ? "text-green-300" : "text-red-400"}`}
+                      >
+                        $
+                        {Number(paid) === 0
+                          ? "0.00"
+                          : (enough ? change : discountedTotal - Number(paid)).toFixed(2)}
                       </div>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
-                      {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => (
-                        <button key={k} type="button" onClick={() => {
-                          if (k === "⌫") setPaid((v) => v.slice(0, -1));
-                          else if (k === ".") { if (!paid.includes(".")) setPaid((v) => v + "."); }
-                          else { const dotIdx = paid.indexOf("."); if (dotIdx !== -1 && paid.length - dotIdx > 2) return; setPaid((v) => (v === "0" ? k : v + k)); }
-                        }} className={`h-14 rounded-2xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive hover:bg-destructive/30" : "bg-muted hover:bg-muted/70 text-foreground"}`}>
+                      {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"].map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => {
+                            if (k === "⌫") setPaid((v) => v.slice(0, -1));
+                            else if (k === ".") {
+                              if (!paid.includes(".")) setPaid((v) => v + ".");
+                            } else {
+                              const dotIdx = paid.indexOf(".");
+                              if (dotIdx !== -1 && paid.length - dotIdx > 2) return;
+                              setPaid((v) => (v === "0" ? k : v + k));
+                            }
+                          }}
+                          className={`h-14 rounded-2xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive hover:bg-destructive/30" : "bg-muted hover:bg-muted/70 text-foreground"}`}
+                        >
                           {k}
                         </button>
                       ))}
@@ -2103,12 +3011,32 @@ function CashOverlay({
                 )}
               </div>
               <div className="shrink-0 px-5 pb-5 pt-3 border-t border-border flex gap-3">
-                <Button variant="outline" className="flex-1 h-12" onClick={() => { setStep(1); setPaid(""); }}>{t("back", "Back")}</Button>
-                <Button className="flex-1 h-12 font-black text-base"
+                <Button
+                  variant="outline"
+                  className="flex-1 h-12"
+                  onClick={() => {
+                    setStep(1);
+                    setPaid("");
+                  }}
+                >
+                  {t("back", "Back")}
+                </Button>
+                <Button
+                  className="flex-1 h-12 font-black text-base"
                   disabled={(payMode === "credit" ? false : !enough) || busy}
-                  onClick={submit}
-                  style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : payMode === "credit" ? "Confirm Credit" : t("confirm_sale", "Confirm Sale")}
+                  onClick={() => {
+                    if (payMode !== "credit") void openCashDrawer();
+                    submit();
+                  }}
+                  style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+                >
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : payMode === "credit" ? (
+                    "Confirm Credit"
+                  ) : (
+                    t("confirm_sale", "Confirm Sale")
+                  )}
                 </Button>
               </div>
             </>
@@ -2117,39 +3045,62 @@ function CashOverlay({
 
         {/* ── Right panel: payment type + customer list ── */}
         {step === 1 && (
-          <div className={`
+          <div
+            className={`
             w-full md:w-64 flex flex-col shrink-0
             md:static
-            ${showRightPanel
-              ? "absolute inset-0 z-[60] rounded-3xl"
-              : "hidden md:flex"}
-          `} style={{ background: "oklch(0.15 0.02 60)", border: "3px solid #f97316", borderRadius: "1rem" }}>
+            ${showRightPanel ? "absolute inset-0 z-[60] rounded-3xl" : "hidden md:flex"}
+          `}
+            style={{
+              background: "oklch(0.15 0.02 60)",
+              border: "3px solid #f97316",
+              borderRadius: "1rem",
+            }}
+          >
             {/* Done button — mobile only, closes the panel */}
             <div className="md:hidden flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
               <span className="text-sm font-black text-white/60">Customer / Payment</span>
-              <button onClick={() => setShowRightPanel(false)}
+              <button
+                onClick={() => setShowRightPanel(false)}
                 className="h-9 px-5 rounded-xl font-black text-sm text-primary-foreground active:scale-95 transition"
-                style={{ background: "var(--gradient-hero)" }}>
+                style={{ background: "var(--gradient-hero)" }}
+              >
                 Done
               </button>
             </div>
             {/* Cash / Credit big square buttons */}
             <div className="grid grid-cols-2 gap-3 px-4 py-3 shrink-0">
               <button
-                onClick={() => { setPayMode(payMode === "cash" ? null : "cash"); if (payMode === "credit") setSelectedCustomer(null); }}
+                onClick={() => {
+                  setPayMode(payMode === "cash" ? null : "cash");
+                  if (payMode === "credit") setSelectedCustomer(null);
+                }}
                 className="h-20 rounded-2xl font-black text-base flex flex-col items-center justify-center gap-1.5 transition active:scale-95"
-                style={payMode === "cash"
-                  ? { background: "var(--gradient-hero)", color: "var(--primary-foreground)" }
-                  : { background: "oklch(0.22 0.02 60)", color: "rgba(255,255,255,0.6)" }}>
+                style={
+                  payMode === "cash"
+                    ? { background: "var(--gradient-hero)", color: "var(--primary-foreground)" }
+                    : { background: "oklch(0.22 0.02 60)", color: "rgba(255,255,255,0.6)" }
+                }
+              >
                 <span className="text-2xl">💵</span>
                 Cash
               </button>
               <button
-                onClick={() => { setPayMode(payMode === "credit" ? null : "credit"); if (payMode === "cash") setSelectedCustomer(null); }}
+                onClick={() => {
+                  setPayMode(payMode === "credit" ? null : "credit");
+                  if (payMode === "cash") setSelectedCustomer(null);
+                }}
                 className="h-20 rounded-2xl font-black text-base flex flex-col items-center justify-center gap-1.5 transition active:scale-95"
-                style={payMode === "credit"
-                  ? { background: "oklch(0.22 0.04 45)", border: "2px solid var(--primary)", color: "var(--primary)" }
-                  : { background: "oklch(0.22 0.02 60)", color: "rgba(255,255,255,0.6)" }}>
+                style={
+                  payMode === "credit"
+                    ? {
+                        background: "oklch(0.22 0.04 45)",
+                        border: "2px solid var(--primary)",
+                        color: "var(--primary)",
+                      }
+                    : { background: "oklch(0.22 0.02 60)", color: "rgba(255,255,255,0.6)" }
+                }
+              >
                 <span className="text-2xl">🧾</span>
                 Credit
               </button>
@@ -2158,26 +3109,43 @@ function CashOverlay({
             {payMode && (
               <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2 min-h-0 pt-1">
                 {loadingCustomers ? (
-                  <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  </div>
                 ) : customers.length === 0 ? (
                   <p className="text-xs text-white/30 text-center py-6">No customers yet</p>
                 ) : (
                   customers.map((c) => (
-                    <button key={c.id}
+                    <button
+                      key={c.id}
                       onClick={() => setSelectedCustomer(selectedCustomer?.id === c.id ? null : c)}
                       className="w-full flex items-center justify-between px-4 py-4 rounded-2xl text-left transition active:scale-[0.98] min-h-[60px]"
-                      style={selectedCustomer?.id === c.id
-                        ? { background: "var(--gradient-hero)", color: "var(--primary-foreground)" }
-                        : { background: "oklch(0.22 0.02 60)", color: "rgba(255,255,255,0.85)" }}>
-                      <span className={`text-sm font-black leading-tight flex-1 pr-3 ${selectedCustomer?.id === c.id ? "text-black" : ""}`}>{c.full_name}</span>
-                      <span className={`text-xs font-black shrink-0 ${
+                      style={
                         selectedCustomer?.id === c.id
-                          ? "text-black"
-                          : Number(c.balance_owed) > 0
-                            ? "text-red-400"
-                            : "text-amber-700"
-                      }`}>
-                        {Number(c.balance_owed) > 0 ? `-$${Number(c.balance_owed).toFixed(2)}` : "$0.00"}
+                          ? {
+                              background: "var(--gradient-hero)",
+                              color: "var(--primary-foreground)",
+                            }
+                          : { background: "oklch(0.22 0.02 60)", color: "rgba(255,255,255,0.85)" }
+                      }
+                    >
+                      <span
+                        className={`text-sm font-black leading-tight flex-1 pr-3 ${selectedCustomer?.id === c.id ? "text-black" : ""}`}
+                      >
+                        {c.full_name}
+                      </span>
+                      <span
+                        className={`text-xs font-black shrink-0 ${
+                          selectedCustomer?.id === c.id
+                            ? "text-black"
+                            : Number(c.balance_owed) > 0
+                              ? "text-red-400"
+                              : "text-amber-700"
+                        }`}
+                      >
+                        {Number(c.balance_owed) > 0
+                          ? `-$${Number(c.balance_owed).toFixed(2)}`
+                          : "$0.00"}
                       </span>
                     </button>
                   ))
@@ -2186,7 +3154,13 @@ function CashOverlay({
             )}
             {!payMode && (
               <div className="flex-1 flex items-center justify-center px-4 pb-4 min-h-[80px]">
-                <p className="text-xs text-white/30 text-center">Select Cash or Credit<br/>to assign a customer,<br/>or Proceed as Guest</p>
+                <p className="text-xs text-white/30 text-center">
+                  Select Cash or Credit
+                  <br />
+                  to assign a customer,
+                  <br />
+                  or Proceed as Guest
+                </p>
               </div>
             )}
           </div>
@@ -2196,28 +3170,48 @@ function CashOverlay({
   );
 }
 
-function SaleSuccessBanner({ paid, change, onOk }: { paid: number; change: number; onOk: () => void }) {
+function SaleSuccessBanner({
+  paid,
+  change,
+  onOk,
+}: {
+  paid: number;
+  change: number;
+  onOk: () => void;
+}) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-3xl overflow-hidden border-2 border-green-500/50 shadow-2xl text-center" style={{ background: "oklch(0.18 0.07 145)" }}>
+      <div
+        className="w-full max-w-sm rounded-3xl overflow-hidden border-2 border-green-500/50 shadow-2xl text-center"
+        style={{ background: "oklch(0.18 0.07 145)" }}
+      >
         <div className="pt-10 pb-6 flex justify-center">
           <div className="h-24 w-24 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center">
             <CheckCircle2 className="h-14 w-14 text-green-400" strokeWidth={1.5} />
           </div>
         </div>
         <div className="px-8 pb-2">
-          <div className="text-xs font-semibold uppercase tracking-widest text-orange-400/80 mb-1">Customer Paid</div>
+          <div className="text-xs font-semibold uppercase tracking-widest text-orange-400/80 mb-1">
+            Customer Paid
+          </div>
           <div className="text-3xl font-black text-orange-300">${paid.toFixed(2)}</div>
         </div>
         <div className="mx-8 my-5 border-t border-green-500/20" />
         <div className="px-8 pb-8">
           <div className="rounded-2xl bg-green-500/20 border border-green-500/30 px-6 py-5">
-            <div className="text-xs font-semibold uppercase tracking-widest text-green-300/60 mb-2">Change to Give</div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-green-300/60 mb-2">
+              Change to Give
+            </div>
             <div className="text-6xl font-black text-green-300">${change.toFixed(2)}</div>
           </div>
         </div>
         <div className="px-8 pb-10">
-          <button onClick={onOk} className="w-full h-14 rounded-2xl font-black text-xl text-white bg-green-600 hover:bg-green-500 active:scale-95 transition shadow-lg">OK</button>
+          <button
+            onClick={onOk}
+            className="w-full h-14 rounded-2xl font-black text-xl text-white bg-green-600 hover:bg-green-500 active:scale-95 transition shadow-lg"
+          >
+            OK
+          </button>
         </div>
       </div>
     </div>
@@ -2227,8 +3221,11 @@ function SaleSuccessBanner({ paid, change, onOk }: { paid: number; change: numbe
 // ΓöÇΓöÇ Credit Sale Overlay ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // Step 1: Order review ΓåÆ Step 2: Pick/create credit account ΓåÆ confirm
 type CreditAccount = {
-  id: string; full_name: string; contact_number: string | null;
-  balance_owed: number; status: string;
+  id: string;
+  full_name: string;
+  contact_number: string | null;
+  balance_owed: number;
+  status: string;
 };
 
 // ── Cash Customer Overlay ─────────────────────────────────────────────────────
@@ -2236,7 +3233,15 @@ type CreditAccount = {
 // Records a credit_charge + immediate credit_payment so the transaction history
 // shows the purchase while balance stays at $0 (cleared).
 function CashCustomerOverlay({
-  total, cart, onDec, onAdd, onRemove, onClearCart, onClose, onSuccess, ownerId,
+  total,
+  cart,
+  onDec,
+  onAdd,
+  onRemove,
+  onClearCart,
+  onClose,
+  onSuccess,
+  ownerId,
 }: {
   total: number;
   cart: CartItem[];
@@ -2245,7 +3250,13 @@ function CashCustomerOverlay({
   onRemove: (id: string) => void;
   onClearCart: () => void;
   onClose: () => void;
-  onSuccess: (paid: number, change: number) => void;
+  onSuccess: (data: {
+    paid: number;
+    change: number;
+    orderDiscount: number;
+    payMode: string | null;
+    selectedCustomer: CreditAccount | null;
+  }) => void;
   ownerId: string;
 }) {
   const { profile } = useAuth();
@@ -2266,8 +3277,11 @@ function CashCustomerOverlay({
   const [newContact, setNewContact] = useState("");
   const [newIdType, setNewIdType] = useState<"drivers_permit" | "national_id">("national_id");
   const [newIdNumber, setNewIdNumber] = useState("");
-  const [newActiveField, setNewActiveField] = useState<null | "name" | "idNumber" | "contact">(null);
-  const toggleNew = (f: "name" | "idNumber" | "contact") => setNewActiveField((cur) => cur === f ? null : f);
+  const [newActiveField, setNewActiveField] = useState<null | "name" | "idNumber" | "contact">(
+    null,
+  );
+  const toggleNew = (f: "name" | "idNumber" | "contact") =>
+    setNewActiveField((cur) => (cur === f ? null : f));
 
   const change = Math.max(0, (Number(paid) || 0) - total);
   const enough = (Number(paid) || 0) >= total;
@@ -2298,11 +3312,22 @@ function CashCustomerOverlay({
     const orderPayload = {
       owner_id: ownerId,
       cashier_id: profile.id,
-      items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, units_consumed: (c as any)._units_consumed ?? null, ...(c._discount ? { discount: c._discount, original_price: c._originalPrice ?? c.price } : {}) })),
+      items: cart.map((c) => ({
+        id: c.id,
+        name: c.name,
+        price: c.price,
+        qty: c.qty,
+        units_consumed: (c as any)._units_consumed ?? null,
+        ...(c._discount
+          ? { discount: c._discount, original_price: c._originalPrice ?? c.price }
+          : {}),
+      })),
       total,
       paid: paidNum,
       change_given: changeNum,
-      ...(orderDiscount > 0 ? { discount_amount: orderDiscount, original_total: total + orderDiscount } : {}),
+      ...(orderDiscount > 0
+        ? { discount_amount: orderDiscount, original_total: total + orderDiscount }
+        : {}),
     };
     const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
     const creditTxPayload = {
@@ -2320,18 +3345,34 @@ function CashCustomerOverlay({
       await enqueue("credit_transactions_insert", creditTxPayload, groupId);
       setBusy(false);
       toast.success(`💾 Saved offline — will sync when reconnected`);
-      onSuccess(paidNum, changeNum);
+      onSuccess({
+        paid: paidNum,
+        change: changeNum,
+        orderDiscount,
+        payMode: "cash",
+        selectedCustomer: selectedAccount,
+      });
       return;
     }
 
     const { error: orderErr } = await supabase.from("orders").insert(orderPayload);
-    if (orderErr) { setBusy(false); toast.error(orderErr.message); return; }
+    if (orderErr) {
+      setBusy(false);
+      toast.error(orderErr.message);
+      return;
+    }
     // handle_order_insert trigger fires automatically — no separate stock RPC needed
 
     await supabase.from("credit_transactions").insert(creditTxPayload);
 
     setBusy(false);
-    onSuccess(paidNum, changeNum);
+    onSuccess({
+      paid: paidNum,
+      change: changeNum,
+      orderDiscount,
+      payMode: "cash",
+      selectedCustomer: selectedAccount,
+    });
   };
 
   const createAndPay = async (e: React.FormEvent) => {
@@ -2344,12 +3385,18 @@ function CashCustomerOverlay({
         owner_id: ownerId,
         full_name: newName.trim(),
         contact_number: newContact.trim() ? "868-" + newContact.trim() : null,
-        id_number: newIdNumber.trim() ? `${newIdType === "drivers_permit" ? "DP" : "NID"}: ${newIdNumber.trim()}` : null,
+        id_number: newIdNumber.trim()
+          ? `${newIdType === "drivers_permit" ? "DP" : "NID"}: ${newIdNumber.trim()}`
+          : null,
         status: "closed",
       })
       .select()
       .single();
-    if (createErr || !acc) { setBusy(false); toast.error(createErr?.message ?? "Failed to create account"); return; }
+    if (createErr || !acc) {
+      setBusy(false);
+      toast.error(createErr?.message ?? "Failed to create account");
+      return;
+    }
     setBusy(false);
     setSelectedAccount(acc as CreditAccount);
     setStep("pay");
@@ -2357,10 +3404,18 @@ function CashCustomerOverlay({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="relative w-full max-w-md max-h-[90dvh] flex flex-col rounded-3xl overflow-hidden border border-border shadow-2xl" style={{ background: "var(--gradient-card)" }}>
+      <div
+        className="relative w-full max-w-md max-h-[90dvh] flex flex-col rounded-3xl overflow-hidden border border-border shadow-2xl"
+        style={{ background: "var(--gradient-card)" }}
+      >
         <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
           <h2 className="text-xl font-black">Cash — Customer</h2>
-          <button onClick={onClose} className="h-9 w-9 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition"><X className="h-4 w-4" /></button>
+          <button
+            onClick={onClose}
+            className="h-9 w-9 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
         {/* Step: pick customer */}
@@ -2369,21 +3424,31 @@ function CashCustomerOverlay({
             <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-3">
               <p className="text-sm text-muted-foreground">Select the customer's account</p>
               {loadingAccounts ? (
-                <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
               ) : accounts.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8 text-sm">No customers yet</p>
               ) : (
                 <div className="space-y-2">
                   {accounts.map((a) => (
-                    <button key={a.id} onClick={() => setConfirmPick(a)} disabled={busy}
+                    <button
+                      key={a.id}
+                      onClick={() => setConfirmPick(a)}
+                      disabled={busy}
                       className="w-full flex items-center justify-between p-4 rounded-2xl border border-border hover:border-primary/50 active:scale-[0.98] transition text-left disabled:opacity-50"
-                      style={{ background: "var(--gradient-card)" }}>
+                      style={{ background: "var(--gradient-card)" }}
+                    >
                       <div className="flex-1 min-w-0">
                         <p className="font-black text-sm">{a.full_name}</p>
-                        {a.contact_number && <p className="text-xs text-muted-foreground">{a.contact_number}</p>}
+                        {a.contact_number && (
+                          <p className="text-xs text-muted-foreground">{a.contact_number}</p>
+                        )}
                       </div>
                       {Number(a.balance_owed) > 0 && (
-                        <span className="text-xs font-black text-red-400 shrink-0 ml-2">owes ${Number(a.balance_owed).toFixed(2)}</span>
+                        <span className="text-xs font-black text-red-400 shrink-0 ml-2">
+                          owes ${Number(a.balance_owed).toFixed(2)}
+                        </span>
                       )}
                     </button>
                   ))}
@@ -2391,8 +3456,16 @@ function CashCustomerOverlay({
               )}
             </div>
             <div className="shrink-0 px-5 pb-5 pt-3 border-t border-border flex gap-3">
-              <Button variant="outline" className="flex-1 h-12" onClick={onClose}>Cancel</Button>
-              <Button className="h-12 px-5 font-black text-sm" onClick={() => setStep("create")} style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>+ New Customer</Button>
+              <Button variant="outline" className="flex-1 h-12" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                className="h-12 px-5 font-black text-sm"
+                onClick={() => setStep("create")}
+                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+              >
+                + New Customer
+              </Button>
             </div>
           </>
         )}
@@ -2400,14 +3473,32 @@ function CashCustomerOverlay({
         {/* Confirm customer pick → go to pay step */}
         {confirmPick && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-            <div className="w-full max-w-sm mx-6 py-12 px-8 space-y-6 text-center rounded-3xl" style={{ background: "var(--gradient-card)" }}>
+            <div
+              className="w-full max-w-sm mx-6 py-12 px-8 space-y-6 text-center rounded-3xl"
+              style={{ background: "var(--gradient-card)" }}
+            >
               <h3 className="font-black text-2xl">Confirm Customer?</h3>
               <p className="font-black text-3xl">{confirmPick.full_name}</p>
-              <p className="font-black text-4xl" style={{ color: "var(--primary)" }}>${total.toFixed(2)}</p>
+              <p className="font-black text-4xl" style={{ color: "var(--primary)" }}>
+                ${total.toFixed(2)}
+              </p>
               <div className="flex gap-3 pt-4">
-                <Button variant="outline" className="flex-1 h-16 font-black text-base" onClick={() => setConfirmPick(null)}>Cancel</Button>
-                <Button className="flex-1 h-16 font-black text-base" style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
-                  onClick={() => { setSelectedAccount(confirmPick); setConfirmPick(null); setStep("pay"); }}>
+                <Button
+                  variant="outline"
+                  className="flex-1 h-16 font-black text-base"
+                  onClick={() => setConfirmPick(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 h-16 font-black text-base"
+                  style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+                  onClick={() => {
+                    setSelectedAccount(confirmPick);
+                    setConfirmPick(null);
+                    setStep("pay");
+                  }}
+                >
                   Yes, Select
                 </Button>
               </div>
@@ -2422,42 +3513,98 @@ function CashCustomerOverlay({
               <p className="text-sm text-muted-foreground">Create a new customer account</p>
               <div>
                 <Label>Full Name *</Label>
-                <button type="button" onClick={() => toggleNew("name")} className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1">
-                  <span className={`text-sm font-black ${newName ? "text-foreground" : "text-muted-foreground"}`}>{newName || "e.g. John Smith"}</span>
+                <button
+                  type="button"
+                  onClick={() => toggleNew("name")}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1"
+                >
+                  <span
+                    className={`text-sm font-black ${newName ? "text-foreground" : "text-muted-foreground"}`}
+                  >
+                    {newName || "e.g. John Smith"}
+                  </span>
                 </button>
-                {newActiveField === "name" && <CreditAlphaKeyboard value={newName} onChange={setNewName} onDone={() => setNewActiveField(null)} />}
+                {newActiveField === "name" && (
+                  <CreditAlphaKeyboard
+                    value={newName}
+                    onChange={setNewName}
+                    onDone={() => setNewActiveField(null)}
+                  />
+                )}
               </div>
               <div>
                 <Label htmlFor="cash-new-idtype">ID Type</Label>
-                <select id="cash-new-idtype" value={newIdType} onChange={(e) => setNewIdType(e.target.value as "drivers_permit" | "national_id")}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-semibold mt-1">
+                <select
+                  id="cash-new-idtype"
+                  value={newIdType}
+                  onChange={(e) => setNewIdType(e.target.value as "drivers_permit" | "national_id")}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-semibold mt-1"
+                >
                   <option value="drivers_permit">Driver's Permit</option>
                   <option value="national_id">National ID</option>
                 </select>
               </div>
               <div>
                 <Label>ID Number</Label>
-                <button type="button" onClick={() => toggleNew("idNumber")} className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1">
-                  <span className={`text-sm font-black ${newIdNumber ? "text-foreground" : "text-muted-foreground"}`}>{newIdNumber || "e.g. 00000000"}</span>
+                <button
+                  type="button"
+                  onClick={() => toggleNew("idNumber")}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1"
+                >
+                  <span
+                    className={`text-sm font-black ${newIdNumber ? "text-foreground" : "text-muted-foreground"}`}
+                  >
+                    {newIdNumber || "e.g. 00000000"}
+                  </span>
                 </button>
-                {newActiveField === "idNumber" && <CreditNumPad value={newIdNumber} onChange={setNewIdNumber} maxLen={20} onDone={() => setNewActiveField(null)} />}
+                {newActiveField === "idNumber" && (
+                  <CreditNumPad
+                    value={newIdNumber}
+                    onChange={setNewIdNumber}
+                    maxLen={20}
+                    onDone={() => setNewActiveField(null)}
+                  />
+                )}
               </div>
               <div>
                 <Label>Contact Number</Label>
                 <div className="flex items-center mt-1">
-                  <span className="h-10 px-3 flex items-center rounded-l-md border border-r-0 border-input bg-muted text-sm font-bold text-muted-foreground select-none">868</span>
-                  <button type="button" onClick={() => toggleNew("contact")} className="flex-1 h-10 rounded-r-md border border-input bg-background px-3 text-left">
-                    <span className={`text-sm font-black ${newContact ? "text-foreground" : "text-muted-foreground"}`}>{newContact || "XXX-XXXX"}</span>
+                  <span className="h-10 px-3 flex items-center rounded-l-md border border-r-0 border-input bg-muted text-sm font-bold text-muted-foreground select-none">
+                    868
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => toggleNew("contact")}
+                    className="flex-1 h-10 rounded-r-md border border-input bg-background px-3 text-left"
+                  >
+                    <span
+                      className={`text-sm font-black ${newContact ? "text-foreground" : "text-muted-foreground"}`}
+                    >
+                      {newContact || "XXX-XXXX"}
+                    </span>
                   </button>
                 </div>
-                {newActiveField === "contact" && <CreditContactPad value={newContact} onChange={setNewContact} onDone={() => setNewActiveField(null)} />}
+                {newActiveField === "contact" && (
+                  <CreditContactPad
+                    value={newContact}
+                    onChange={setNewContact}
+                    onDone={() => setNewActiveField(null)}
+                  />
+                )}
               </div>
-              <Button type="submit" disabled={busy || !newName.trim()} className="w-full h-12 font-black text-base" style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>
+              <Button
+                type="submit"
+                disabled={busy || !newName.trim()}
+                className="w-full h-12 font-black text-base"
+                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+              >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create & Continue"}
               </Button>
             </form>
             <div className="shrink-0 px-5 pb-5 pt-2 border-t border-border">
-              <Button variant="outline" className="w-full h-10" onClick={() => setStep("pick")}>← Back to Customers</Button>
+              <Button variant="outline" className="w-full h-10" onClick={() => setStep("pick")}>
+                ← Back to Customers
+              </Button>
             </div>
           </>
         )}
@@ -2466,37 +3613,81 @@ function CashCustomerOverlay({
         {step === "pay" && selectedAccount && (
           <>
             <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-3">
-              <div className="rounded-xl px-4 py-2 text-center" style={{ background: "var(--gradient-hero)" }}>
+              <div
+                className="rounded-xl px-4 py-2 text-center"
+                style={{ background: "var(--gradient-hero)" }}
+              >
                 <div className="text-xs font-semibold text-primary-foreground/70">Customer</div>
-                <div className="font-black text-lg text-primary-foreground">{selectedAccount.full_name}</div>
+                <div className="font-black text-lg text-primary-foreground">
+                  {selectedAccount.full_name}
+                </div>
               </div>
-              <div className="rounded-xl border border-green-500/30 px-4 py-3 text-center" style={{ background: "oklch(0.22 0.06 145 / 0.4)" }}>
-                <div className="text-xs font-semibold text-green-300/70 uppercase tracking-widest mb-1">Amount Received</div>
+              <div
+                className="rounded-xl border border-green-500/30 px-4 py-3 text-center"
+                style={{ background: "oklch(0.22 0.06 145 / 0.4)" }}
+              >
+                <div className="text-xs font-semibold text-green-300/70 uppercase tracking-widest mb-1">
+                  Amount Received
+                </div>
                 <div className="text-3xl font-black text-green-100">${paid || "0.00"}</div>
               </div>
-              <div className={`rounded-xl px-4 py-4 text-center border transition-all ${Number(paid) === 0 ? "opacity-40 bg-green-500/10 border-green-500/20" : enough ? "bg-green-500/25 border-green-500/40" : "bg-red-500/25 border-red-500/40"}`}>
-                <div className={`text-xs font-semibold uppercase tracking-widest mb-1 ${enough ? "text-green-300/70" : "text-red-300/70"}`}>{enough ? "Change to Give" : "Short by"}</div>
-                <div className={`text-5xl font-black ${enough ? "text-green-300" : "text-red-400"}`}>
-                  ${Number(paid) === 0 ? "0.00" : (enough ? change : total - Number(paid)).toFixed(2)}
+              <div
+                className={`rounded-xl px-4 py-4 text-center border transition-all ${Number(paid) === 0 ? "opacity-40 bg-green-500/10 border-green-500/20" : enough ? "bg-green-500/25 border-green-500/40" : "bg-red-500/25 border-red-500/40"}`}
+              >
+                <div
+                  className={`text-xs font-semibold uppercase tracking-widest mb-1 ${enough ? "text-green-300/70" : "text-red-300/70"}`}
+                >
+                  {enough ? "Change to Give" : "Short by"}
+                </div>
+                <div
+                  className={`text-5xl font-black ${enough ? "text-green-300" : "text-red-400"}`}
+                >
+                  $
+                  {Number(paid) === 0
+                    ? "0.00"
+                    : (enough ? change : total - Number(paid)).toFixed(2)}
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-2">
-                {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => (
-                  <button key={k} type="button" onClick={() => {
-                    if (k === "⌫") setPaid((v) => v.slice(0, -1));
-                    else if (k === ".") { if (!paid.includes(".")) setPaid((v) => v + "."); }
-                    else { const dotIdx = paid.indexOf("."); if (dotIdx !== -1 && paid.length - dotIdx > 2) return; setPaid((v) => (v === "0" ? k : v + k)); }
-                  }}
-                  className={`h-14 rounded-2xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive hover:bg-destructive/30" : "bg-muted hover:bg-muted/70 text-foreground"}`}>
+                {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"].map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      if (k === "⌫") setPaid((v) => v.slice(0, -1));
+                      else if (k === ".") {
+                        if (!paid.includes(".")) setPaid((v) => v + ".");
+                      } else {
+                        const dotIdx = paid.indexOf(".");
+                        if (dotIdx !== -1 && paid.length - dotIdx > 2) return;
+                        setPaid((v) => (v === "0" ? k : v + k));
+                      }
+                    }}
+                    className={`h-14 rounded-2xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive hover:bg-destructive/30" : "bg-muted hover:bg-muted/70 text-foreground"}`}
+                  >
                     {k}
                   </button>
                 ))}
               </div>
             </div>
             <div className="shrink-0 px-5 pb-5 pt-3 border-t border-border flex gap-3">
-              <Button variant="outline" className="flex-1 h-12" onClick={() => { setStep("pick"); setSelectedAccount(null); setPaid(""); }}>← Back</Button>
-              <Button className="flex-1 h-12 font-black text-base" disabled={!enough || busy} onClick={() => submitCashOrder(selectedAccount)}
-                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>
+              <Button
+                variant="outline"
+                className="flex-1 h-12"
+                onClick={() => {
+                  setStep("pick");
+                  setSelectedAccount(null);
+                  setPaid("");
+                }}
+              >
+                ← Back
+              </Button>
+              <Button
+                className="flex-1 h-12 font-black text-base"
+                disabled={!enough || busy}
+                onClick={() => submitCashOrder(selectedAccount)}
+                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+              >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Sale"}
               </Button>
             </div>
@@ -2508,7 +3699,15 @@ function CashCustomerOverlay({
 }
 
 function CreditSaleOverlay({
-  total, cart, onDec, onAdd, onRemove, onClearCart, onClose, onSuccess, ownerId,
+  total,
+  cart,
+  onDec,
+  onAdd,
+  onRemove,
+  onClearCart,
+  onClose,
+  onSuccess,
+  ownerId,
 }: {
   total: number;
   cart: CartItem[];
@@ -2535,8 +3734,11 @@ function CreditSaleOverlay({
   const [newContactPadOpen, setNewContactPadOpen] = useState(false);
   const [newIdType, setNewIdType] = useState<"drivers_permit" | "national_id">("national_id");
   const [newIdNumber, setNewIdNumber] = useState("");
-  const [newActiveField, setNewActiveField] = useState<null | "name" | "idNumber" | "contact">(null);
-  const toggleNew = (f: "name" | "idNumber" | "contact") => setNewActiveField((cur) => cur === f ? null : f);
+  const [newActiveField, setNewActiveField] = useState<null | "name" | "idNumber" | "contact">(
+    null,
+  );
+  const toggleNew = (f: "name" | "idNumber" | "contact") =>
+    setNewActiveField((cur) => (cur === f ? null : f));
 
   const loadAccounts = async () => {
     if (!ownerId) return;
@@ -2564,7 +3766,13 @@ function CreditSaleOverlay({
       p_credit_account_id: account.id,
       p_cashier_id: profile.id,
       p_amount: total,
-      p_items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, cost_price: c.cost_price ?? 0, qty: c.qty })),
+      p_items: cart.map((c) => ({
+        id: c.id,
+        name: c.name,
+        price: c.price,
+        cost_price: c.cost_price ?? 0,
+        qty: c.qty,
+      })),
       p_note: itemsDesc,
     };
     if (!isOnline) {
@@ -2575,7 +3783,11 @@ function CreditSaleOverlay({
       return;
     }
     const { error } = await supabase.rpc("record_credit_charge", creditPayload);
-    if (error) { setBusy(false); toast.error(error.message); return; }
+    if (error) {
+      setBusy(false);
+      toast.error(error.message);
+      return;
+    }
     setBusy(false);
     toast.success(`Charged $${total.toFixed(2)} to ${account.full_name}`);
     onSuccess();
@@ -2597,22 +3809,38 @@ function CreditSaleOverlay({
         owner_id: ownerId,
         full_name: newName.trim(),
         contact_number: newContact.trim() ? "868-" + newContact.trim() : null,
-        id_number: newIdNumber.trim() ? `${newIdType === "drivers_permit" ? "DP" : "NID"}: ${newIdNumber.trim()}` : null,
+        id_number: newIdNumber.trim()
+          ? `${newIdType === "drivers_permit" ? "DP" : "NID"}: ${newIdNumber.trim()}`
+          : null,
         status: "closed",
       })
       .select()
       .single();
-    if (createErr || !acc) { setBusy(false); toast.error(createErr?.message ?? "Failed to create account"); return; }
+    if (createErr || !acc) {
+      setBusy(false);
+      toast.error(createErr?.message ?? "Failed to create account");
+      return;
+    }
     const groupId = `order-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
     const { error: chargeErr } = await supabase.rpc("record_credit_charge", {
       p_credit_account_id: acc.id,
       p_cashier_id: profile.id,
       p_amount: total,
-      p_items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, cost_price: c.cost_price ?? 0, qty: c.qty })),
+      p_items: cart.map((c) => ({
+        id: c.id,
+        name: c.name,
+        price: c.price,
+        cost_price: c.cost_price ?? 0,
+        qty: c.qty,
+      })),
       p_note: itemsDesc,
     });
-    if (chargeErr) { setBusy(false); toast.error(chargeErr.message); return; }
+    if (chargeErr) {
+      setBusy(false);
+      toast.error(chargeErr.message);
+      return;
+    }
     setBusy(false);
     toast.success(`Account created & $${total.toFixed(2)} charged to ${newName.trim()}`);
     onSuccess();
@@ -2626,8 +3854,13 @@ function CreditSaleOverlay({
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
-          <h2 className="text-xl font-black" style={{ color: "var(--primary)" }}>{t("credit_order", "Credit Order")}</h2>
-          <button onClick={onClose} className="h-9 w-9 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition">
+          <h2 className="text-xl font-black" style={{ color: "var(--primary)" }}>
+            {t("credit_order", "Credit Order")}
+          </h2>
+          <button
+            onClick={onClose}
+            className="h-9 w-9 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -2637,16 +3870,32 @@ function CreditSaleOverlay({
           <>
             <div className="flex-1 overflow-y-auto px-5 space-y-4 pb-4">
               {/* Total banner — brown/orange theme */}
-              <div className="rounded-2xl p-5 text-center" style={{ background: "oklch(0.18 0.04 45)", border: "2px solid var(--primary)" }}>
-                <div className="text-sm font-medium" style={{ color: "var(--primary)" }}>Total to Credit</div>
-                <div className="text-5xl font-black" style={{ color: "var(--primary)" }}>${total.toFixed(2)}</div>
+              <div
+                className="rounded-2xl p-5 text-center"
+                style={{ background: "oklch(0.18 0.04 45)", border: "2px solid var(--primary)" }}
+              >
+                <div className="text-sm font-medium" style={{ color: "var(--primary)" }}>
+                  Total to Credit
+                </div>
+                <div className="text-5xl font-black" style={{ color: "var(--primary)" }}>
+                  ${total.toFixed(2)}
+                </div>
               </div>
 
               {/* Order items — same layout as Cash Order */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Order</span>
-                  <button onClick={onClearCart} className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-black text-destructive transition active:scale-95" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)" }}>
+                  <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    Order
+                  </span>
+                  <button
+                    onClick={onClearCart}
+                    className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-black text-destructive transition active:scale-95"
+                    style={{
+                      background: "rgba(239,68,68,0.1)",
+                      border: "1px solid rgba(239,68,68,0.25)",
+                    }}
+                  >
                     <Trash2 className="h-4 w-4" /> Clear all
                   </button>
                 </div>
@@ -2654,7 +3903,11 @@ function CreditSaleOverlay({
                   <div key={i.id} className="flex gap-3 p-3 rounded-xl bg-background/50">
                     <div className="h-20 w-14 shrink-0 rounded-xl overflow-hidden bg-muted flex items-center justify-center">
                       {i.image_url ? (
-                        <img src={productImageUrl(i.image_url)!} alt={i.name} className="h-full w-full object-cover" />
+                        <img
+                          src={productImageUrl(i.image_url)!}
+                          alt={i.name}
+                          className="h-full w-full object-cover"
+                        />
                       ) : i.id.startsWith("shot-") ? (
                         <span className="text-2xl">🥃</span>
                       ) : (
@@ -2666,28 +3919,36 @@ function CreditSaleOverlay({
                       <div className="flex items-start justify-between gap-2">
                         <div className="font-black text-sm leading-tight flex-1">{i.name}</div>
                         <div className="flex flex-col items-end shrink-0">
-                          <span className="font-black text-base" style={{ color: "var(--primary)" }}>${(i.qty * Number(i.price)).toFixed(2)}</span>
-                          <span className="text-[11px] text-muted-foreground">${Number(i.price).toFixed(2)} each</span>
+                          <span
+                            className="font-black text-base"
+                            style={{ color: "var(--primary)" }}
+                          >
+                            ${(i.qty * Number(i.price)).toFixed(2)}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">
+                            ${Number(i.price).toFixed(2)} each
+                          </span>
                         </div>
                       </div>
                       {/* Action bar: − qty + X */}
-                      <CashItemActions
-                        item={i}
-                        onDec={onDec}
-                        onAdd={onAdd}
-                        onRemove={onRemove}
-                      />
+                      <CashItemActions item={i} onDec={onDec} onAdd={onAdd} onRemove={onRemove} />
                     </div>
                   </div>
                 ))}
               </div>
             </div>
             <div className="shrink-0 px-5 pb-5 pt-3 border-t border-border flex gap-3">
-              <Button variant="outline" className="flex-1 h-12" onClick={onClose}>{t("cancel", "Cancel")}</Button>
+              <Button variant="outline" className="flex-1 h-12" onClick={onClose}>
+                {t("cancel", "Cancel")}
+              </Button>
               <Button
                 className="flex-1 h-12 font-black text-base"
                 onClick={handleProceed}
-                style={{ background: "oklch(0.22 0.04 45)", border: "2px solid var(--primary)", color: "var(--primary)" }}
+                style={{
+                  background: "oklch(0.22 0.04 45)",
+                  border: "2px solid var(--primary)",
+                  color: "var(--primary)",
+                }}
               >
                 {t("proceed", "Proceed")}
               </Button>
@@ -2718,10 +3979,14 @@ function CreditSaleOverlay({
                     >
                       <div className="flex-1 min-w-0">
                         <p className="font-black text-sm">{a.full_name}</p>
-                        {a.contact_number && <p className="text-xs text-muted-foreground">{a.contact_number}</p>}
+                        {a.contact_number && (
+                          <p className="text-xs text-muted-foreground">{a.contact_number}</p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0 ml-2">
-                        <span className={`text-sm font-black ${Number(a.balance_owed) > 0 ? "text-red-400" : "text-green-400"}`}>
+                        <span
+                          className={`text-sm font-black ${Number(a.balance_owed) > 0 ? "text-red-400" : "text-green-400"}`}
+                        >
                           ${Number(a.balance_owed).toFixed(2)}
                         </span>
                         <CheckCircle2 className="h-5 w-5 text-primary opacity-50" />
@@ -2732,7 +3997,9 @@ function CreditSaleOverlay({
               )}
             </div>
             <div className="shrink-0 px-5 pb-5 pt-3 border-t border-border flex gap-3">
-              <Button variant="outline" className="flex-1 h-12" onClick={() => setStep("review")}>← {t("back", "Back")}</Button>
+              <Button variant="outline" className="flex-1 h-12" onClick={() => setStep("review")}>
+                ← {t("back", "Back")}
+              </Button>
               <Button
                 className="h-12 px-5 font-black text-sm"
                 onClick={() => setStep("create")}
@@ -2747,23 +4014,45 @@ function CreditSaleOverlay({
         {/* ΓöÇΓöÇ Step 2b: Confirm account selection ΓöÇΓöÇ */}
         {confirmPick && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-            <div className="w-full max-w-sm mx-6 py-12 px-8 space-y-6 text-center rounded-3xl" style={{ background: "var(--gradient-card)" }}>
+            <div
+              className="w-full max-w-sm mx-6 py-12 px-8 space-y-6 text-center rounded-3xl"
+              style={{ background: "var(--gradient-card)" }}
+            >
               <h3 className="font-black text-2xl">{t("confirm_customer", "Confirm Customer?")}</h3>
-              <p className="text-muted-foreground text-base">{t("charge_to", "Charge this order to")}</p>
+              <p className="text-muted-foreground text-base">
+                {t("charge_to", "Charge this order to")}
+              </p>
               <p className="font-black text-3xl">{confirmPick.full_name}</p>
-              <p className="font-black text-4xl" style={{ color: "var(--primary)" }}>${total.toFixed(2)}</p>
+              <p className="font-black text-4xl" style={{ color: "var(--primary)" }}>
+                ${total.toFixed(2)}
+              </p>
               {Number(confirmPick.balance_owed) > 0 && (
-                <p className="text-base text-red-400 font-semibold">Current balance: ${Number(confirmPick.balance_owed).toFixed(2)}</p>
+                <p className="text-base text-red-400 font-semibold">
+                  Current balance: ${Number(confirmPick.balance_owed).toFixed(2)}
+                </p>
               )}
               <div className="flex gap-3 pt-4">
-                <Button variant="outline" className="flex-1 h-16 font-black text-base" onClick={() => setConfirmPick(null)}>{t("cancel", "Cancel")}</Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 h-16 font-black text-base"
+                  onClick={() => setConfirmPick(null)}
+                >
+                  {t("cancel", "Cancel")}
+                </Button>
                 <Button
                   className="flex-1 h-16 font-black text-base"
                   disabled={busy}
-                  onClick={() => { chargeAccount(confirmPick); setConfirmPick(null); }}
+                  onClick={() => {
+                    chargeAccount(confirmPick);
+                    setConfirmPick(null);
+                  }}
                   style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
                 >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t("yes_charge", "Yes, Charge")}
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    t("yes_charge", "Yes, Charge")
+                  )}
                 </Button>
               </div>
             </div>
@@ -2773,28 +4062,42 @@ function CreditSaleOverlay({
         {step === "create" && (
           <>
             <form onSubmit={createAndCharge} className="flex-1 overflow-y-auto px-5 pb-4 space-y-4">
-              <p className="text-sm text-muted-foreground">Create a new credit account and charge this order to it</p>
+              <p className="text-sm text-muted-foreground">
+                Create a new credit account and charge this order to it
+              </p>
 
               {/* Full Name */}
               <div>
                 <Label>Full Name *</Label>
-                <button type="button" onClick={() => toggleNew("name")}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1">
-                  <span className={`text-sm font-black ${newName ? "text-foreground" : "text-muted-foreground"}`}>
+                <button
+                  type="button"
+                  onClick={() => toggleNew("name")}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1"
+                >
+                  <span
+                    className={`text-sm font-black ${newName ? "text-foreground" : "text-muted-foreground"}`}
+                  >
                     {newName || "e.g. John Smith"}
                   </span>
                 </button>
                 {newActiveField === "name" && (
-                  <CreditAlphaKeyboard value={newName} onChange={setNewName} onDone={() => setNewActiveField(null)} />
+                  <CreditAlphaKeyboard
+                    value={newName}
+                    onChange={setNewName}
+                    onDone={() => setNewActiveField(null)}
+                  />
                 )}
               </div>
 
               {/* ID Type */}
               <div>
                 <Label htmlFor="credit-new-idtype">ID Type</Label>
-                <select id="credit-new-idtype" value={newIdType}
+                <select
+                  id="credit-new-idtype"
+                  value={newIdType}
                   onChange={(e) => setNewIdType(e.target.value as "drivers_permit" | "national_id")}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-semibold mt-1">
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-semibold mt-1"
+                >
                   <option value="drivers_permit">Driver's Permit</option>
                   <option value="national_id">National ID</option>
                 </select>
@@ -2803,14 +4106,24 @@ function CreditSaleOverlay({
               {/* ID Number */}
               <div>
                 <Label>ID Number</Label>
-                <button type="button" onClick={() => toggleNew("idNumber")}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1">
-                  <span className={`text-sm font-black ${newIdNumber ? "text-foreground" : "text-muted-foreground"}`}>
+                <button
+                  type="button"
+                  onClick={() => toggleNew("idNumber")}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1"
+                >
+                  <span
+                    className={`text-sm font-black ${newIdNumber ? "text-foreground" : "text-muted-foreground"}`}
+                  >
                     {newIdNumber || "e.g. 00000000"}
                   </span>
                 </button>
                 {newActiveField === "idNumber" && (
-                  <CreditNumPad value={newIdNumber} onChange={setNewIdNumber} maxLen={20} onDone={() => setNewActiveField(null)} />
+                  <CreditNumPad
+                    value={newIdNumber}
+                    onChange={setNewIdNumber}
+                    maxLen={20}
+                    onDone={() => setNewActiveField(null)}
+                  />
                 )}
               </div>
 
@@ -2818,20 +4131,34 @@ function CreditSaleOverlay({
               <div>
                 <Label>Contact Number</Label>
                 <div className="flex items-center mt-1">
-                  <span className="h-10 px-3 flex items-center rounded-l-md border border-r-0 border-input bg-muted text-sm font-bold text-muted-foreground select-none">868</span>
-                  <button type="button" onClick={() => toggleNew("contact")}
-                    className="flex-1 h-10 rounded-r-md border border-input bg-background px-3 text-left">
-                    <span className={`text-sm font-black ${newContact ? "text-foreground" : "text-muted-foreground"}`}>
+                  <span className="h-10 px-3 flex items-center rounded-l-md border border-r-0 border-input bg-muted text-sm font-bold text-muted-foreground select-none">
+                    868
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => toggleNew("contact")}
+                    className="flex-1 h-10 rounded-r-md border border-input bg-background px-3 text-left"
+                  >
+                    <span
+                      className={`text-sm font-black ${newContact ? "text-foreground" : "text-muted-foreground"}`}
+                    >
                       {newContact || "XXX-XXXX"}
                     </span>
                   </button>
                 </div>
                 {newActiveField === "contact" && (
-                  <CreditContactPad value={newContact} onChange={setNewContact} onDone={() => setNewActiveField(null)} />
+                  <CreditContactPad
+                    value={newContact}
+                    onChange={setNewContact}
+                    onDone={() => setNewActiveField(null)}
+                  />
                 )}
               </div>
 
-              <div className="rounded-xl p-3 text-sm" style={{ background: "oklch(0.22 0.04 45)", border: "1px solid var(--primary)" }}>
+              <div
+                className="rounded-xl p-3 text-sm"
+                style={{ background: "oklch(0.22 0.04 45)", border: "1px solid var(--primary)" }}
+              >
                 <div className="flex justify-between font-black">
                   <span style={{ color: "var(--primary)" }}>Amount to charge</span>
                   <span style={{ color: "var(--primary)" }}>${total.toFixed(2)}</span>
@@ -2839,15 +4166,25 @@ function CreditSaleOverlay({
               </div>
               <Button
                 type="submit"
-                disabled={busy || !newName.trim() || (newContact.trim() !== "" && newContact.replace("-", "").length < 7)}
+                disabled={
+                  busy ||
+                  !newName.trim() ||
+                  (newContact.trim() !== "" && newContact.replace("-", "").length < 7)
+                }
                 className="w-full h-12 font-black text-base"
                 style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
               >
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t("create_and_charge", "Create & Charge")}
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  t("create_and_charge", "Create & Charge")
+                )}
               </Button>
             </form>
             <div className="shrink-0 px-5 pb-5 pt-2 border-t border-border">
-              <Button variant="outline" className="w-full h-10" onClick={() => setStep("pick")}>← {t("back", "Back to Accounts")}</Button>
+              <Button variant="outline" className="w-full h-10" onClick={() => setStep("pick")}>
+                ← {t("back", "Back to Accounts")}
+              </Button>
             </div>
           </>
         )}
@@ -2856,33 +4193,59 @@ function CreditSaleOverlay({
   );
 }
 
-// Credit form keyboard helpers 
-function CreditNumPad({ value, onChange, maxLen = 20, onDone }: {
-  value: string; onChange: (v: string) => void; maxLen?: number; onDone: () => void;
+// Credit form keyboard helpers
+function CreditNumPad({
+  value,
+  onChange,
+  maxLen = 20,
+  onDone,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  maxLen?: number;
+  onDone: () => void;
 }) {
   return (
     <div className="mt-2">
       <div className="grid grid-cols-3 gap-1.5">
-        {["1","2","3","4","5","6","7","8","9","done","0","⌫"].map((k, i) =>
-          k === "done"
-            ? <button key="done" type="button" onClick={onDone}
-                className="h-12 rounded-xl font-black text-sm active:scale-95 transition text-primary-foreground"
-                style={{ background: "var(--gradient-hero)" }}>Done</button>
-            : <button key={k} type="button"
-                onClick={() => {
-                  if (k === "⌫") onChange(value.slice(0, -1));
-                  else if (value.length < maxLen) onChange(value + k);
-                }}
-                className={`h-12 rounded-xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted text-foreground"}`}
-              >{k}</button>
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9", "done", "0", "⌫"].map((k, i) =>
+          k === "done" ? (
+            <button
+              key="done"
+              type="button"
+              onClick={onDone}
+              className="h-12 rounded-xl font-black text-sm active:scale-95 transition text-primary-foreground"
+              style={{ background: "var(--gradient-hero)" }}
+            >
+              Done
+            </button>
+          ) : (
+            <button
+              key={k}
+              type="button"
+              onClick={() => {
+                if (k === "⌫") onChange(value.slice(0, -1));
+                else if (value.length < maxLen) onChange(value + k);
+              }}
+              className={`h-12 rounded-xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted text-foreground"}`}
+            >
+              {k}
+            </button>
+          ),
         )}
       </div>
     </div>
   );
 }
 
-function CreditContactPad({ value, onChange, onDone }: {
-  value: string; onChange: (v: string) => void; onDone: () => void;
+function CreditContactPad({
+  value,
+  onChange,
+  onDone,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onDone: () => void;
 }) {
   const digits = value.replace("-", "");
   const complete = digits.length === 7;
@@ -2903,15 +4266,29 @@ function CreditContactPad({ value, onChange, onDone }: {
         </p>
       )}
       <div className="grid grid-cols-3 gap-1.5">
-        {["1","2","3","4","5","6","7","8","9","done","0","⌫"].map((k) =>
-          k === "done"
-            ? <button key="done" type="button"
-                onClick={() => { if (complete) onDone(); }}
-                className={`h-12 rounded-xl font-black text-sm transition text-primary-foreground ${complete ? "active:scale-95" : "opacity-30 cursor-not-allowed"}`}
-                style={{ background: "var(--gradient-hero)" }}>Done</button>
-            : <button key={k} type="button" onClick={() => handle(k)}
-                className={`h-12 rounded-xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted text-foreground"}`}
-              >{k}</button>
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9", "done", "0", "⌫"].map((k) =>
+          k === "done" ? (
+            <button
+              key="done"
+              type="button"
+              onClick={() => {
+                if (complete) onDone();
+              }}
+              className={`h-12 rounded-xl font-black text-sm transition text-primary-foreground ${complete ? "active:scale-95" : "opacity-30 cursor-not-allowed"}`}
+              style={{ background: "var(--gradient-hero)" }}
+            >
+              Done
+            </button>
+          ) : (
+            <button
+              key={k}
+              type="button"
+              onClick={() => handle(k)}
+              className={`h-12 rounded-xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted text-foreground"}`}
+            >
+              {k}
+            </button>
+          ),
         )}
       </div>
     </div>
@@ -2919,20 +4296,28 @@ function CreditContactPad({ value, onChange, onDone }: {
 }
 
 const CREDIT_ALPHA_ROWS = [
-  ["Q","W","E","R","T","Y","U","I","O","P"],
-  ["A","S","D","F","G","H","J","K","L"],
-  ["Z","X","C","V","B","N","M","⌫"],
+  ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+  ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
+  ["Z", "X", "C", "V", "B", "N", "M", "⌫"],
 ];
 
-function CreditAlphaKeyboard({ value, onChange, onDone }: {
-  value: string; onChange: (v: string) => void; onDone: () => void;
+function CreditAlphaKeyboard({
+  value,
+  onChange,
+  onDone,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onDone: () => void;
 }) {
   return (
     <div className="mt-2 space-y-1.5">
       {CREDIT_ALPHA_ROWS.map((row, ri) => (
         <div key={ri} className="flex gap-1 justify-center">
           {row.map((k) => (
-            <button key={k} type="button"
+            <button
+              key={k}
+              type="button"
               onClick={() => {
                 if (k === "⌫") onChange(value.slice(0, -1));
                 else onChange(value + k);
@@ -2940,22 +4325,29 @@ function CreditAlphaKeyboard({ value, onChange, onDone }: {
               className={`flex-1 h-10 rounded-lg font-bold text-sm transition active:scale-95 max-w-[38px] ${
                 k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted text-foreground"
               }`}
-            >{k}</button>
+            >
+              {k}
+            </button>
           ))}
         </div>
       ))}
       <div className="flex gap-1.5">
-        <button type="button" onClick={() => onChange(value + " ")}
-          className="flex-1 h-10 rounded-lg bg-muted text-foreground font-bold text-sm active:scale-95 transition">
+        <button
+          type="button"
+          onClick={() => onChange(value + " ")}
+          className="flex-1 h-10 rounded-lg bg-muted text-foreground font-bold text-sm active:scale-95 transition"
+        >
           SPACE
         </button>
-        <button type="button" onClick={onDone}
+        <button
+          type="button"
+          onClick={onDone}
           className="w-20 h-10 rounded-lg font-bold text-sm active:scale-95 transition text-primary-foreground"
-          style={{ background: "var(--gradient-hero)" }}>
+          style={{ background: "var(--gradient-hero)" }}
+        >
           Done
         </button>
       </div>
     </div>
   );
 }
-

@@ -1,0 +1,12 @@
+{
+  "model": "openrouter/auto",
+  "small_model": "openrouter/auto",
+  "enabled_providers": ["openrouter"],
+  "provider": {
+    "openrouter": {
+      "options": {
+        "apiKey": ""
+      }
+    }
+  }
+}
