@@ -8,8 +8,11 @@ import { usePushNotifications } from "@/lib/usePushNotifications";
 import { useTranslation } from "@/lib/i18n";
 import { useOffline } from "@/lib/OfflineProvider";
 import { OfflinePageGuard } from "@/components/OfflinePageGuard";
+import { toast } from "sonner";
 import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { openCashDrawer, type CashDrawerResult } from "@/lib/cashDrawer";
+import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 
 const DEMO_EMAILS = ["isabel@gmail.com", "renard.sankersingh@gmail.com"];
 
@@ -24,6 +27,45 @@ export default function AppLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [ownerEmail, setOwnerEmail] = useState("");
+
+  // ── Cash Drawer state ──────────────────────────────────────────────────────
+  const [drawerBusy, setDrawerBusy] = useState(false);
+  const [showDrawerModal, setShowDrawerModal] = useState(false);
+  const [drawerResult, setDrawerResult] = useState<CashDrawerResult | null>(null);
+
+  const handleOpenCashDrawer = async () => {
+    setDrawerBusy(true);
+    setShowDrawerModal(true);
+    setDrawerResult(null);
+    const result = await openCashDrawer();
+    setDrawerResult(result);
+    setDrawerBusy(false);
+  };
+
+  // ── Barcode Scanner state ──────────────────────────────────────────────────
+  const [showScannerModal, setShowScannerModal] = useState(false);
+
+  const handleBarcodeScanned = async (barcode: string) => {
+    if (!barcode || !profile) return;
+    const { data: product } = await (supabase as any)
+      .from("products")
+      .select("*")
+      .eq("barcode", barcode)
+      .eq("owner_id", profile.id)
+      .maybeSingle();
+    if (!product) {
+      toast.error("Product not found for barcode: " + barcode);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("pospro-barcode-scan", { detail: product }));
+    toast.success(`Scanned: ${product.name}`);
+  };
+
+  useEffect(() => {
+    const openHandler = () => setShowScannerModal(true);
+    window.addEventListener("pospro-open-scanner", openHandler);
+    return () => window.removeEventListener("pospro-open-scanner", openHandler);
+  }, []);
 
   useEffect(() => {
     if (!loading && !session) nav("/login", { replace: true });
@@ -221,7 +263,7 @@ export default function AppLayout() {
         className="shrink-0 z-50 bg-background/90 backdrop-blur border-b border-border"
         style={{ paddingTop: "calc(var(--offline-banner-h, 0px) + env(safe-area-inset-top, 0px))" }}
       >
-        <div className="max-w-2xl lg:max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+        <div className="max-w-2xl lg:max-w-4xl mx-auto px-4 h-14 flex items-center justify-between relative">
 
           {/* Logo */}
           <div className="flex items-center gap-2">
@@ -231,6 +273,27 @@ export default function AppLayout() {
                 <span className="text-[10px] font-medium text-muted-foreground leading-tight truncate max-w-[140px]">{profile.username}</span>
               )}
             </div>
+          </div>
+
+          {/* Center: Open Drawer + Scan */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleOpenCashDrawer}
+              disabled={drawerBusy}
+              className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition disabled:opacity-50 whitespace-nowrap"
+              style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+            >
+              {drawerBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "💵 Open Drawer"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowScannerModal(true)}
+              className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition whitespace-nowrap"
+              style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+            >
+              📷 Scan
+            </button>
           </div>
 
           {/* Hamburger — no username in header on mobile */}
@@ -447,7 +510,39 @@ export default function AppLayout() {
         </OfflinePageGuard>
       </main>
 
+      {/* ── Cash Drawer result modal ──────────────────────────────────────── */}
+      {showDrawerModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
+            style={{ background: "var(--gradient-card)" }}>
+            <div className="px-6 pt-6 pb-2 text-center">
+              <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3"
+                style={{ background: drawerResult?.opened ? "rgba(134,239,172,0.12)" : "rgba(239,68,68,0.12)", border: "1.5px solid " + (drawerResult?.opened ? "#86efac" : "#f87171") }}>
+                <span className="text-2xl">{drawerResult?.opened ? "✅" : "❌"}</span>
+              </div>
+              <h2 className="font-black text-xl">{drawerResult?.opened ? "Drawer Opened" : "Could Not Open Drawer"}</h2>
+              <p className="text-sm text-muted-foreground mt-2">
+                {drawerResult?.opened
+                  ? <>Sent via {drawerResult.method === "native" ? "USB" : drawerResult.method === "webserial" ? "Web Serial" : "simulated"} {drawerResult.device ? `· ${drawerResult.device}` : ""}</>
+                  : drawerResult?.error ?? "Unknown error"}
+              </p>
+            </div>
+            <div className="px-6 pb-6 pt-4">
+              <button onClick={() => setShowDrawerModal(false)}
+                className="w-full h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
+      {/* ── Barcode Scanner Modal ───────────────────────────────────────── */}
+      <BarcodeScannerModal
+        open={showScannerModal}
+        onClose={() => setShowScannerModal(false)}
+        onScan={handleBarcodeScanned}
+      />
     </div>
   );
 }

@@ -1932,6 +1932,15 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   }, [editProduct?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [barcode, setBarcode] = useState(editProduct?.barcode ?? "");
   const [file, setFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const code = (e as CustomEvent).detail;
+      if (typeof code === "string") setBarcode(code);
+    };
+    window.addEventListener("pospro-raw-barcode", handler);
+    return () => window.removeEventListener("pospro-raw-barcode", handler);
+  }, []);
   const [preview, setPreview] = useState<string | null>(editProduct?.image_url ?? null);
   const [templateUrl, setTemplateUrl] = useState<string | null>(editProduct?.image_url ?? null);
   const [busy, setBusy] = useState(false);
@@ -2092,7 +2101,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                   <ImagePlus className="h-5 w-5 mr-2" /> Upload
                 </Button>
                 <div className="h-2" />
-                <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => document.getElementById("barcode-input")?.focus()}>
+                <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => document.dispatchEvent(new Event("pospro-open-scanner"))}>
                   <span className="mr-2">🏷️</span> Add Barcode
                 </Button>
               </div>

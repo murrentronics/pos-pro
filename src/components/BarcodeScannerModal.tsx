@@ -66,6 +66,7 @@ export function BarcodeScannerModal({ open, onClose, onScan }: BarcodeScannerMod
             if (text && text !== lastScanned) {
               setLastScanned(text);
               onScan(text);
+              window.dispatchEvent(new CustomEvent("pospro-raw-barcode", { detail: text }));
               setTimeout(() => setLastScanned(null), 1500);
             }
           }
@@ -105,6 +106,7 @@ export function BarcodeScannerModal({ open, onClose, onScan }: BarcodeScannerMod
       if (code) {
         setLastScanned(code);
         onScan(code);
+        window.dispatchEvent(new CustomEvent("pospro-raw-barcode", { detail: code }));
         setTimeout(() => setLastScanned(null), 1500);
         keyboardBufferRef.current = "";
       }

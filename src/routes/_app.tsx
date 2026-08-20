@@ -35,6 +35,12 @@ function AppLayout() {
   // ── Barcode Scanner state ──────────────────────────────────────────────────
   const [showScannerModal, setShowScannerModal] = useState(false);
 
+  useEffect(() => {
+    const openHandler = () => setShowScannerModal(true);
+    window.addEventListener("pospro-open-scanner", openHandler);
+    return () => window.removeEventListener("pospro-open-scanner", openHandler);
+  }, []);
+
   const handleBarcodeScanned = async (barcode: string) => {
     if (!barcode) return;
     const { data: product } = await (supabase as any)
