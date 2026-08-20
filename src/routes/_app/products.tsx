@@ -43,6 +43,7 @@ type Product = {
   stock_qty_undo: number | null;
   stock_qty_undo_saved: number | null;
   stock_last_expense_id: string | null;
+  barcode?: string | null;
 };
 
 // ─── Revert Stock Modal ───────────────────────────────────────────────────────
@@ -1929,6 +1930,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
         }
       });
   }, [editProduct?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [barcode, setBarcode] = useState(editProduct?.barcode ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(editProduct?.image_url ?? null);
   const [templateUrl, setTemplateUrl] = useState<string | null>(editProduct?.image_url ?? null);
@@ -2014,7 +2016,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
     if (isEdit && editProduct) {
       const { data: updated, error } = await supabase
         .from("products")
-        .update({ name: name.trim(), price: Number(price), cost_price: costVal, image_url, category, units_per_item: baseUnitQtyVal })
+        .update({ name: name.trim(), price: Number(price), cost_price: costVal, image_url, category, units_per_item: baseUnitQtyVal, barcode: barcode || null } as any)
         .eq("id", editProduct.id).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
@@ -2034,8 +2036,8 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
     } else {
       const { data: inserted, error } = await supabase.from("products").insert({
         owner_id: ownerId, name: name.trim(), price: Number(price), cost_price: costVal,
-        image_url, category, units_per_item: baseUnitQtyVal,
-      }).select("*").single();
+        image_url, category, units_per_item: baseUnitQtyVal, barcode: barcode || null,
+      } as any).select("*").single();
       setBusy(false);
       if (error) { toast.error(error.message); return; }
       const varRows = [
@@ -2089,11 +2091,21 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                 <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => fileRef.current?.click()}>
                   <ImagePlus className="h-5 w-5 mr-2" /> Upload
                 </Button>
+                <div className="h-2" />
+                <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => document.getElementById("barcode-input")?.focus()}>
+                  <span className="mr-2">🏷️</span> Add Barcode
+                </Button>
               </div>
             </div>
             <p className="text-[10px] text-muted-foreground/70 leading-snug">
               💡 For best results, use a clear photo with good lighting.
             </p>
+
+            {/* Barcode */}
+            <div>
+              <Label className="text-xs">Barcode</Label>
+              <Input id="barcode-input" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="e.g. 9780201379624" className="h-9 mt-1 font-mono" />
+            </div>
 
             {/* Name */}
             <div>

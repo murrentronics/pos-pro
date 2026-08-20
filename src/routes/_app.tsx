@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useChain } from "@/lib/ChainContext";
+import { openCashDrawer, type CashDrawerResult } from "@/lib/cashDrawer";
+import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
@@ -24,6 +26,39 @@ function AppLayout() {
   const [storeClosedAt,     setStoreClosedAt]     = useState<string | null>(null);
   const [storeToggleBusy,   setStoreToggleBusy]   = useState(false);
   const storeIsOpen = !!storeSessionStart && !storeClosedAt;
+
+  // ── Cash Drawer state ──────────────────────────────────────────────────────
+  const [drawerBusy, setDrawerBusy] = useState(false);
+  const [showDrawerModal, setShowDrawerModal] = useState(false);
+  const [drawerResult, setDrawerResult] = useState<CashDrawerResult | null>(null);
+
+  // ── Barcode Scanner state ──────────────────────────────────────────────────
+  const [showScannerModal, setShowScannerModal] = useState(false);
+
+  const handleBarcodeScanned = async (barcode: string) => {
+    if (!barcode) return;
+    const { data: product } = await (supabase as any)
+      .from("products")
+      .select("*")
+      .eq("barcode", barcode)
+      .eq("owner_id", effectiveOwnerId(profile!.id))
+      .maybeSingle();
+    if (!product) {
+      toast.error("Product not found for barcode: " + barcode);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("pospro-barcode-scan", { detail: product }));
+    toast.success(`Scanned: ${product.name}`);
+  };
+
+  const handleOpenCashDrawer = async () => {
+    setDrawerBusy(true);
+    setShowDrawerModal(true);
+    setDrawerResult(null);
+    const result = await openCashDrawer();
+    setDrawerResult(result);
+    setDrawerBusy(false);
+  };
 
   // ── Open Store modal ──────────────────────────────────────────────────────
   const [showOpenStoreModal,  setShowOpenStoreModal]  = useState(false);
@@ -254,7 +289,7 @@ function AppLayout() {
         className="bg-background/90 backdrop-blur border-b border-border relative z-50"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <div className="max-w-2xl mx-auto px-3 h-11 flex items-center justify-between">
+        <div className="max-w-2xl mx-auto px-3 h-11 flex items-center">
           {/* Logo */}
           <div className="flex flex-col leading-tight">
             <span className="font-black tracking-tight text-sm">P.O.S. Pro</span>
@@ -263,6 +298,29 @@ function AppLayout() {
                 {profile.username}
               </span>
             )}
+          </div>
+
+          {/* Center: Open Drawer + Scan */}
+          <div className="flex-1 flex justify-center">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleOpenCashDrawer}
+                disabled={drawerBusy}
+                className="h-8 px-3 rounded-lg font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition disabled:opacity-50"
+                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+              >
+                {drawerBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "💵 Open Drawer"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowScannerModal(true)}
+                className="h-8 px-3 rounded-lg font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition"
+                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+              >
+                📷 Scan
+              </button>
+            </div>
           </div>
 
           {/* Right: store toggle + hamburger */}
@@ -419,10 +477,44 @@ function AppLayout() {
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
+         </div>
+       )}
+
+       {/* ── Cash Drawer result modal ──────────────────────────────────────── */}
+       {showDrawerModal && (
+         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
+             style={{ background: "var(--gradient-card)" }}>
+             <div className="px-6 pt-6 pb-2 text-center">
+               <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3"
+                 style={{ background: drawerResult?.opened ? "rgba(134,239,172,0.12)" : "rgba(239,68,68,0.12)", border: "1.5px solid " + (drawerResult?.opened ? "#86efac" : "#f87171") }}>
+                 <span className="text-2xl">{drawerResult?.opened ? "✅" : "❌"}</span>
+               </div>
+               <h2 className="font-black text-xl">{drawerResult?.opened ? "Drawer Opened" : "Could Not Open Drawer"}</h2>
+               <p className="text-sm text-muted-foreground mt-2">
+                 {drawerResult?.opened
+                   ? <>Sent via {drawerResult.method === "native" ? "USB" : drawerResult.method === "webserial" ? "Web Serial" : "simulated"} {drawerResult.device ? `· ${drawerResult.device}` : ""}</>
+                   : drawerResult?.error ?? "Unknown error"}
+               </p>
+             </div>
+             <div className="px-6 pb-6 pt-4">
+               <button onClick={() => setShowDrawerModal(false)}
+                 className="w-full h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition">
+                 Close
+               </button>
+             </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Barcode Scanner Modal ───────────────────────────────────────── */}
+        <BarcodeScannerModal
+          open={showScannerModal}
+          onClose={() => setShowScannerModal(false)}
+          onScan={handleBarcodeScanned}
+        />
+      </div>
+    );
 }
 
 function FullScreenStatus({

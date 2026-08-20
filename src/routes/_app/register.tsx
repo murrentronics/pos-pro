@@ -40,6 +40,7 @@ type Product = {
     | { key: string; label: string; units_consumed: number; price: number }[]
     | null;
   product_variations?: ProdVariation[] | null;
+  barcode?: string | null;
 };
 type CartItem = Product & { qty: number; _discount?: number; _originalPrice?: number };
 
@@ -922,6 +923,19 @@ export default function RegisterPage() {
     }
   }, [profile]);
 
+  // ── Barcode scanner listener ──────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const product = (e as CustomEvent).detail;
+      if (product) {
+        const fn = (window as any).__pospro_addToCart;
+        if (fn) fn(product);
+      }
+    };
+    window.addEventListener("pospro-barcode-scan", handler);
+    return () => window.removeEventListener("pospro-barcode-scan", handler);
+  }, []);
+
   // ── Store business name & Bar session state — blocks sales when bar is closed ──
   const [storeBusinessName, setStoreBusinessName] = useState<string>("");
   const [barSessionStart, setBarSessionStart] = useState<string | null>(null);
@@ -1117,20 +1131,6 @@ export default function RegisterPage() {
     toast.success("🔴 Store closed");
   };
 
-  const handleOpenCashDrawer = async () => {
-    setDrawerBusy(true);
-    setShowDrawerModal(true);
-    setDrawerResult(null);
-    const result = await openCashDrawer();
-    setDrawerResult(result);
-    setDrawerBusy(false);
-    if (result.opened) {
-      toast.success("Cash drawer opened");
-    } else {
-      toast.error(result.error ?? "Could not open cash drawer");
-    }
-  };
-
   const handleSaleDone = () => {
     setShowSaleCompleteModal(false);
     setLastSale(null);
@@ -1307,14 +1307,6 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
   const [creditOpen, setCreditOpen] = useState(false);
-  const [showDrawerModal, setShowDrawerModal] = useState(false);
-  const [drawerBusy, setDrawerBusy] = useState(false);
-  const [drawerResult, setDrawerResult] = useState<{
-    opened: boolean;
-    method: string;
-    device?: string;
-    error?: string;
-  } | null>(null);
 
   const [showSaleCompleteModal, setShowSaleCompleteModal] = useState(false);
   const [lastSale, setLastSale] = useState<ReceiptData | null>(null);
@@ -1641,6 +1633,7 @@ export default function RegisterPage() {
       ];
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  (window as any).__pospro_addToCart = addToCart;
 
   const dec = useCallback(
     (id: string) =>
@@ -1891,14 +1884,6 @@ export default function RegisterPage() {
             </button>
           ))}
         </div>
-        <button
-          onClick={handleOpenCashDrawer}
-          disabled={drawerBusy}
-          className="shrink-0 h-10 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 active:scale-95 transition disabled:opacity-50"
-          style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
-        >
-          {drawerBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "💵 Open Drawer"}
-        </button>
       </div>
 
       {/* Items grid — bottom padding clears the fixed CASH + CREDIT buttons */}
@@ -2299,65 +2284,6 @@ export default function RegisterPage() {
         />
       )}
 
-      {/* ── Cash Drawer result modal ── */}
-      {showDrawerModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
-          <div
-            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center"
-            style={{ background: "var(--gradient-card)" }}
-          >
-            <div className="px-6 pt-7 pb-4 space-y-3">
-              {drawerBusy ? (
-                <>
-                  <div className="flex justify-center">
-                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                  </div>
-                  <h2 className="font-black text-xl">Opening Drawer...</h2>
-                </>
-              ) : drawerResult?.opened ? (
-                <>
-                  <div className="flex justify-center">
-                    <div className="h-16 w-16 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center">
-                      <CheckCircle2 className="h-9 w-9 text-green-400" strokeWidth={1.5} />
-                    </div>
-                  </div>
-                  <h2 className="font-black text-xl">Drawer Opened</h2>
-                  <p className="text-xs text-muted-foreground">
-                    {drawerResult.method === "native"
-                      ? "Native plugin"
-                      : drawerResult.method === "webserial"
-                        ? "Web Serial"
-                        : "No method"}{" "}
-                    {drawerResult.device ? `· ${drawerResult.device}` : ""}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <div className="flex justify-center">
-                    <div className="h-16 w-16 rounded-full bg-red-500/20 border-2 border-red-500/40 flex items-center justify-center text-3xl">
-                      ⚠️
-                    </div>
-                  </div>
-                  <h2 className="font-black text-xl">Could Not Open Drawer</h2>
-                  <p className="text-xs text-red-400 font-semibold">
-                    {drawerResult?.error ?? "Unknown error"}
-                  </p>
-                </>
-              )}
-            </div>
-            <div className="px-6 pb-6 pt-2">
-              <button
-                onClick={() => setShowDrawerModal(false)}
-                className="w-full h-12 rounded-2xl font-black text-sm transition active:scale-95 text-primary-foreground"
-                style={{ background: "var(--gradient-hero)" }}
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Sale Complete modal ── */}
       {showSaleCompleteModal && lastSale && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
@@ -2448,18 +2374,18 @@ export default function RegisterPage() {
             </div>
 
             {/* Actions */}
-            <div className="px-6 pb-5 pt-2 space-y-2 shrink-0">
+            <div className="px-6 pb-5 pt-2 flex gap-2 shrink-0">
               <button
                 onClick={handlePrintAndDone}
                 disabled={printingReceipt}
-                className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
+                className="flex-1 h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
                 style={{ background: "var(--gradient-hero)" }}
               >
                 {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : "🖨️ Print & Done"}
               </button>
               <button
                 onClick={handleSaleDone}
-                className="w-full h-11 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95 text-foreground/80"
+                className="flex-1 h-14 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95 text-foreground/80"
               >
                 Done
               </button>
