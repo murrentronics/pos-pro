@@ -16,6 +16,7 @@ import { useImageCache } from "@/lib/useImageCache";
 import { productImageUrl } from "@/lib/imageUrl";
 import { openCashDrawer } from "@/lib/cashDrawer";
 import { printReceipt, type ReceiptData } from "@/lib/receiptPrinter";
+import { playBeep } from "@/lib/playBeep";
 import {
   cacheProducts,
   getCachedProducts,
@@ -1632,6 +1633,7 @@ export default function RegisterPage() {
         },
       ];
     });
+    playBeep();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   (window as any).__pospro_addToCart = addToCart;
 
@@ -2278,6 +2280,7 @@ export default function RegisterPage() {
                   },
                 ];
               });
+              playBeep();
             });
             setVarPickerProduct(null);
           }}
