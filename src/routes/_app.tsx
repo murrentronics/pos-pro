@@ -41,22 +41,6 @@ function AppLayout() {
     return () => window.removeEventListener("pospro-open-scanner", openHandler);
   }, []);
 
-  const handleBarcodeScanned = async (barcode: string) => {
-    if (!barcode) return;
-    const { data: product } = await (supabase as any)
-      .from("products")
-      .select("*")
-      .eq("barcode", barcode)
-      .eq("owner_id", effectiveOwnerId(profile!.id))
-      .maybeSingle();
-    if (!product) {
-      toast.error("Product not found for barcode: " + barcode);
-      return;
-    }
-    window.dispatchEvent(new CustomEvent("pospro-barcode-scan", { detail: product }));
-    toast.success(`Scanned: ${product.name}`);
-  };
-
   const handleOpenCashDrawer = async () => {
     setDrawerBusy(true);
     setShowDrawerModal(true);
@@ -515,7 +499,11 @@ function AppLayout() {
         <BarcodeScannerModal
           open={showScannerModal}
           onClose={() => setShowScannerModal(false)}
-          onScan={handleBarcodeScanned}
+          onDone={(items) => {
+            items.forEach((item) => {
+              window.dispatchEvent(new CustomEvent("pospro-barcode-scan", { detail: item.product }));
+            });
+          }}
         />
       </div>
     );

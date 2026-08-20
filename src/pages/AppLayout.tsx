@@ -45,22 +45,6 @@ export default function AppLayout() {
   // ── Barcode Scanner state ──────────────────────────────────────────────────
   const [showScannerModal, setShowScannerModal] = useState(false);
 
-  const handleBarcodeScanned = async (barcode: string) => {
-    if (!barcode || !profile) return;
-    const { data: product } = await (supabase as any)
-      .from("products")
-      .select("*")
-      .eq("barcode", barcode)
-      .eq("owner_id", profile.id)
-      .maybeSingle();
-    if (!product) {
-      toast.error("Product not found for barcode: " + barcode);
-      return;
-    }
-    window.dispatchEvent(new CustomEvent("pospro-barcode-scan", { detail: product }));
-    toast.success(`Scanned: ${product.name}`);
-  };
-
   useEffect(() => {
     const openHandler = () => setShowScannerModal(true);
     window.addEventListener("pospro-open-scanner", openHandler);
@@ -541,7 +525,11 @@ export default function AppLayout() {
       <BarcodeScannerModal
         open={showScannerModal}
         onClose={() => setShowScannerModal(false)}
-        onScan={handleBarcodeScanned}
+        onDone={(items) => {
+          items.forEach((item) => {
+            window.dispatchEvent(new CustomEvent("pospro-barcode-scan", { detail: item.product }));
+          });
+        }}
       />
     </div>
   );
