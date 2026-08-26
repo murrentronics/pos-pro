@@ -1256,11 +1256,9 @@ export default function RegisterPage() {
     try {
       const result = await printReceipt(lastSale);
       setPrinterResult(result);
-      // Don't close the modal yet — show the printer result inline
-      // The user closes via the result state (handled in the modal)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setPrinterResult({ printed: false, method: "none", error: msg });
+      setPrinterResult({ printed: false, mode: "none", error: msg });
     } finally {
       setPrintingReceipt(false);
     }
@@ -1780,8 +1778,8 @@ export default function RegisterPage() {
       {showFloatModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
           <div
-            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
-            style={{ background: "var(--gradient-card)" }}
+            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden flex flex-col"
+            style={{ background: "var(--gradient-card)", maxHeight: "90dvh" }}
           >
             <div className="px-6 pt-6 pb-2 text-center">
               <div
@@ -1958,227 +1956,172 @@ export default function RegisterPage() {
         </div>
       )}
 
-      {/* ── Page shell: fills the <main> viewport, header+panels don't scroll away ── */}
-      <div className="-mx-3 flex flex-col" style={{ height: "100%", minHeight: 0 }}>
+      {/* ══════════════════════════════════════════════════════════════════
+          REGISTER LAYOUT — fixed full-screen, three columns:
+            LEFT  : scanner panel  — screen-left  → center-column-left
+            CENTER: product grid   — max-w-2xl lg:max-w-4xl (same as header)
+            RIGHT : cart / order   — center-column-right → screen-right
+          All three share the same top (below AppLayout header) and fill
+          to the bottom of the screen. Only the center grid scrolls.
+      ══════════════════════════════════════════════════════════════════ */}
+      <div
+        className="fixed inset-x-0 bottom-0 flex flex-col"
+        style={{ top: "var(--header-total-h, 3.5rem)", zIndex: 20 }}
+      >
 
-      {/* ── Category bar — always visible at top ── */}
-      <div className="shrink-0 px-3 py-2 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between gap-2">
-        {/* Mobile: horizontal scroll strip; sm+: fixed grid */}
-        <div className="sm:hidden flex gap-1.5 overflow-x-auto scrollbar-none flex-1">
-          {storeCategories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => {
-                handleBarDone();
-                const sorted =
-                  allCategorySorted[cat.id] ??
-                  applyBarSort(products, cat.id, barSortMapRef.current);
-                barOrderedRef.current = sorted;
-                lastTabCategory.current = cat.id;
-                setCategory(cat.id);
-                setBarOrdered(sorted);
-                document.querySelector("main")?.scrollTo({ top: 0, behavior: "instant" });
-              }}
-              className={`h-10 shrink-0 rounded-xl font-black transition flex items-center justify-center px-4 ${
-                category === cat.id ? "text-primary-foreground" : "bg-muted text-muted-foreground"
-              }`}
-              style={category === cat.id ? { background: "var(--gradient-hero)" } : {}}
-            >
-              <span className="text-xs leading-none whitespace-nowrap">{cat.name}</span>
-            </button>
-          ))}
-        </div>
-        {/* Tablet / desktop: fixed grid, all tabs visible */}
-        <div className="hidden sm:flex flex-wrap gap-1.5 flex-1">
-          {storeCategories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => {
-                handleBarDone();
-                const sorted =
-                  allCategorySorted[cat.id] ??
-                  applyBarSort(products, cat.id, barSortMapRef.current);
-                barOrderedRef.current = sorted;
-                lastTabCategory.current = cat.id;
-                setCategory(cat.id);
-                setBarOrdered(sorted);
-                document.querySelector("main")?.scrollTo({ top: 0, behavior: "instant" });
-              }}
-              className={`h-10 shrink-0 rounded-xl font-black transition flex items-center justify-center px-4 ${
-                category === cat.id
-                  ? "text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-              style={category === cat.id ? { background: "var(--gradient-hero)" } : {}}
-            >
-              <span className="text-xs lg:text-sm leading-none text-center">{cat.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Three-column body: scanner | products | cart ── */}
-      <div className="flex flex-1 min-h-0">
-        {/* Left scanner panel — in-flow sidebar, desktop only */}
-        {showScannerPanel && (
-          <div className="hidden md:flex w-64 shrink-0 flex-col border-r border-border bg-background/95 backdrop-blur">
-            <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
-              <h2 className="font-black text-sm">Scanner</h2>
-              <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-              {scannerExternalDetected ? (
-                <div className="text-center space-y-2">
-                  <div className="h-12 w-12 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center mx-auto">
-                    <CheckCircle2 className="h-6 w-6 text-green-400" />
-                  </div>
-                  <p className="text-xs font-black text-green-400">Scanner Connected</p>
-                  <p className="text-[10px] text-muted-foreground">Ready to scan items — they will appear in Current Order</p>
-                </div>
-              ) : (
-                <div className="text-center space-y-2">
-                  <div className="h-12 w-12 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center mx-auto">
-                    <Loader2 className="h-6 w-6 text-amber-400 animate-spin" />
-                  </div>
-                  <p className="text-xs font-black text-amber-400">No Scanner</p>
-                  <p className="text-[10px] text-muted-foreground">Connect external scanner or scan barcode to auto-connect</p>
-                </div>
-              )}
-
-              {scannerLastScanned && (
-                <div className="bg-green-500 text-white px-3 py-2 rounded-xl font-black text-xs shadow-lg text-center">
-                  Scanned: {scannerLastScanned}
-                </div>
-              )}
-
-              <div className="text-center pt-2">
-                <p className="text-[10px] text-muted-foreground">Scanned items appear in the Current Order panel on the right</p>
-              </div>
-            </div>
-            <div className="p-3 border-t border-border space-y-2">
-              {scannerExternalDetected && (
+        {/* ── Category bar ── */}
+        <div className="shrink-0 bg-background/95 backdrop-blur border-b border-border">
+          <div className="max-w-2xl lg:max-w-4xl mx-auto px-3 py-2 flex items-center gap-2">
+            {/* Mobile: horizontal scroll strip */}
+            <div className="sm:hidden flex gap-1.5 overflow-x-auto scrollbar-none flex-1">
+              {storeCategories.map((cat) => (
                 <button
-                  onClick={handleChangeScannerDevice}
-                  className="w-full h-9 rounded-xl text-[11px] font-black border border-border hover:bg-muted/30 transition"
+                  key={cat.id}
+                  onClick={() => {
+                    handleBarDone();
+                    const sorted = allCategorySorted[cat.id] ?? applyBarSort(products, cat.id, barSortMapRef.current);
+                    barOrderedRef.current = sorted; lastTabCategory.current = cat.id;
+                    setCategory(cat.id); setBarOrdered(sorted);
+                  }}
+                  className={`h-10 shrink-0 rounded-xl font-black transition flex items-center justify-center px-4 ${category === cat.id ? "text-primary-foreground" : "bg-muted text-muted-foreground"}`}
+                  style={category === cat.id ? { background: "var(--gradient-hero)" } : {}}
                 >
-                  Change Device
+                  <span className="text-xs leading-none whitespace-nowrap">{cat.name}</span>
                 </button>
-              )}
-              <button
-                onClick={() => setShowScannerPanel(false)}
-                className="w-full h-10 rounded-xl font-black text-xs text-primary-foreground shadow-lg active:scale-[0.98] transition"
-                style={{ background: "var(--gradient-hero)" }}
-              >
-                Done
-              </button>
+              ))}
+            </div>
+            {/* Desktop: wrapping flex */}
+            <div className="hidden sm:flex flex-wrap gap-1.5 flex-1">
+              {storeCategories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => {
+                    handleBarDone();
+                    const sorted = allCategorySorted[cat.id] ?? applyBarSort(products, cat.id, barSortMapRef.current);
+                    barOrderedRef.current = sorted; lastTabCategory.current = cat.id;
+                    setCategory(cat.id); setBarOrdered(sorted);
+                  }}
+                  className={`h-10 shrink-0 rounded-xl font-black transition flex items-center justify-center px-4 ${category === cat.id ? "text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+                  style={category === cat.id ? { background: "var(--gradient-hero)" } : {}}
+                >
+                  <span className="text-xs lg:text-sm leading-none text-center">{cat.name}</span>
+                </button>
+              ))}
             </div>
           </div>
-        )}
+        </div>
 
-        {/* Center content — scrollable product grid */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-20 md:pb-4">
-          <div className="pt-4 max-w-2xl mx-auto">
-          {loading ? (
-            <div className="flex justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-          ) : (
-            <>
-            {/* ── Edit mode instruction banner ── */}
-            {barEditMode && (
-              <div
-                className="sticky z-[19] -mx-3 px-3 flex items-center justify-between py-2 mb-3 border-b border-amber-500/40 bg-background/95 backdrop-blur"
-                style={{ top: 0 }}
-              >
-                <span className="text-xs font-black text-amber-400">
-                  {barSelectedId
-                    ? t("sort_tap_swap", "Now tap another item to swap its position")
-                    : t("sort_tap_select", "Tap an item to select, then tap another to swap")}
-                </span>
-                <button
-                  onClick={handleBarDone}
-                  className="shrink-0 h-8 px-4 rounded-xl font-black text-xs text-white active:scale-95 transition"
-                  style={{ background: "var(--gradient-hero)" }}
-                >
-                  {t("done", "Done")}
+        {/* ── Body row: left panel + center grid + right panel ── */}
+        <div className="flex flex-1 min-h-0 relative">
+
+          {/* LEFT scanner panel — from screen-left to just before center column */}
+          {showScannerPanel && (
+            <div
+              className="hidden md:flex flex-col absolute left-0 top-0 bottom-0 border-r border-border bg-background/95 backdrop-blur z-10"
+              style={{ right: "calc(50% + min(calc(50vw - 1.5rem), 28rem))" }}
+            >
+              <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
+                <h2 className="font-black text-sm">Scanner</h2>
+                <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+                  <X className="h-4 w-4" />
                 </button>
               </div>
-            )}
-
-            {filtered.length === 0 && !loading ? (
-              <div className="text-center py-20 text-muted-foreground">
-                {products.length === 0
-                  ? "No items yet. Add some on the Items page."
-                  : `No ${storeCategories.find((c) => c.id === category)?.name ?? "items"} found.`}
+              <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+                {scannerExternalDetected ? (
+                  <div className="text-center space-y-2">
+                    <div className="h-12 w-12 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center mx-auto">
+                      <CheckCircle2 className="h-6 w-6 text-green-400" />
+                    </div>
+                    <p className="text-xs font-black text-green-400">Scanner Connected</p>
+                    <p className="text-[10px] text-muted-foreground">Ready to scan — items appear in Current Order</p>
+                  </div>
+                ) : (
+                  <div className="text-center space-y-2">
+                    <div className="h-12 w-12 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center mx-auto">
+                      <Loader2 className="h-6 w-6 text-amber-400 animate-spin" />
+                    </div>
+                    <p className="text-xs font-black text-amber-400">No Scanner</p>
+                    <p className="text-[10px] text-muted-foreground">Connect a scanner or scan a barcode to auto-connect</p>
+                  </div>
+                )}
+                {scannerLastScanned && (
+                  <div className="bg-green-500 text-white px-3 py-2 rounded-xl font-black text-xs shadow-lg text-center">
+                    Scanned: {scannerLastScanned}
+                  </div>
+                )}
+                <p className="text-[10px] text-muted-foreground text-center pt-2">Scanned items appear in the Current Order panel</p>
               </div>
-            ) : (
-              <div>
-                {barEditMode ? (
-                  /* ── Edit mode: tap-to-select then tap-to-swap ── */
-                  <div>
-                    {/* Grid — normal scrolling, taps drive selection/swap */}
-                    <div
-                      ref={barEditGridRef}
-                      className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2"
-                      onContextMenu={(e) => e.preventDefault()}
-                      style={{ touchAction: "pan-y" }}
-                    >
-                      {barOrdered.map((p) => {
-                        const inCart = cart.find((i) => i.id === p.id);
-                        const outOfStock = (p.stock_qty ?? 1) === 0;
-                        const missingPrice = !p.price || Number(p.price) <= 0;
-                        const incomplete = missingPrice;
-                        const isSelected = barSelectedId === p.id;
-                        return (
-                          <div
-                            key={p.id}
-                            data-bar-id={p.id}
-                            className="relative"
-                            onContextMenu={(e) => e.preventDefault()}
-                            style={
-                              {
-                                userSelect: "none",
-                                WebkitUserSelect: "none",
-                                WebkitTouchCallout: "none",
-                                touchAction: "manipulation",
-                              } as React.CSSProperties
-                            }
-                          >
-                            <button
-                              onClick={() => {
-                                if (!barEditModeRef.current) return;
-                                const current = barOrderedRef.current;
-                                if (!barSelectedId) {
-                                  setBarSelectedId(p.id);
-                                  return;
-                                }
-                                if (barSelectedId === p.id) {
-                                  setBarSelectedId(null);
-                                  return;
-                                }
-                                const from = current.findIndex((x) => x.id === barSelectedId);
-                                const to = current.findIndex((x) => x.id === p.id);
-                                if (from === -1 || to === -1) {
-                                  setBarSelectedId(null);
-                                  return;
-                                }
-                                const next = [...current];
-                                const [moved] = next.splice(from, 1);
-                                next.splice(to, 0, moved);
-                                barOrderedRef.current = next;
-                                setBarOrdered(next);
-                                // Rebuild the full sort map: keep other categories' positions, update this category
-                                const newMap = { ...barSortMapRef.current };
-                                next.forEach((item, idx) => {
-                                  newMap[item.id] = idx;
-                                });
-                                barSortMapRef.current = newMap;
-                                setBarSortMap(newMap);
-                                saveBarSortIds(next.map((x) => x.id));
-                                setBarSelectedId(null);
-                              }}
+              <div className="p-3 border-t border-border space-y-2 shrink-0">
+                {scannerExternalDetected && (
+                  <button onClick={handleChangeScannerDevice} className="w-full h-9 rounded-xl text-[11px] font-black border border-border hover:bg-muted/30 transition">
+                    Change Device
+                  </button>
+                )}
+                <button onClick={() => setShowScannerPanel(false)} className="w-full h-10 rounded-xl font-black text-xs text-primary-foreground shadow-lg active:scale-[0.98] transition" style={{ background: "var(--gradient-hero)" }}>
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* CENTER product grid — same width as header content, scrollable */}
+          <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 overflow-y-auto">
+              <div className="max-w-2xl lg:max-w-4xl mx-auto px-3 pt-4 pb-6">
+                {loading ? (
+                  <div className="flex justify-center py-20">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <>
+                  {barEditMode && (
+                    <div className="sticky top-0 z-[19] -mx-3 px-3 flex items-center justify-between py-2 mb-3 border-b border-amber-500/40 bg-background/95 backdrop-blur">
+                      <span className="text-xs font-black text-amber-400">
+                        {barSelectedId ? t("sort_tap_swap", "Now tap another item to swap") : t("sort_tap_select", "Tap an item to select, then tap another to swap")}
+                      </span>
+                      <button onClick={handleBarDone} className="shrink-0 h-8 px-4 rounded-xl font-black text-xs text-white active:scale-95 transition" style={{ background: "var(--gradient-hero)" }}>
+                        {t("done", "Done")}
+                      </button>
+                    </div>
+                  )}
+                  {filtered.length === 0 ? (
+                    <div className="text-center py-20 text-muted-foreground">
+                      {products.length === 0 ? "No items yet. Add some on the Items page." : `No ${storeCategories.find((c) => c.id === category)?.name ?? "items"} found.`}
+                    </div>
+                  ) : (
+                    <div>
+                      {barEditMode ? (
+                        <div>
+                          <div ref={barEditGridRef} className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
+                            {barOrdered.map((p) => {
+                              const inCart = cart.find((i) => i.id === p.id);
+                              const outOfStock = (p.stock_qty ?? 1) === 0;
+                              const missingPrice = !p.price || Number(p.price) <= 0;
+                              const incomplete = missingPrice;
+                              const isSelected = barSelectedId === p.id;
+                              return (
+                                <div key={p.id} data-bar-id={p.id} className="relative" onContextMenu={(e) => e.preventDefault()} style={{ userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none", touchAction: "manipulation" } as React.CSSProperties}>
+                                  <button
+                                    onClick={() => {
+                                      if (!barEditModeRef.current) return;
+                                      const current = barOrderedRef.current;
+                                      if (!barSelectedId) { setBarSelectedId(p.id); return; }
+                                      if (barSelectedId === p.id) { setBarSelectedId(null); return; }
+                                      const from = current.findIndex((x) => x.id === barSelectedId);
+                                      const to = current.findIndex((x) => x.id === p.id);
+                                      if (from === -1 || to === -1) { setBarSelectedId(null); return; }
+                                      const next = [...current];
+                                      const [moved] = next.splice(from, 1);
+                                      next.splice(to, 0, moved);
+                                      barOrderedRef.current = next;
+                                      setBarOrdered(next);
+                                      const newMap = { ...barSortMapRef.current };
+                                      next.forEach((item, idx) => { newMap[item.id] = idx; });
+                                      barSortMapRef.current = newMap;
+                                      setBarSortMap(newMap);
+                                      saveBarSortIds(next.map((x) => x.id));
+                                      setBarSelectedId(null);
+                                    }}
                               className={`group relative rounded-2xl overflow-hidden border flex flex-col transition w-full ${outOfStock ? "opacity-80" : ""} ${incomplete ? "opacity-50 grayscale" : ""}`}
                               style={{
                                 background: "var(--gradient-card)",
@@ -2319,81 +2262,80 @@ export default function RegisterPage() {
                 )}
               </div>
             )}
-            </>
+          </>
           )}
-          </div>
         </div>
+      </div>
 
-        {/* Right cart panel — in-flow sidebar, desktop only */}
-        <aside className="hidden md:flex w-64 shrink-0 flex-col border-l border-border bg-background/95 backdrop-blur">
-          <div className="px-4 py-3 border-b border-border shrink-0">
-            <h2 className="font-black text-sm">Current Order</h2>
-            <p className="text-[11px] text-muted-foreground">{cartCount} items · ${total.toFixed(2)}</p>
-          </div>
-          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
-            {cart.length === 0 ? (
-              <p className="text-center text-muted-foreground text-xs py-8">Cart is empty</p>
-            ) : (
-              cart.map((item) => (
-                <div key={item.id} className="flex items-center gap-2 p-2 rounded-xl border border-border/60 bg-muted/20">
-                  <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center shrink-0 overflow-hidden">
-                    {item.image_url ? (
-                      <img src={item.image_url} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="text-sm">📷</span>
-                    )}
+      {/* Mobile: sticky Place Order button at bottom of center column */}
+      {cartCount > 0 && (
+        <div className="md:hidden shrink-0 p-3 border-t border-border" style={{ background: "var(--background)" }}>
+          <button
+            onClick={() => setCashOpen(true)}
+            className="w-full h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
+            style={{ background: "var(--gradient-hero)" }}
+          >
+            <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">{cartCount}</span>
+            <span>Place Order</span>
+            <span className="text-primary-foreground/80 text-base font-bold">${total.toFixed(2)}</span>
+          </button>
+        </div>
+      )}
+    </div>{/* end center column */}
+
+          {/* RIGHT cart panel — from right edge of center column to screen-right, desktop only */}
+          <div
+            className="hidden md:flex flex-col absolute right-0 top-0 bottom-0 border-l border-border bg-background/95 backdrop-blur z-10"
+            style={{ left: "calc(50% + min(calc(50vw - 1.5rem), 28rem))" }}
+          >
+            <div className="px-4 py-3 border-b border-border shrink-0">
+              <h2 className="font-black text-sm">Current Order</h2>
+              <p className="text-[11px] text-muted-foreground">{cartCount} items · ${total.toFixed(2)}</p>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+              {cart.length === 0 ? (
+                <p className="text-center text-muted-foreground text-xs py-8">Cart is empty</p>
+              ) : (
+                cart.map((item) => (
+                  <div key={item.id} className="flex items-center gap-2 p-2 rounded-xl border border-border/60 bg-muted/20">
+                    <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center shrink-0 overflow-hidden">
+                      {item.image_url ? (
+                        <img src={item.image_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="text-sm">📷</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold truncate">{item.name}</p>
+                      <p className="text-[10px] text-muted-foreground">${Number(item.price).toFixed(2)} each</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => dec(item.id)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="text-xs font-black w-5 text-center">{item.qty}</span>
+                      <button onClick={() => addToCart(item)} className="h-7 w-7 rounded-md flex items-center justify-center transition active:scale-95" style={{ background: "var(--gradient-hero)" }}>
+                        <Plus className="h-3.5 w-3.5 text-black" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold truncate">{item.name}</p>
-                    <p className="text-[10px] text-muted-foreground">${Number(item.price).toFixed(2)} each</p>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => dec(item.id)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
-                      <Minus className="h-3.5 w-3.5" />
-                    </button>
-                    <span className="text-xs font-black w-5 text-center">{item.qty}</span>
-                    <button onClick={() => addToCart(item)} className="h-7 w-7 rounded-md flex items-center justify-center transition active:scale-95" style={{ background: "var(--gradient-hero)" }}>
-                      <Plus className="h-3.5 w-3.5 text-black" />
-                    </button>
-                  </div>
-                </div>
-              ))
+                ))
+              )}
+            </div>
+            {cartCount > 0 && (
+              <div className="p-3 border-t border-border shrink-0">
+                <button
+                  onClick={() => setCashOpen(true)}
+                  className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"
+                  style={{ background: "var(--gradient-hero)" }}
+                >
+                  Place Order · ${total.toFixed(2)}
+                </button>
+              </div>
             )}
           </div>
-          {cartCount > 0 && (
-            <div className="p-3 border-t border-border space-y-2">
-              <button
-                onClick={() => setCashOpen(true)}
-                className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"
-                style={{ background: "var(--gradient-hero)" }}
-              >
-                Place Order · ${total.toFixed(2)}
-              </button>
-            </div>
-          )}
-        </aside>
 
-        {/* Mobile: sticky bottom CASH button */}
-        {cartCount > 0 && (
-          <div className="md:hidden fixed inset-x-0 z-[26] px-4 pb-2 pointer-events-none" style={{ bottom: 8 }}>
-            <div className="max-w-2xl mx-auto pointer-events-auto space-y-2">
-              <button
-                onClick={() => setCashOpen(true)}
-                className="w-full h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
-                style={{ background: "var(--gradient-hero)" }}
-              >
-                <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">
-                  {cartCount}
-                </span>
-                <span>Place Order</span>
-                <span className="text-primary-foreground/80 text-base font-bold">
-                  ${total.toFixed(2)}
-                </span>
-              </button>
-            </div>
-          </div>
-        )}
-      </div>{/* end three-column body */}
+        </div>{/* end body row */}
       </div>{/* end page shell */}
 
       {cashOpen && (
@@ -2531,10 +2473,10 @@ export default function RegisterPage() {
 
       {/* ── Sale Complete modal ── */}
       {showSaleCompleteModal && lastSale && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div
-            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center my-auto flex flex-col max-h-[90vh]"
-            style={{ background: "var(--gradient-card)" }}
+            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center flex flex-col"
+            style={{ background: "var(--gradient-card)", maxHeight: "90dvh" }}
           >
             {/* Header banner */}
             <div className="px-6 pt-5 pb-2 shrink-0 space-y-1">
@@ -2634,7 +2576,7 @@ export default function RegisterPage() {
                   <p className="font-black text-sm">{printerResult.printed ? "Sent to Printer" : "Print Failed"}</p>
                   <p className="text-xs text-muted-foreground mt-1">
                     {printerResult.printed
-                      ? <>Via Web Serial{printerResult.device ? ` · ${printerResult.device}` : ""}</>
+                      ? <>{printerResult.label ?? (printerResult.mode === "bt" ? "Bluetooth" : "USB")}</>
                       : printerResult.error ?? "Unknown error"}
                   </p>
                 </div>

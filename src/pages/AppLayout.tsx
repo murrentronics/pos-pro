@@ -9,9 +9,10 @@ import { useTranslation } from "@/lib/i18n";
 import { useOffline } from "@/lib/OfflineProvider";
 import { OfflinePageGuard } from "@/components/OfflinePageGuard";
 import { toast } from "sonner";
-import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw } from "lucide-react";
+import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw, ScanLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { openCashDrawer, type CashDrawerResult } from "@/lib/cashDrawer";
+import { isPrinterConnected, getConnectionInfo } from "@/lib/printerConnection";
 
 const DEMO_EMAILS = ["isabel@gmail.com", "renard.sankersingh@gmail.com"];
 
@@ -31,6 +32,17 @@ export default function AppLayout() {
   const [drawerBusy, setDrawerBusy] = useState(false);
   const [showDrawerModal, setShowDrawerModal] = useState(false);
   const [drawerResult, setDrawerResult] = useState<CashDrawerResult | null>(null);
+  // Re-check printer connection whenever the user navigates (printer may have been connected/disconnected on the register page)
+  const [printerConnected, setPrinterConnected] = useState(() => isPrinterConnected());
+  useEffect(() => {
+    setPrinterConnected(isPrinterConnected());
+  }, [loc.pathname]);
+  // Also listen for connection changes broadcast from the register page
+  useEffect(() => {
+    const handler = () => setPrinterConnected(isPrinterConnected());
+    window.addEventListener("pospro-printer-changed", handler);
+    return () => window.removeEventListener("pospro-printer-changed", handler);
+  }, []);
 
   const handleOpenCashDrawer = async () => {
     setDrawerBusy(true);
@@ -235,7 +247,10 @@ export default function AppLayout() {
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", overflow: "hidden", position: "fixed", inset: 0 }}>
       <header
         className="shrink-0 z-50 bg-background/90 backdrop-blur border-b border-border"
-        style={{ paddingTop: "calc(var(--offline-banner-h, 0px) + env(safe-area-inset-top, 0px))" }}
+        style={{
+          paddingTop: "calc(var(--offline-banner-h, 0px) + env(safe-area-inset-top, 0px))",
+          "--header-total-h": "calc(3.5rem + var(--offline-banner-h, 0px) + env(safe-area-inset-top, 0px))",
+        } as React.CSSProperties}
       >
         <div className="max-w-2xl lg:max-w-4xl mx-auto px-4 h-14 flex items-center justify-between relative">
 
@@ -249,35 +264,41 @@ export default function AppLayout() {
             </div>
           </div>
 
-          {/* Center: Open Drawer + Scan */}
+          {/* Center: Open Drawer (only when printer connected) + Scan */}
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+            {printerConnected && (
+              <button
+                type="button"
+                onClick={handleOpenCashDrawer}
+                disabled={drawerBusy}
+                className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1.5 active:scale-95 transition disabled:opacity-50 whitespace-nowrap"
+                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+              >
+                {drawerBusy
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Wallet className="h-3.5 w-3.5 shrink-0" />}
+                <span className="hidden sm:inline">Open Drawer</span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={handleOpenCashDrawer}
-              disabled={drawerBusy}
-              className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition disabled:opacity-50 whitespace-nowrap"
+              onClick={() => window.dispatchEvent(new Event("pospro-toggle-scanner-panel"))}
+              className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1.5 active:scale-95 transition whitespace-nowrap"
               style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
             >
-              {drawerBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "💵 Open Drawer"}
-            </button>
-            <button
-              type="button"
-              onClick={() => document.dispatchEvent(new Event("pospro-toggle-scanner-panel"))}
-              className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition whitespace-nowrap"
-              style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
-            >
-              📷 Scan
+              <ScanLine className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden sm:inline">Scan</span>
             </button>
           </div>
 
-          {/* Hamburger — no username in header on mobile */}
+          {/* Hamburger */}
           <div className="flex items-center gap-2 relative" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((o) => !o)}
-              className="flex items-center gap-2 px-4 h-10 rounded-lg font-black text-sm transition text-primary-foreground"
+              className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1.5 transition text-primary-foreground active:scale-95 whitespace-nowrap"
               style={{ background: "var(--gradient-hero)" }}
             >
-              {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              {menuOpen ? <X className="h-3.5 w-3.5 shrink-0" /> : <Menu className="h-3.5 w-3.5 shrink-0" />}
               <span className="hidden sm:inline">{t("menu", "Menu")}</span>
             </button>
 

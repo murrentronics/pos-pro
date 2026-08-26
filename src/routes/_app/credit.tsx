@@ -241,7 +241,7 @@ async function printThermalBill(account: CreditAccount, ownerName: string, cashi
   };
 
   const res = await printReceipt(receiptData);
-  if (res.opened) {
+  if (res.printed) {
     toast.success("Sent to printer");
   } else if (res.error) {
     toast.error(res.error);

@@ -177,8 +177,21 @@ async function openViaWebSerial(cfg: CashDrawerConfig): Promise<CashDrawerResult
  * Pop the cash drawer. Best-effort: resolves with a result describing what
  * happened and never throws. Safe to call as `void openCashDrawer()` from an
  * onClick handler.
+ *
+ * When a printer connection is active (USB or Bluetooth), the drawer pulse is
+ * sent through that connection (drawer is wired to the printer). Falls back to
+ * a direct serial connection when no printer connection is configured.
  */
 export async function openCashDrawer(options?: CashDrawerOptions): Promise<CashDrawerResult> {
+  // Try routing through the active printer connection first
+  try {
+    const { isPrinterConnected, openDrawerViaPrinter } = await import("@/lib/printerConnection");
+    if (isPrinterConnected()) {
+      const r = await openDrawerViaPrinter();
+      return { opened: r.opened, method: r.opened ? "webserial" : "none", error: r.error };
+    }
+  } catch { /* fall through to direct serial */ }
+
   const cfg = resolveConfig(options);
   try {
     if (Capacitor.isNativePlatform()) {
