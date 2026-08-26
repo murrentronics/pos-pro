@@ -15,7 +15,7 @@ import { enqueue } from "@/lib/offlineQueue";
 import { useImageCache } from "@/lib/useImageCache";
 import { productImageUrl } from "@/lib/imageUrl";
 import { openCashDrawer } from "@/lib/cashDrawer";
-import { printReceipt, type ReceiptData } from "@/lib/receiptPrinter";
+import { printReceipt, type ReceiptData, type PrintResult } from "@/lib/receiptPrinter";
 import { playBeep } from "@/lib/playBeep";
 import {
   cacheProducts,
@@ -911,6 +911,15 @@ export default function RegisterPage() {
   const { isOnline } = useNetworkStatus();
   const nav = useNavigate();
 
+  // Lock the AppLayout <main> scroll so register manages its own internal scroll
+  useEffect(() => {
+    const main = document.querySelector("main");
+    if (!main) return;
+    const prev = main.style.overflow;
+    main.style.overflow = "hidden";
+    return () => { main.style.overflow = prev; };
+  }, []);
+
   const ownerId = effectiveOwnerId(
     profile?.role === "owner" ? profile.id : (profile?.parent_id ?? ""),
   );
@@ -1236,21 +1245,24 @@ export default function RegisterPage() {
 
   const handleSaleDone = () => {
     setShowSaleCompleteModal(false);
+    setPrinterResult(null);
     setLastSale(null);
   };
 
   const handlePrintAndDone = async () => {
     if (!lastSale) return;
     setPrintingReceipt(true);
+    setPrinterResult(null);
     try {
-      await printReceipt(lastSale);
-      toast.success("Receipt sent to printer");
-    } catch {
-      toast.error("Failed to print receipt");
+      const result = await printReceipt(lastSale);
+      setPrinterResult(result);
+      // Don't close the modal yet — show the printer result inline
+      // The user closes via the result state (handled in the modal)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setPrinterResult({ printed: false, method: "none", error: msg });
     } finally {
       setPrintingReceipt(false);
-      setShowSaleCompleteModal(false);
-      setLastSale(null);
     }
   };
 
@@ -1414,6 +1426,7 @@ export default function RegisterPage() {
   const [showSaleCompleteModal, setShowSaleCompleteModal] = useState(false);
   const [lastSale, setLastSale] = useState<ReceiptData | null>(null);
   const [printingReceipt, setPrintingReceipt] = useState(false);
+  const [printerResult, setPrinterResult] = useState<PrintResult | null>(null);
 
   // Persist cart to localStorage whenever it changes
   useEffect(() => {
@@ -1945,8 +1958,11 @@ export default function RegisterPage() {
         </div>
       )}
 
-      {/* ── Cash Drawer action bar ── */}
-      <div className="sticky top-0 z-20 -mx-3 px-3 py-2 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between gap-2">
+      {/* ── Page shell: fills the <main> viewport, header+panels don't scroll away ── */}
+      <div className="-mx-3 flex flex-col" style={{ height: "100%", minHeight: 0 }}>
+
+      {/* ── Category bar — always visible at top ── */}
+      <div className="shrink-0 px-3 py-2 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between gap-2">
         {/* Mobile: horizontal scroll strip; sm+: fixed grid */}
         <div className="sm:hidden flex gap-1.5 overflow-x-auto scrollbar-none flex-1">
           {storeCategories.map((cat) => (
@@ -2001,12 +2017,12 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      {/* Items grid + left scanner panel + right cart panel */}
-      <div className="flex gap-4 pt-4 pb-36">
-        {/* Left scanner panel - fixed on desktop, hidden on mobile */}
+      {/* ── Three-column body: scanner | products | cart ── */}
+      <div className="flex flex-1 min-h-0">
+        {/* Left scanner panel — in-flow sidebar, desktop only */}
         {showScannerPanel && (
-          <div className="hidden md:flex fixed left-0 top-14 w-72 h-[calc(100vh-3.5rem)] bg-background/95 backdrop-blur border-r border-border z-30 flex-col">
-            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <div className="hidden md:flex w-64 shrink-0 flex-col border-r border-border bg-background/95 backdrop-blur">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
               <h2 className="font-black text-sm">Scanner</h2>
               <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
                 <X className="h-4 w-4" />
@@ -2061,19 +2077,20 @@ export default function RegisterPage() {
           </div>
         )}
 
-        {/* Center content - stays at original width, centered */}
-        <div className="pt-4 pb-36 max-w-2xl mx-auto">
+        {/* Center content — scrollable product grid */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-20 md:pb-4">
+          <div className="pt-4 max-w-2xl mx-auto">
           {loading ? (
             <div className="flex justify-center py-20">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : (
             <>
-            {/* ── Edit mode instruction banner — sticky just below category tabs ── */}
+            {/* ── Edit mode instruction banner ── */}
             {barEditMode && (
               <div
                 className="sticky z-[19] -mx-3 px-3 flex items-center justify-between py-2 mb-3 border-b border-amber-500/40 bg-background/95 backdrop-blur"
-                style={{ top: "72px" }}
+                style={{ top: 0 }}
               >
                 <span className="text-xs font-black text-amber-400">
                   {barSelectedId
@@ -2304,11 +2321,12 @@ export default function RegisterPage() {
             )}
             </>
           )}
+          </div>
         </div>
 
-        {/* Right cart panel - fixed on desktop, hidden on mobile */}
-        <aside className="hidden md:flex fixed right-0 top-14 w-72 h-[calc(100vh-3.5rem)] bg-background/95 backdrop-blur border-l border-border z-30 flex-col">
-          <div className="px-4 py-3 border-b border-border">
+        {/* Right cart panel — in-flow sidebar, desktop only */}
+        <aside className="hidden md:flex w-64 shrink-0 flex-col border-l border-border bg-background/95 backdrop-blur">
+          <div className="px-4 py-3 border-b border-border shrink-0">
             <h2 className="font-black text-sm">Current Order</h2>
             <p className="text-[11px] text-muted-foreground">{cartCount} items · ${total.toFixed(2)}</p>
           </div>
@@ -2375,7 +2393,8 @@ export default function RegisterPage() {
             </div>
           </div>
         )}
-      </div>
+      </div>{/* end three-column body */}
+      </div>{/* end page shell */}
 
       {cashOpen && (
         <CashOverlay
@@ -2437,6 +2456,7 @@ export default function RegisterPage() {
               date: dateStr,
             };
             setLastSale(saleData);
+            setPrinterResult(null);
             setShowSaleCompleteModal(true);
 
             // Optimistically decrement stock_qty in local state using the cart
@@ -2596,24 +2616,58 @@ export default function RegisterPage() {
                   </div>
                 </div>
               </div>
+
+              {/* ── Printer result panel (mirrors cash drawer modal) ── */}
+              {printerResult && (
+                <div className="mt-3 rounded-2xl border p-4 text-center"
+                  style={{
+                    borderColor: printerResult.printed ? "#86efac" : "#f87171",
+                    background: printerResult.printed ? "rgba(134,239,172,0.08)" : "rgba(239,68,68,0.08)",
+                  }}>
+                  <div className="h-10 w-10 rounded-full flex items-center justify-center mx-auto mb-2"
+                    style={{
+                      background: printerResult.printed ? "rgba(134,239,172,0.12)" : "rgba(239,68,68,0.12)",
+                      border: "1.5px solid " + (printerResult.printed ? "#86efac" : "#f87171"),
+                    }}>
+                    <span className="text-lg">{printerResult.printed ? "✅" : "❌"}</span>
+                  </div>
+                  <p className="font-black text-sm">{printerResult.printed ? "Sent to Printer" : "Print Failed"}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {printerResult.printed
+                      ? <>Via Web Serial{printerResult.device ? ` · ${printerResult.device}` : ""}</>
+                      : printerResult.error ?? "Unknown error"}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Actions */}
             <div className="px-6 pb-5 pt-2 flex gap-2 shrink-0">
-              <button
-                onClick={handlePrintAndDone}
-                disabled={printingReceipt}
-                className="flex-1 h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
-                style={{ background: "var(--gradient-hero)" }}
-              >
-                {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : "🖨️ Print & Done"}
-              </button>
-              <button
-                onClick={handleSaleDone}
-                className="flex-1 h-14 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95 text-foreground/80"
-              >
-                Done
-              </button>
+              {!printerResult ? (
+                <>
+                  <button
+                    onClick={handlePrintAndDone}
+                    disabled={printingReceipt}
+                    className="flex-1 h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
+                    style={{ background: "var(--gradient-hero)" }}
+                  >
+                    {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : "🖨️ Print & Done"}
+                  </button>
+                  <button
+                    onClick={handleSaleDone}
+                    className="flex-1 h-14 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95 text-foreground/80"
+                  >
+                    Done
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleSaleDone}
+                  className="w-full h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95"
+                >
+                  Close
+                </button>
+              )}
             </div>
           </div>
         </div>
