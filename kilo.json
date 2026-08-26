@@ -1,4 +1,5 @@
 {
+  "$schema": "https://app.kilo.ai/config.json",
   "model": "openrouter/auto",
   "small_model": "openrouter/auto",
   "enabled_providers": ["openrouter"],

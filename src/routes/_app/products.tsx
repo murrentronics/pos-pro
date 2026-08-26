@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { categoryIcon } from "@/lib/categories";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { playBeep } from "@/lib/playBeep";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -1473,6 +1474,87 @@ export default function ProductsPage() {
   // Preload product images so the grid renders instantly and works offline
   useImageCache(items.map((p) => productImageUrl(p.image_url)));
 
+  // ── Scanner panel state ──────────────────────────────────────────────────────
+  const [showScannerPanel, setShowScannerPanel] = useState(false);
+  const [scannerExternalDetected, setScannerExternalDetected] = useState(false);
+  const [scannerLastScanned, setScannerLastScanned] = useState<string | null>(null);
+  const scannerKeyboardBuffer = useRef<string>("");
+
+  useEffect(() => {
+    const toggleHandler = () => setShowScannerPanel((prev) => !prev);
+    window.addEventListener("pospro-toggle-scanner-panel", toggleHandler);
+    return () => window.removeEventListener("pospro-toggle-scanner-panel", toggleHandler);
+  }, []);
+
+  const tryExternalScanner = async (): Promise<boolean> => {
+    try {
+      if ("hid" in navigator) {
+        const devices = await (navigator as any).hid.getDevices();
+        if (devices && devices.length > 0) {
+          setScannerExternalDetected(true);
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn("WebHID not available:", e);
+    }
+    return false;
+  };
+
+  const requestHidPermission = async (): Promise<boolean> => {
+    try {
+      if ("hid" in navigator) {
+        const devices = await (navigator as any).hid.requestDevice({ filters: [] });
+        if (devices && devices.length > 0) {
+          setScannerExternalDetected(true);
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn("HID permission denied:", e);
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    if (!showScannerPanel) return;
+    const initScanner = async () => {
+      const hasExternal = await tryExternalScanner();
+      if (!hasExternal) {
+        await requestHidPermission();
+      }
+    };
+    initScanner();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        const code = scannerKeyboardBuffer.current.trim();
+        if (code) {
+          setScannerLastScanned(code);
+          playBeep();
+          window.dispatchEvent(new CustomEvent("pospro-raw-barcode", { detail: code }));
+          setTimeout(() => setScannerLastScanned(null), 1500);
+          scannerKeyboardBuffer.current = "";
+        }
+        return;
+      }
+      if (e.key.length === 1) {
+        scannerKeyboardBuffer.current += e.key;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showScannerPanel]);
+
+  const handleChangeScannerDevice = async () => {
+    setScannerExternalDetected(false);
+    const granted = await requestHidPermission();
+    if (!granted) {
+      toast.error("No scanner selected. Please connect a POS scanner.");
+    }
+  };
+
   const profileRef = useRef(profile);
   useEffect(() => { profileRef.current = profile; }, [profile]);
 
@@ -1547,7 +1629,65 @@ export default function ProductsPage() {
   const stockNumpadProduct = stockNumpadId ? items.find((p) => p.id === stockNumpadId) : null;
 
   return (
-    <div>
+    <div className={showScannerPanel ? "md:ml-72" : ""}>
+      {/* Left scanner panel - fixed on desktop, hidden on mobile */}
+      {showScannerPanel && (
+        <div className="hidden md:flex fixed left-0 top-14 w-72 h-[calc(100vh-3.5rem)] bg-background/95 backdrop-blur border-r border-border z-30 flex-col">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <h2 className="font-black text-sm">Scanner</h2>
+            <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+            {scannerExternalDetected ? (
+              <div className="text-center space-y-2">
+                <div className="h-12 w-12 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="h-6 w-6 text-green-400" />
+                </div>
+                <p className="text-xs font-black text-green-400">Scanner Connected</p>
+                <p className="text-[10px] text-muted-foreground">Scan barcodes to auto-fill item forms</p>
+              </div>
+            ) : (
+              <div className="text-center space-y-2">
+                <div className="h-12 w-12 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center mx-auto">
+                  <Loader2 className="h-6 w-6 text-amber-400 animate-spin" />
+                </div>
+                <p className="text-xs font-black text-amber-400">No Scanner</p>
+                <p className="text-[10px] text-muted-foreground">Connect external scanner or scan barcode to auto-connect</p>
+              </div>
+            )}
+
+            {scannerLastScanned && (
+              <div className="bg-green-500 text-white px-3 py-2 rounded-xl font-black text-xs shadow-lg text-center">
+                Scanned: {scannerLastScanned}
+              </div>
+            )}
+
+            <div className="text-center pt-2">
+              <p className="text-[10px] text-muted-foreground">Scanned barcodes will auto-fill the barcode field in the item form</p>
+            </div>
+          </div>
+          <div className="p-3 border-t border-border space-y-2">
+            {scannerExternalDetected && (
+              <button
+                onClick={handleChangeScannerDevice}
+                className="w-full h-9 rounded-xl text-[11px] font-black border border-border hover:bg-muted/30 transition"
+              >
+                Change Device
+              </button>
+            )}
+            <button
+              onClick={() => setShowScannerPanel(false)}
+              className="w-full h-10 rounded-xl font-black text-xs text-primary-foreground shadow-lg active:scale-[0.98] transition"
+              style={{ background: "var(--gradient-hero)" }}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Sticky sub-header — sits below the app header */}
       <div className="sticky top-0 z-30 -mx-3 px-3 py-2 bg-background/95 backdrop-blur border-b border-border space-y-2">
         <div className="flex items-center justify-between">
@@ -2101,7 +2241,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                   <ImagePlus className="h-5 w-5 mr-2" /> Upload
                 </Button>
                 <div className="h-2" />
-                <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => window.dispatchEvent(new Event("pospro-open-scanner"))}>
+                <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => setShowScannerPanel((prev) => !prev)}>
                   <span className="mr-2">🏷️</span> Add Barcode
                 </Button>
               </div>

@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { openCashDrawer, type CashDrawerResult } from "@/lib/cashDrawer";
-import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 
 const DEMO_EMAILS = ["isabel@gmail.com", "renard.sankersingh@gmail.com"];
 
@@ -41,15 +40,6 @@ export default function AppLayout() {
     setDrawerResult(result);
     setDrawerBusy(false);
   };
-
-  // ── Barcode Scanner state ──────────────────────────────────────────────────
-  const [showScannerModal, setShowScannerModal] = useState(false);
-
-  useEffect(() => {
-    const openHandler = () => setShowScannerModal(true);
-    window.addEventListener("pospro-open-scanner", openHandler);
-    return () => window.removeEventListener("pospro-open-scanner", openHandler);
-  }, []);
 
   useEffect(() => {
     if (!loading && !session) nav("/login", { replace: true });
@@ -520,17 +510,6 @@ export default function AppLayout() {
           </div>
         </div>
       )}
-
-      {/* ── Barcode Scanner Modal ───────────────────────────────────────── */}
-      <BarcodeScannerModal
-        open={showScannerModal}
-        onClose={() => setShowScannerModal(false)}
-        onDone={(items) => {
-          items.forEach((item) => {
-            window.dispatchEvent(new CustomEvent("pospro-barcode-scan", { detail: item.product }));
-          });
-        }}
-      />
     </div>
   );
 }

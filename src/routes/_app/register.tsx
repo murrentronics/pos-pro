@@ -2003,9 +2003,9 @@ export default function RegisterPage() {
 
       {/* Items grid + left scanner panel + right cart panel */}
       <div className="flex gap-4 pt-4 pb-36">
-        {/* Left scanner panel */}
+        {/* Left scanner panel - fixed on desktop, hidden on mobile */}
         {showScannerPanel && (
-          <div className="w-72 shrink-0 flex flex-col bg-background/95 backdrop-blur border-r border-border">
+          <div className="hidden md:flex fixed left-0 top-14 w-72 h-[calc(100vh-3.5rem)] bg-background/95 backdrop-blur border-r border-border z-30 flex-col">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">
               <h2 className="font-black text-sm">Scanner</h2>
               <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
@@ -2061,8 +2061,8 @@ export default function RegisterPage() {
           </div>
         )}
 
-        {/* Items grid — bottom padding clears the fixed CASH + CREDIT buttons */}
-        <div className="flex-1 min-w-0">
+        {/* Center content - stays at original width, centered */}
+        <div className="pt-4 pb-36 max-w-2xl mx-auto">
           {loading ? (
             <div className="flex justify-center py-20">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -2302,79 +2302,79 @@ export default function RegisterPage() {
                 )}
               </div>
             )}
-          </>
-        )}
-      </div>
-
-      {/* Right cart panel — visible on md+ screens */}
-      <aside className="hidden md:flex flex-col w-72 shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] bg-background/95 backdrop-blur border-l border-border">
-        <div className="px-4 py-3 border-b border-border">
-          <h2 className="font-black text-sm">Current Order</h2>
-          <p className="text-[11px] text-muted-foreground">{cartCount} items · ${total.toFixed(2)}</p>
-        </div>
-        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
-          {cart.length === 0 ? (
-            <p className="text-center text-muted-foreground text-xs py-8">Cart is empty</p>
-          ) : (
-            cart.map((item) => (
-              <div key={item.id} className="flex items-center gap-2 p-2 rounded-xl border border-border/60 bg-muted/20">
-                <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center shrink-0 overflow-hidden">
-                  {item.image_url ? (
-                    <img src={item.image_url} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="text-sm">📷</span>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold truncate">{item.name}</p>
-                  <p className="text-[10px] text-muted-foreground">${Number(item.price).toFixed(2)} each</p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => dec(item.id)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
-                    <Minus className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="text-xs font-black w-5 text-center">{item.qty}</span>
-                  <button onClick={() => addToCart(item)} className="h-7 w-7 rounded-md flex items-center justify-center transition active:scale-95" style={{ background: "var(--gradient-hero)" }}>
-                    <Plus className="h-3.5 w-3.5 text-black" />
-                  </button>
-                </div>
-              </div>
-            ))
+            </>
           )}
         </div>
+
+        {/* Right cart panel - fixed on desktop, hidden on mobile */}
+        <aside className="hidden md:flex fixed right-0 top-14 w-72 h-[calc(100vh-3.5rem)] bg-background/95 backdrop-blur border-l border-border z-30 flex-col">
+          <div className="px-4 py-3 border-b border-border">
+            <h2 className="font-black text-sm">Current Order</h2>
+            <p className="text-[11px] text-muted-foreground">{cartCount} items · ${total.toFixed(2)}</p>
+          </div>
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+            {cart.length === 0 ? (
+              <p className="text-center text-muted-foreground text-xs py-8">Cart is empty</p>
+            ) : (
+              cart.map((item) => (
+                <div key={item.id} className="flex items-center gap-2 p-2 rounded-xl border border-border/60 bg-muted/20">
+                  <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center shrink-0 overflow-hidden">
+                    {item.image_url ? (
+                      <img src={item.image_url} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-sm">📷</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold truncate">{item.name}</p>
+                    <p className="text-[10px] text-muted-foreground">${Number(item.price).toFixed(2)} each</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => dec(item.id)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+                      <Minus className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="text-xs font-black w-5 text-center">{item.qty}</span>
+                    <button onClick={() => addToCart(item)} className="h-7 w-7 rounded-md flex items-center justify-center transition active:scale-95" style={{ background: "var(--gradient-hero)" }}>
+                      <Plus className="h-3.5 w-3.5 text-black" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          {cartCount > 0 && (
+            <div className="p-3 border-t border-border space-y-2">
+              <button
+                onClick={() => setCashOpen(true)}
+                className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"
+                style={{ background: "var(--gradient-hero)" }}
+              >
+                Place Order · ${total.toFixed(2)}
+              </button>
+            </div>
+          )}
+        </aside>
+
+        {/* Mobile: sticky bottom CASH button */}
         {cartCount > 0 && (
-          <div className="p-3 border-t border-border space-y-2">
-            <button
-              onClick={() => setCashOpen(true)}
-              className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"
-              style={{ background: "var(--gradient-hero)" }}
-            >
-              Place Order · ${total.toFixed(2)}
-            </button>
+          <div className="md:hidden fixed inset-x-0 z-[26] px-4 pb-2 pointer-events-none" style={{ bottom: 8 }}>
+            <div className="max-w-2xl mx-auto pointer-events-auto space-y-2">
+              <button
+                onClick={() => setCashOpen(true)}
+                className="w-full h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
+                style={{ background: "var(--gradient-hero)" }}
+              >
+                <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">
+                  {cartCount}
+                </span>
+                <span>Place Order</span>
+                <span className="text-primary-foreground/80 text-base font-bold">
+                  ${total.toFixed(2)}
+                </span>
+              </button>
+            </div>
           </div>
         )}
-      </aside>
-
-      {/* Mobile: sticky bottom CASH button */}
-      {cartCount > 0 && (
-        <div className="md:hidden fixed inset-x-0 z-[26] px-4 pb-2 pointer-events-none" style={{ bottom: 8 }}>
-          <div className="max-w-2xl mx-auto pointer-events-auto space-y-2">
-            <button
-              onClick={() => setCashOpen(true)}
-              className="w-full h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
-              style={{ background: "var(--gradient-hero)" }}
-            >
-              <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">
-                {cartCount}
-              </span>
-              <span>Place Order</span>
-              <span className="text-primary-foreground/80 text-base font-bold">
-                ${total.toFixed(2)}
-              </span>
-            </button>
-          </div>
-        </div>
-      )}
       </div>
 
       {cashOpen && (
