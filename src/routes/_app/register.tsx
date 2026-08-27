@@ -88,16 +88,20 @@ const ProductCard = React.memo(function ProductCard({
   const isActive = inCart || hasVariants;
   return (
     <div data-bar-id={p.id} className="relative">
-      <button
-        onClick={() => !outOfStock && !incomplete && onAdd(p)}
-        disabled={outOfStock || incomplete}
-        className={`group relative rounded-2xl overflow-hidden border flex flex-col transition w-full ${outOfStock || incomplete ? "cursor-not-allowed opacity-50 grayscale" : "active:scale-95"}`}
+      {/* Outer card — div, never disabled, so child buttons always work */}
+      <div
+        className={`group relative rounded-2xl overflow-hidden border flex flex-col transition w-full ${outOfStock || incomplete ? "opacity-50 grayscale" : ""}`}
         style={{
           background: "var(--gradient-card)",
           boxShadow: "var(--shadow-elegant)",
           borderColor: isActive ? "var(--primary)" : "var(--border)",
         }}
       >
+        {/* Tap-to-add area — only active when not disabled */}
+        <div
+          onClick={() => !outOfStock && !incomplete && onAdd(p)}
+          className={`${outOfStock || incomplete ? "cursor-not-allowed" : "cursor-pointer active:scale-95"} transition`}
+        >
         <div className="aspect-[3/3.5] relative w-full">
           {p.image_url ? (
             <img
@@ -280,7 +284,8 @@ const ProductCard = React.memo(function ProductCard({
             ${Number(p.price).toFixed(2)}
           </div>
         </div>
-      </button>
+        </div>{/* end tap-to-add */}
+      </div>{/* end outer card */}
     </div>
   );
 });
@@ -2061,12 +2066,17 @@ export default function RegisterPage() {
                 </div>
               </>
             ) : (
-              /* Collapsed state — just a prompt to open scanner */
+              /* Collapsed state — Scan button fills the panel */
               <div className="flex flex-col items-center justify-center flex-1 gap-3 px-3">
-                <div className="h-12 w-12 rounded-full bg-muted/40 border border-border flex items-center justify-center">
-                  <ScanLine className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <p className="text-[11px] text-muted-foreground text-center leading-snug">Tap Scan in the header to connect a barcode scanner</p>
+                <button
+                  onClick={() => window.dispatchEvent(new Event("pospro-toggle-scanner-panel"))}
+                  className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 active:scale-95 transition text-primary-foreground shadow-lg"
+                  style={{ background: "var(--gradient-hero)" }}
+                >
+                  <ScanLine className="h-4 w-4 shrink-0" />
+                  Scan
+                </button>
+                <p className="text-[10px] text-muted-foreground text-center leading-snug">Connect a barcode scanner</p>
               </div>
             )}
           </div>
@@ -2290,19 +2300,20 @@ export default function RegisterPage() {
       )}
     </div>{/* end center column */}
 
-          {/* RIGHT cart panel — fixed width sidebar, desktop only */}
-          <div className="hidden md:flex w-52 lg:w-64 shrink-0 flex-col min-h-0 overflow-hidden border-l border-border bg-background/95 backdrop-blur">
-            <div className="px-4 py-3 border-b border-border shrink-0">
-              <h2 className="font-black text-sm">Current Order</h2>
-              <p className="text-[11px] text-muted-foreground">{cartCount} items · ${total.toFixed(2)}</p>
+          {/* RIGHT cart panel — wide sidebar, desktop only, light blue bg */}
+          <div className="hidden md:flex w-64 lg:w-72 shrink-0 flex-col min-h-0 overflow-hidden border-l border-sky-200"
+            style={{ background: "#e0f2fe" }}>
+            <div className="px-4 py-3 border-b border-sky-200 shrink-0">
+              <h2 className="font-black text-sm text-slate-800">Current Order</h2>
+              <p className="text-[11px] text-slate-500">{cartCount} items · ${total.toFixed(2)}</p>
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
               {cart.length === 0 ? (
-                <p className="text-center text-muted-foreground text-xs py-8">Cart is empty</p>
+                <p className="text-center text-slate-400 text-xs py-8">Cart is empty</p>
               ) : (
                 cart.map((item) => (
-                  <div key={item.id} className="flex items-center gap-2 p-2 rounded-xl border border-border/60 bg-muted/20">
-                    <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center shrink-0 overflow-hidden">
+                  <div key={item.id} className="flex items-center gap-2 p-2 rounded-xl border border-sky-200 bg-white/60">
+                    <div className="h-10 w-10 rounded-lg bg-sky-100 flex items-center justify-center shrink-0 overflow-hidden">
                       {item.image_url ? (
                         <img src={item.image_url} alt="" className="h-full w-full object-cover" />
                       ) : (
@@ -2310,14 +2321,14 @@ export default function RegisterPage() {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold truncate">{item.name}</p>
-                      <p className="text-[10px] text-muted-foreground">${Number(item.price).toFixed(2)} each</p>
+                      <p className="text-xs font-bold truncate text-slate-800">{item.name}</p>
+                      <p className="text-[10px] text-slate-500">${Number(item.price).toFixed(2)} each</p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => dec(item.id)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+                      <button onClick={() => dec(item.id)} className="h-7 w-7 rounded-md bg-sky-200 flex items-center justify-center text-slate-700 hover:bg-sky-300 transition">
                         <Minus className="h-3.5 w-3.5" />
                       </button>
-                      <span className="text-xs font-black w-5 text-center">{item.qty}</span>
+                      <span className="text-xs font-black w-5 text-center text-slate-800">{item.qty}</span>
                       <button onClick={() => addToCart(item)} className="h-7 w-7 rounded-md flex items-center justify-center transition active:scale-95" style={{ background: "var(--gradient-hero)" }}>
                         <Plus className="h-3.5 w-3.5 text-black" />
                       </button>
@@ -2327,7 +2338,7 @@ export default function RegisterPage() {
               )}
             </div>
             {cartCount > 0 && (
-              <div className="p-3 border-t border-border shrink-0">
+              <div className="p-3 border-t border-sky-200 shrink-0">
                 <button
                   onClick={() => setCashOpen(true)}
                   className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"

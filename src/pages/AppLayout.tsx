@@ -9,7 +9,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useOffline } from "@/lib/OfflineProvider";
 import { OfflinePageGuard } from "@/components/OfflinePageGuard";
 import { toast } from "sonner";
-import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw, ScanLine } from "lucide-react";
+import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { openCashDrawer, type CashDrawerResult } from "@/lib/cashDrawer";
 import { isPrinterConnected, getConnectionInfo } from "@/lib/printerConnection";
@@ -263,7 +263,7 @@ export default function AppLayout() {
             </div>
           </div>
 
-          {/* Center: Open Drawer (only when printer connected) + Scan */}
+          {/* Center: Open Drawer only (Scan moved to left panel) */}
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5">
             {printerConnected && (
               <button
@@ -279,15 +279,6 @@ export default function AppLayout() {
                 <span className="hidden sm:inline">Open Drawer</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new Event("pospro-toggle-scanner-panel"))}
-              className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1.5 active:scale-95 transition whitespace-nowrap"
-              style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
-            >
-              <ScanLine className="h-3.5 w-3.5 shrink-0" />
-              <span className="hidden sm:inline">Scan</span>
-            </button>
           </div>
 
           {/* Hamburger */}
