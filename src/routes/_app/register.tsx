@@ -2125,13 +2125,13 @@ export default function RegisterPage() {
                                     }}
                               className={`group relative rounded-2xl overflow-hidden border flex flex-col transition w-full ${outOfStock ? "opacity-80" : ""} ${incomplete ? "opacity-50 grayscale" : ""}`}
                               style={{
-                                background: "var(--gradient-card)",
+                                background: "#e0f2fe",
                                 boxShadow: isSelected
                                   ? "0 0 0 3px rgba(251,191,36,0.95), var(--shadow-elegant)"
                                   : "var(--shadow-elegant)",
                                 borderColor: isSelected
                                   ? "rgb(251,191,36)"
-                                  : "rgba(251,146,60,0.8)",
+                                  : "#bae6fd",
                               }}
                             >
                               <div className="aspect-[3/3.5] relative w-full">
@@ -2220,21 +2220,21 @@ export default function RegisterPage() {
                                   )}
                               </div>
                               <div
-                                className="px-1.5 py-1.5 border-t border-border/30"
+                                className="px-1.5 py-1.5 border-t"
                                 style={{
-                                  background: "rgba(var(--primary-rgb,251 146 60)/0.10)",
-                                  borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)",
+                                  background: "#0c1a2e",
+                                  borderTop: "1px solid #1e3a5f",
                                 }}
                               >
                                 <div
-                                  className="font-bold text-[11px] truncate leading-tight"
-                                  style={{ color: "var(--primary)" }}
+                                  className="font-bold text-[11px] truncate leading-tight text-center"
+                                  style={{ color: "#38bdf8" }}
                                 >
                                   {p.name}
                                 </div>
                                 <div
-                                  className="font-black text-xs mt-0.5"
-                                  style={{ color: "var(--primary)" }}
+                                  className="font-black text-xs mt-0.5 text-center"
+                                  style={{ color: "#38bdf8" }}
                                 >
                                   ${Number(p.price).toFixed(2)}
                                 </div>
@@ -2267,6 +2267,7 @@ export default function RegisterPage() {
       </div>
 
       {/* Sticky footer — sort button (empty cart) or Place Order (has items) */}
+      {!barEditMode && (
       <div className="shrink-0 p-3 border-t border-border" style={{ background: "var(--background)" }}>
         {cartCount > 0 ? (
           <button
@@ -2279,19 +2280,18 @@ export default function RegisterPage() {
             <span className="text-primary-foreground/80 text-base font-bold">${total.toFixed(2)}</span>
           </button>
         ) : (
-          <button
-            onClick={barEnterEditMode}
-            className="w-full h-12 rounded-2xl font-black text-sm active:scale-[0.98] transition border"
-            style={{
-              background: "rgba(251,146,60,0.08)",
-              color: "var(--primary)",
-              borderColor: "rgba(251,146,60,0.30)",
-            }}
-          >
-            {t("sort_item_order", "⇅ Sort Item Order")}
-          </button>
+          <div className="flex justify-center">
+            <button
+              onClick={barEnterEditMode}
+              className="h-12 rounded-2xl font-black text-sm text-white active:scale-[0.98] transition"
+              style={{ width: "50%", background: "var(--gradient-hero)" }}
+            >
+              {t("sort_item_order", "⇅ Sort Item Order")}
+            </button>
+          </div>
         )}
       </div>
+      )}
     </div>{/* end center column */}
 
           {/* RIGHT cart panel — wide sidebar, desktop only, light blue bg */}
