@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Trash2, Minus, Plus, Loader2, X, CheckCircle2 } from "lucide-react";
+import { Trash2, Minus, Plus, Loader2, X, CheckCircle2, ScanLine } from "lucide-react";
 import { toast } from "sonner";
 import { categoryIcon } from "@/lib/categories";
 import { useTranslation } from "@/lib/i18n";
@@ -2014,52 +2014,62 @@ export default function RegisterPage() {
         {/* ── Body row: left panel + center grid + right panel ── */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
 
-          {/* LEFT scanner panel — fixed width sidebar, desktop only */}
-          {showScannerPanel && (
-            <div className="hidden md:flex w-52 lg:w-60 shrink-0 flex-col min-h-0 overflow-hidden border-r border-border bg-background/95 backdrop-blur">
-              <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
-                <h2 className="font-black text-sm">Scanner</h2>
-                <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-                {scannerExternalDetected ? (
-                  <div className="text-center space-y-2">
-                    <div className="h-12 w-12 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center mx-auto">
-                      <CheckCircle2 className="h-6 w-6 text-green-400" />
-                    </div>
-                    <p className="text-xs font-black text-green-400">Scanner Connected</p>
-                    <p className="text-[10px] text-muted-foreground">Ready to scan — items appear in Current Order</p>
-                  </div>
-                ) : (
-                  <div className="text-center space-y-2">
-                    <div className="h-12 w-12 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center mx-auto">
-                      <Loader2 className="h-6 w-6 text-amber-400 animate-spin" />
-                    </div>
-                    <p className="text-xs font-black text-amber-400">No Scanner</p>
-                    <p className="text-[10px] text-muted-foreground">Connect a scanner or scan a barcode to auto-connect</p>
-                  </div>
-                )}
-                {scannerLastScanned && (
-                  <div className="bg-green-500 text-white px-3 py-2 rounded-xl font-black text-xs shadow-lg text-center">
-                    Scanned: {scannerLastScanned}
-                  </div>
-                )}
-                <p className="text-[10px] text-muted-foreground text-center pt-2">Scanned items appear in the Current Order panel</p>
-              </div>
-              <div className="p-3 border-t border-border space-y-2 shrink-0">
-                {scannerExternalDetected && (
-                  <button onClick={handleChangeScannerDevice} className="w-full h-9 rounded-xl text-[11px] font-black border border-border hover:bg-muted/30 transition">
-                    Change Device
+          {/* LEFT scanner panel — always visible on desktop, content changes based on showScannerPanel */}
+          <div className="hidden md:flex w-52 lg:w-60 shrink-0 flex-col min-h-0 overflow-hidden border-r border-border bg-background/95 backdrop-blur">
+            {showScannerPanel ? (
+              <>
+                <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
+                  <h2 className="font-black text-sm">Scanner</h2>
+                  <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+                    <X className="h-4 w-4" />
                   </button>
-                )}
-                <button onClick={() => setShowScannerPanel(false)} className="w-full h-10 rounded-xl font-black text-xs text-primary-foreground shadow-lg active:scale-[0.98] transition" style={{ background: "var(--gradient-hero)" }}>
-                  Done
-                </button>
+                </div>
+                <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+                  {scannerExternalDetected ? (
+                    <div className="text-center space-y-2">
+                      <div className="h-12 w-12 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center mx-auto">
+                        <CheckCircle2 className="h-6 w-6 text-green-400" />
+                      </div>
+                      <p className="text-xs font-black text-green-400">Scanner Connected</p>
+                      <p className="text-[10px] text-muted-foreground">Ready to scan — items appear in Current Order</p>
+                    </div>
+                  ) : (
+                    <div className="text-center space-y-2">
+                      <div className="h-12 w-12 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center mx-auto">
+                        <Loader2 className="h-6 w-6 text-amber-400 animate-spin" />
+                      </div>
+                      <p className="text-xs font-black text-amber-400">No Scanner</p>
+                      <p className="text-[10px] text-muted-foreground">Connect a scanner or scan a barcode to auto-connect</p>
+                    </div>
+                  )}
+                  {scannerLastScanned && (
+                    <div className="bg-green-500 text-white px-3 py-2 rounded-xl font-black text-xs shadow-lg text-center">
+                      Scanned: {scannerLastScanned}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-muted-foreground text-center pt-2">Scanned items appear in the Current Order panel</p>
+                </div>
+                <div className="p-3 border-t border-border space-y-2 shrink-0">
+                  {scannerExternalDetected && (
+                    <button onClick={handleChangeScannerDevice} className="w-full h-9 rounded-xl text-[11px] font-black border border-border hover:bg-muted/30 transition">
+                      Change Device
+                    </button>
+                  )}
+                  <button onClick={() => setShowScannerPanel(false)} className="w-full h-10 rounded-xl font-black text-xs text-primary-foreground shadow-lg active:scale-[0.98] transition" style={{ background: "var(--gradient-hero)" }}>
+                    Done
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* Collapsed state — just a prompt to open scanner */
+              <div className="flex flex-col items-center justify-center flex-1 gap-3 px-3">
+                <div className="h-12 w-12 rounded-full bg-muted/40 border border-border flex items-center justify-center">
+                  <ScanLine className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <p className="text-[11px] text-muted-foreground text-center leading-snug">Tap Scan in the header to connect a barcode scanner</p>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* CENTER product grid — fills remaining space, scrollable */}
           <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
