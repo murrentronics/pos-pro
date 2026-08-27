@@ -131,7 +131,7 @@ const ProductCard = React.memo(function ProductCard({
                 e.stopPropagation();
                 onRemove(p.id);
               }}
-              className="absolute top-1.5 right-1.5 h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition text-black shadow z-10"
+              className="absolute top-1.5 right-1.5 h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition text-black shadow z-20"
               style={{ background: "#dc2626" }}
             >
               <X className="h-4 w-4" />
@@ -238,7 +238,7 @@ const ProductCard = React.memo(function ProductCard({
             </div>
           )}
           {outOfStock && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/75 backdrop-blur-[1px]">
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/75 backdrop-blur-[1px] pointer-events-none">
               <div className="bg-red-600 rounded-xl px-2 py-1 shadow-lg">
                 <span className="text-white text-[10px] font-black uppercase tracking-wider leading-none">
                   Out of Stock
@@ -2012,14 +2012,11 @@ export default function RegisterPage() {
         </div>
 
         {/* ── Body row: left panel + center grid + right panel ── */}
-        <div className="flex flex-1 min-h-0 relative">
+        <div className="flex flex-1 min-h-0">
 
-          {/* LEFT scanner panel — from screen-left to just before center column */}
+          {/* LEFT scanner panel — fixed width sidebar, desktop only */}
           {showScannerPanel && (
-            <div
-              className="hidden md:flex flex-col absolute left-0 top-0 bottom-0 border-r border-border bg-background/95 backdrop-blur z-10"
-              style={{ right: "calc(50% + min(calc(50vw - 1.5rem), 28rem))" }}
-            >
+            <div className="hidden md:flex w-52 lg:w-60 shrink-0 flex-col border-r border-border bg-background/95 backdrop-blur">
               <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
                 <h2 className="font-black text-sm">Scanner</h2>
                 <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
@@ -2064,10 +2061,10 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {/* CENTER product grid — same width as header content, scrollable */}
-          <div className="flex-1 min-h-0 flex flex-col">
+          {/* CENTER product grid — fills remaining space, scrollable */}
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
             <div className="flex-1 overflow-y-auto">
-              <div className="max-w-2xl lg:max-w-4xl mx-auto px-3 pt-4 pb-6">
+              <div className="px-3 pt-4 pb-6">
                 {loading ? (
                   <div className="flex justify-center py-20">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -2199,7 +2196,7 @@ export default function RegisterPage() {
                                   </div>
                                 )}
                                 {outOfStock && (
-                                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/75 backdrop-blur-[1px]">
+                                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/75 backdrop-blur-[1px] pointer-events-none">
                                     <div className="bg-red-600 rounded-xl px-2 py-1 shadow-lg">
                                       <span className="text-white text-[10px] font-black uppercase tracking-wider leading-none">
                                         Out of Stock
@@ -2283,11 +2280,8 @@ export default function RegisterPage() {
       )}
     </div>{/* end center column */}
 
-          {/* RIGHT cart panel — from right edge of center column to screen-right, desktop only */}
-          <div
-            className="hidden md:flex flex-col absolute right-0 top-0 bottom-0 border-l border-border bg-background/95 backdrop-blur z-10"
-            style={{ left: "calc(50% + min(calc(50vw - 1.5rem), 28rem))" }}
-          >
+          {/* RIGHT cart panel — fixed width sidebar, desktop only */}
+          <div className="hidden md:flex w-52 lg:w-64 shrink-0 flex-col border-l border-border bg-background/95 backdrop-blur">
             <div className="px-4 py-3 border-b border-border shrink-0">
               <h2 className="font-black text-sm">Current Order</h2>
               <p className="text-[11px] text-muted-foreground">{cartCount} items · ${total.toFixed(2)}</p>
