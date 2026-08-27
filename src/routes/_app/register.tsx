@@ -144,7 +144,7 @@ const ProductCard = React.memo(function ProductCard({
           )}
           {inCart && (
             <div
-              className="absolute top-10 left-0 right-0 flex items-center justify-center gap-4 py-3"
+              className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-4 py-2"
               style={{ background: "rgba(0,0,0,0.75)" }}
             >
               <button
@@ -269,19 +269,19 @@ const ProductCard = React.memo(function ProductCard({
           )}
         </div>
         <div
-          className="px-1.5 py-1.5 border-t border-border/30"
+          className="px-1.5 py-1.5 border-t"
           style={{
-            background: "rgba(var(--primary-rgb,251 146 60)/0.10)",
-            borderTop: "1px solid rgba(var(--primary-rgb,251 146 60)/0.35)",
+            background: "#0c1a2e",
+            borderTop: "1px solid #1e3a5f",
           }}
         >
           <div
             className="font-bold text-[11px] truncate leading-tight text-center"
-            style={{ color: "var(--primary)" }}
+            style={{ color: "#38bdf8" }}
           >
             {p.name}
           </div>
-          <div className="font-black text-xs mt-0.5 text-center" style={{ color: "var(--primary)" }}>
+          <div className="font-black text-xs mt-0.5 text-center" style={{ color: "#38bdf8" }}>
             ${Number(p.price).toFixed(2)}
           </div>
         </div>
@@ -855,8 +855,6 @@ type ProductGridProps = {
   onDec: (id: string) => void;
   onRemoveVariant: (cartKey: string) => void;
   onEnterEditMode: () => void;
-  showSortButton: boolean;
-  sortLabel: string;
 };
 const ProductGrid = React.memo(function ProductGrid({
   barOrdered,
@@ -868,8 +866,6 @@ const ProductGrid = React.memo(function ProductGrid({
   onDec,
   onRemoveVariant,
   onEnterEditMode,
-  showSortButton,
-  sortLabel,
 }: ProductGridProps) {
   return (
     <>
@@ -891,21 +887,7 @@ const ProductGrid = React.memo(function ProductGrid({
           />
         ))}
       </div>
-      {showSortButton && (
-        <div className="pt-3 pb-1">
-          <button
-            onClick={onEnterEditMode}
-            className="w-full h-12 rounded-2xl font-black text-sm active:scale-[0.98] transition border"
-            style={{
-              background: "rgba(251,146,60,0.08)",
-              color: "var(--primary)",
-              borderColor: "rgba(251,146,60,0.30)",
-            }}
-          >
-            {sortLabel}
-          </button>
-        </div>
-      )}
+
     </>
   );
 });
@@ -2275,8 +2257,6 @@ export default function RegisterPage() {
                     onDec={dec}
                     onRemoveVariant={removeVariantItem}
                     onEnterEditMode={barEnterEditMode}
-                    showSortButton={cart.length === 0}
-                    sortLabel={t("sort_item_order", "⇅ Sort Item Order")}
                   />
                 )}
               </div>
@@ -2286,20 +2266,32 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      {/* Mobile: sticky Place Order button at bottom of center column */}
-      {cartCount > 0 && (
-        <div className="md:hidden shrink-0 p-3 border-t border-border" style={{ background: "var(--background)" }}>
+      {/* Sticky footer — sort button (empty cart) or Place Order (has items) */}
+      <div className="shrink-0 p-3 border-t border-border" style={{ background: "var(--background)" }}>
+        {cartCount > 0 ? (
           <button
             onClick={() => setCashOpen(true)}
-            className="w-full h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
+            className="md:hidden w-full h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
             style={{ background: "var(--gradient-hero)" }}
           >
             <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">{cartCount}</span>
             <span>Place Order</span>
             <span className="text-primary-foreground/80 text-base font-bold">${total.toFixed(2)}</span>
           </button>
-        </div>
-      )}
+        ) : (
+          <button
+            onClick={barEnterEditMode}
+            className="w-full h-12 rounded-2xl font-black text-sm active:scale-[0.98] transition border"
+            style={{
+              background: "rgba(251,146,60,0.08)",
+              color: "var(--primary)",
+              borderColor: "rgba(251,146,60,0.30)",
+            }}
+          >
+            {t("sort_item_order", "⇅ Sort Item Order")}
+          </button>
+        )}
+      </div>
     </div>{/* end center column */}
 
           {/* RIGHT cart panel — wide sidebar, desktop only, light blue bg */}
