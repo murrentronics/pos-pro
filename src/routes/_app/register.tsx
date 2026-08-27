@@ -1965,8 +1965,8 @@ export default function RegisterPage() {
           to the bottom of the screen. Only the center grid scrolls.
       ══════════════════════════════════════════════════════════════════ */}
       <div
-        className="fixed inset-x-0 bottom-0 flex flex-col"
-        style={{ top: "var(--header-total-h, 3.5rem)", zIndex: 20 }}
+        className="fixed inset-x-0 bottom-0 flex flex-col bg-background"
+        style={{ top: "calc(3.5rem + var(--offline-banner-h, 0px))", zIndex: 20 }}
       >
 
         {/* ── Category bar ── */}

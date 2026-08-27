@@ -244,12 +244,11 @@ export default function AppLayout() {
       ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100dvh", overflow: "hidden", position: "fixed", inset: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100dvh", overflow: "hidden", position: "fixed", inset: 0, "--header-total-h": "calc(3.5rem + var(--offline-banner-h, 0px) + env(safe-area-inset-top, 0px))" } as React.CSSProperties}>
       <header
         className="shrink-0 z-50 bg-background/90 backdrop-blur border-b border-border"
         style={{
           paddingTop: "calc(var(--offline-banner-h, 0px) + env(safe-area-inset-top, 0px))",
-          "--header-total-h": "calc(3.5rem + var(--offline-banner-h, 0px) + env(safe-area-inset-top, 0px))",
         } as React.CSSProperties}
       >
         <div className="max-w-2xl lg:max-w-4xl mx-auto px-4 h-14 flex items-center justify-between relative">
