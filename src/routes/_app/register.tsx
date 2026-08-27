@@ -93,9 +93,9 @@ const ProductCard = React.memo(function ProductCard({
       <div
         className={`group relative rounded-2xl overflow-hidden border flex flex-col transition w-full ${outOfStock || incomplete ? "opacity-50 grayscale" : ""}`}
         style={{
-          background: "var(--gradient-card)",
+          background: "#e0f2fe",
           boxShadow: "var(--shadow-elegant)",
-          borderColor: isActive ? "var(--primary)" : "var(--border)",
+          borderColor: isActive ? "var(--primary)" : "#bae6fd",
         }}
       >
         {/* Tap-to-add area — only active when not disabled */}
@@ -276,12 +276,12 @@ const ProductCard = React.memo(function ProductCard({
           }}
         >
           <div
-            className="font-bold text-[11px] truncate leading-tight"
+            className="font-bold text-[11px] truncate leading-tight text-center"
             style={{ color: "var(--primary)" }}
           >
             {p.name}
           </div>
-          <div className="font-black text-xs mt-0.5" style={{ color: "var(--primary)" }}>
+          <div className="font-black text-xs mt-0.5 text-center" style={{ color: "var(--primary)" }}>
             ${Number(p.price).toFixed(2)}
           </div>
         </div>
@@ -2303,11 +2303,21 @@ export default function RegisterPage() {
     </div>{/* end center column */}
 
           {/* RIGHT cart panel — wide sidebar, desktop only, light blue bg */}
-          <div className="hidden md:flex w-64 lg:w-72 shrink-0 flex-col min-h-0 overflow-hidden border-l border-sky-200"
+          <div className="hidden md:flex w-80 lg:w-96 shrink-0 flex-col min-h-0 overflow-hidden border-l border-sky-200"
             style={{ background: "#e0f2fe" }}>
-            <div className="px-4 py-3 border-b border-sky-200 shrink-0">
-              <h2 className="font-black text-sm text-slate-800">Current Order</h2>
-              <p className="text-[11px] text-slate-500">{cartCount} items · ${total.toFixed(2)}</p>
+            <div className="px-4 py-3 border-b border-sky-200 shrink-0 flex items-center justify-between gap-2">
+              <div>
+                <h2 className="font-black text-sm text-slate-800">Current Order</h2>
+                <p className="text-[11px] text-slate-500">{cartCount} items · ${total.toFixed(2)}</p>
+              </div>
+              {cart.length > 0 && (
+                <button
+                  onClick={() => setCart([])}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-black text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 active:scale-95 transition shrink-0"
+                >
+                  Clear All
+                </button>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
               {cart.length === 0 ? (
@@ -2333,6 +2343,9 @@ export default function RegisterPage() {
                       <span className="text-xs font-black w-5 text-center text-slate-800">{item.qty}</span>
                       <button onClick={() => addToCart(item)} className="h-7 w-7 rounded-md flex items-center justify-center transition active:scale-95" style={{ background: "var(--gradient-hero)" }}>
                         <Plus className="h-3.5 w-3.5 text-black" />
+                      </button>
+                      <button onClick={() => removeItem(item.id)} className="h-7 w-7 rounded-md bg-red-100 flex items-center justify-center text-red-600 hover:bg-red-200 transition active:scale-95 ml-0.5">
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </div>
