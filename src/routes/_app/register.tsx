@@ -98,7 +98,7 @@ const ProductCard = React.memo(function ProductCard({
           borderColor: isActive ? "var(--primary)" : "var(--border)",
         }}
       >
-        <div className="aspect-[3/4] relative w-full">
+        <div className="aspect-[3/3.5] relative w-full">
           {p.image_url ? (
             <img
               src={resolvedImgSrc ?? p.image_url}
@@ -868,7 +868,7 @@ const ProductGrid = React.memo(function ProductGrid({
   return (
     <>
       <div
-        className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2"
+        className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2"
         onContextMenu={(e) => e.preventDefault()}
       >
         {barOrdered.map((p) => (
@@ -2012,11 +2012,11 @@ export default function RegisterPage() {
         </div>
 
         {/* ── Body row: left panel + center grid + right panel ── */}
-        <div className="flex flex-1 min-h-0">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
 
           {/* LEFT scanner panel — fixed width sidebar, desktop only */}
           {showScannerPanel && (
-            <div className="hidden md:flex w-52 lg:w-60 shrink-0 flex-col border-r border-border bg-background/95 backdrop-blur">
+            <div className="hidden md:flex w-52 lg:w-60 shrink-0 flex-col min-h-0 overflow-hidden border-r border-border bg-background/95 backdrop-blur">
               <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
                 <h2 className="font-black text-sm">Scanner</h2>
                 <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
@@ -2062,7 +2062,7 @@ export default function RegisterPage() {
           )}
 
           {/* CENTER product grid — fills remaining space, scrollable */}
-          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+          <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
             <div className="flex-1 overflow-y-auto">
               <div className="px-3 pt-4 pb-6">
                 {loading ? (
@@ -2089,7 +2089,7 @@ export default function RegisterPage() {
                     <div>
                       {barEditMode ? (
                         <div>
-                          <div ref={barEditGridRef} className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
+                          <div ref={barEditGridRef} className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
                             {barOrdered.map((p) => {
                               const inCart = cart.find((i) => i.id === p.id);
                               const outOfStock = (p.stock_qty ?? 1) === 0;
@@ -2130,7 +2130,7 @@ export default function RegisterPage() {
                                   : "rgba(251,146,60,0.8)",
                               }}
                             >
-                              <div className="aspect-[3/4] relative w-full">
+                              <div className="aspect-[3/3.5] relative w-full">
                                 {p.image_url ? (
                                   <img
                                     src={imgSrc(p.image_url) ?? productImageUrl(p.image_url)!}
@@ -2281,7 +2281,7 @@ export default function RegisterPage() {
     </div>{/* end center column */}
 
           {/* RIGHT cart panel — fixed width sidebar, desktop only */}
-          <div className="hidden md:flex w-52 lg:w-64 shrink-0 flex-col border-l border-border bg-background/95 backdrop-blur">
+          <div className="hidden md:flex w-52 lg:w-64 shrink-0 flex-col min-h-0 overflow-hidden border-l border-border bg-background/95 backdrop-blur">
             <div className="px-4 py-3 border-b border-border shrink-0">
               <h2 className="font-black text-sm">Current Order</h2>
               <p className="text-[11px] text-muted-foreground">{cartCount} items · ${total.toFixed(2)}</p>
