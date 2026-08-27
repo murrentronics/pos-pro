@@ -9,7 +9,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useOffline } from "@/lib/OfflineProvider";
 import { OfflinePageGuard } from "@/components/OfflinePageGuard";
 import { toast } from "sonner";
-import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw } from "lucide-react";
+import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { openCashDrawer, type CashDrawerResult } from "@/lib/cashDrawer";
 import { isPrinterConnected, getConnectionInfo } from "@/lib/printerConnection";
@@ -25,6 +25,14 @@ export default function AppLayout() {
   const { t } = useTranslation();
   const { isOnline } = useOffline();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [tapSoundEnabled, setTapSoundEnabled] = useState(() =>
+    localStorage.getItem("pos_tap_sound_enabled") !== "false"
+  );
+  const toggleTapSound = () => {
+    const next = !tapSoundEnabled;
+    setTapSoundEnabled(next);
+    localStorage.setItem("pos_tap_sound_enabled", String(next));
+  };
   const menuRef = useRef<HTMLDivElement>(null);
   const [ownerEmail, setOwnerEmail] = useState("");
 
@@ -283,6 +291,14 @@ export default function AppLayout() {
 
           {/* Hamburger */}
           <div className="flex items-center gap-2 relative" ref={menuRef}>
+            <button
+              onClick={toggleTapSound}
+              className="h-8 w-8 rounded-lg flex items-center justify-center active:scale-95 transition text-primary-foreground"
+              style={{ background: "var(--gradient-hero)" }}
+              title={tapSoundEnabled ? "Mute tap sound" : "Unmute tap sound"}
+            >
+              {tapSoundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+            </button>
             <button
               onClick={() => setMenuOpen((o) => !o)}
               className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1.5 transition text-primary-foreground active:scale-95 whitespace-nowrap"

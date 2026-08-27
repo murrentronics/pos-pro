@@ -1738,7 +1738,7 @@ export default function RegisterPage() {
         },
       ];
     });
-    playBeep();
+    if (localStorage.getItem("pos_tap_sound_enabled") !== "false") playBeep();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   (window as any).__pospro_addToCart = addToCart;
 
@@ -2486,7 +2486,7 @@ export default function RegisterPage() {
                   },
                 ];
               });
-              playBeep();
+              if (localStorage.getItem("pos_tap_sound_enabled") !== "false") playBeep();
             });
             setVarPickerProduct(null);
           }}
