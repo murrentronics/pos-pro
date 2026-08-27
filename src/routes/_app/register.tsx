@@ -75,11 +75,12 @@ const ProductCard = React.memo(function ProductCard({
   onRemoveVariant,
 }: ProductCardProps) {
   const hasVariants = variantLines.length > 0;
-  // Total units across variation lines (for stock remaining calc)
   const variantQty = variantLines.reduce((s, v) => s + v.qty, 0);
   const totalInCart = inCartQty + variantQty;
+  // Show remaining stock badge but DON'T use cart qty to determine outOfStock —
+  // stock only decrements on the DB after the order is placed (same as Bartendaz Pro).
   const remainingQty = (p.stock_qty ?? 1) - totalInCart;
-  const outOfStock = (p.stock_qty ?? 1) === 0 || remainingQty <= 0;
+  const outOfStock = p.stock_qty !== undefined && p.stock_qty !== null && p.stock_qty === 0;
   const noPrice = !p.price || Number(p.price) <= 0;
   const noCost = !p.cost_price || Number(p.cost_price) <= 0;
   const incomplete = noPrice || noCost;
@@ -2019,32 +2020,33 @@ export default function RegisterPage() {
         {/* ── Body row: left panel + center grid + right panel ── */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
 
-          {/* LEFT scanner panel — always visible on desktop, content changes based on showScannerPanel */}
-          <div className="hidden md:flex w-52 lg:w-60 shrink-0 flex-col min-h-0 overflow-hidden border-r border-border bg-background/95 backdrop-blur">
+          {/* LEFT scanner panel — always visible on desktop, same light blue as right panel */}
+          <div className="hidden md:flex w-52 lg:w-60 shrink-0 flex-col min-h-0 overflow-hidden border-r border-sky-200"
+            style={{ background: "#e0f2fe" }}>
             {showScannerPanel ? (
               <>
-                <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
-                  <h2 className="font-black text-sm">Scanner</h2>
-                  <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+                <div className="px-4 py-3 border-b border-sky-200 flex items-center justify-between shrink-0">
+                  <h2 className="font-black text-sm text-slate-800">Scanner</h2>
+                  <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-sky-200 flex items-center justify-center text-slate-700 hover:bg-sky-300 transition">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
                 <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
                   {scannerExternalDetected ? (
                     <div className="text-center space-y-2">
-                      <div className="h-12 w-12 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center mx-auto">
-                        <CheckCircle2 className="h-6 w-6 text-green-400" />
+                      <div className="h-12 w-12 rounded-full bg-green-100 border-2 border-green-400 flex items-center justify-center mx-auto">
+                        <CheckCircle2 className="h-6 w-6 text-green-600" />
                       </div>
-                      <p className="text-xs font-black text-green-400">Scanner Connected</p>
-                      <p className="text-[10px] text-muted-foreground">Ready to scan — items appear in Current Order</p>
+                      <p className="text-xs font-black text-green-700">Scanner Connected</p>
+                      <p className="text-[10px] text-slate-500">Ready to scan — items appear in Current Order</p>
                     </div>
                   ) : (
                     <div className="text-center space-y-2">
-                      <div className="h-12 w-12 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center mx-auto">
-                        <Loader2 className="h-6 w-6 text-amber-400 animate-spin" />
+                      <div className="h-12 w-12 rounded-full bg-amber-100 border-2 border-amber-400 flex items-center justify-center mx-auto">
+                        <Loader2 className="h-6 w-6 text-amber-600 animate-spin" />
                       </div>
-                      <p className="text-xs font-black text-amber-400">No Scanner</p>
-                      <p className="text-[10px] text-muted-foreground">Connect a scanner or scan a barcode to auto-connect</p>
+                      <p className="text-xs font-black text-amber-700">No Scanner</p>
+                      <p className="text-[10px] text-slate-500">Connect a scanner or scan a barcode to auto-connect</p>
                     </div>
                   )}
                   {scannerLastScanned && (
@@ -2052,11 +2054,11 @@ export default function RegisterPage() {
                       Scanned: {scannerLastScanned}
                     </div>
                   )}
-                  <p className="text-[10px] text-muted-foreground text-center pt-2">Scanned items appear in the Current Order panel</p>
+                  <p className="text-[10px] text-slate-500 text-center pt-2">Scanned items appear in the Current Order panel</p>
                 </div>
-                <div className="p-3 border-t border-border space-y-2 shrink-0">
+                <div className="p-3 border-t border-sky-200 space-y-2 shrink-0">
                   {scannerExternalDetected && (
-                    <button onClick={handleChangeScannerDevice} className="w-full h-9 rounded-xl text-[11px] font-black border border-border hover:bg-muted/30 transition">
+                    <button onClick={handleChangeScannerDevice} className="w-full h-9 rounded-xl text-[11px] font-black border border-sky-300 text-slate-700 hover:bg-sky-200 transition">
                       Change Device
                     </button>
                   )}
@@ -2076,13 +2078,13 @@ export default function RegisterPage() {
                   <ScanLine className="h-4 w-4 shrink-0" />
                   Scan
                 </button>
-                <p className="text-[10px] text-muted-foreground text-center leading-snug">Connect a barcode scanner</p>
+                <p className="text-[10px] text-slate-500 text-center leading-snug">Connect a barcode scanner</p>
               </div>
             )}
           </div>
 
-          {/* CENTER product grid — fills remaining space, scrollable */}
-          <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
+          {/* CENTER product grid — white background, fills remaining space, scrollable */}
+          <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col bg-white">
             <div className="flex-1 overflow-y-auto">
               <div className="px-3 pt-4 pb-6">
                 {loading ? (
