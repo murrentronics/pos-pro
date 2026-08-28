@@ -127,7 +127,7 @@ function ExpenseRow({ expense: e }: { expense: OwnerExpense }) {
       <div className="px-4 py-3" style={isRefund ? { background: "rgba(134,239,172,0.04)" } : {}}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <div className="font-black text-sm" style={isRefund ? { color: "#86efac" } : {}}>{title}</div>
+            <div className="font-black text-sm" style={isRefund ? { color: "#15803d" } : {}}>{title}</div>
             <div className="mt-1 space-y-0.5">
               {itemLines.map((line, li) => {
                 const eqIdx = line.lastIndexOf(" = ");
@@ -137,14 +137,14 @@ function ExpenseRow({ expense: e }: { expense: OwnerExpense }) {
                 return (
                   <div key={li} className="flex items-center justify-between gap-2">
                     <span className="text-xs text-muted-foreground flex-1">{left}</span>
-                    {right && <span className="text-xs font-black shrink-0" style={{ color: isRefund ? "#86efac" : "#f9a8d4" }}>{right}</span>}
+                    {right && <span className="text-xs font-black shrink-0" style={{ color: isRefund ? "#15803d" : "#f9a8d4" }}>{right}</span>}
                   </div>
                 );
               })}
             </div>
             <div className="text-xs text-muted-foreground mt-1">{dateStr}</div>
           </div>
-          <div className="shrink-0 font-black text-sm" style={{ color: isRefund ? "#86efac" : "#f9a8d4" }}>
+          <div className="shrink-0 font-black text-sm" style={{ color: isRefund ? "#15803d" : "#f9a8d4" }}>
             {isRefund ? `+$${Number(Math.abs(amt)).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}` : `-$${amt.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`}
           </div>
         </div>
@@ -156,10 +156,10 @@ function ExpenseRow({ expense: e }: { expense: OwnerExpense }) {
     <div className="px-4 py-3 flex items-center justify-between gap-3"
       style={isRefund ? { background: "rgba(134,239,172,0.04)" } : {}}>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-bold break-words" style={isRefund ? { color: "#86efac" } : {}}>{raw || "Expense"}</div>
+        <div className="text-sm font-bold break-words" style={isRefund ? { color: "#15803d" } : {}}>{raw || "Expense"}</div>
         <div className="text-xs text-muted-foreground mt-0.5">{dateStr}</div>
       </div>
-      <div className="shrink-0 font-black text-sm" style={{ color: isRefund ? "#86efac" : "#f9a8d4" }}>
+      <div className="shrink-0 font-black text-sm" style={{ color: isRefund ? "#15803d" : "#f9a8d4" }}>
         {isRefund ? `+$${Math.abs(amt).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}` : `-$${amt.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`}
       </div>
     </div>
@@ -769,13 +769,13 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                     <div key={tx.id} className="rounded-xl p-4 border border-green-500/30 flex items-center gap-3"
                       style={{ background: "#e0f2fe" }}>
                       <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/20 border-green-500/30">
-                        <ArrowDownLeft className="h-4 w-4 text-green-400" />
+                        <ArrowDownLeft className="h-4 w-4 text-green-700" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                        <div className="text-sm font-semibold text-green-300 break-words whitespace-normal">{tx.note ?? "Cleared from cashier"}</div>
+                        <div className="text-sm font-semibold text-green-700 break-words whitespace-normal">{tx.note ?? "Cleared from cashier"}</div>
                       </div>
-                      <div className="font-black text-lg shrink-0 text-green-400">+${fmt(Number(tx.amount))}</div>
+                      <div className="font-black text-lg shrink-0 text-green-700">+${fmt(Number(tx.amount))}</div>
                     </div>
                   );
                 }
@@ -799,12 +799,12 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                        <div className={`text-sm font-black mt-0.5 ${isPack ? "text-green-300" : "text-amber-300"}`}>{bpTitle}</div>
+                        <div className={`text-sm font-black mt-0.5 ${isPack ? "text-green-700" : "text-amber-300"}`}>{bpTitle}</div>
                         {bpSub1 && <div className="text-xs text-muted-foreground mt-0.5">{bpSub1}</div>}
                         {bpSub2 && <div className="text-xs text-muted-foreground mt-0.5">{bpSub2}</div>}
-                        {bpSub3 && <div className={`text-xs font-semibold mt-0.5 ${isPack ? "text-green-400" : "text-amber-400"}`}>{bpSub3}</div>}
+                        {bpSub3 && <div className={`text-xs font-semibold mt-0.5 ${isPack ? "text-green-700" : "text-amber-400"}`}>{bpSub3}</div>}
                         {bpHasNums && (
-                          <div className="text-xs font-black mt-1" style={{ color: bpDiff >= 0 ? "#86efac" : "#fca5a5" }}>
+                          <div className="text-xs font-black mt-1" style={{ color: bpDiff >= 0 ? "#15803d" : "#fca5a5" }}>
                             {bpDiff >= 0 ? `Gain: +$${bpDiff.toFixed(2)}` : `Loss: -$${Math.abs(bpDiff).toFixed(2)}`}
                           </div>
                         )}
@@ -823,7 +823,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                       <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/15 border-green-500/30 text-lg">💳</div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                        <div className="text-sm font-black text-green-300 mt-0.5">{cpTitle}</div>
+                        <div className="text-sm font-black text-green-700 mt-0.5">{cpTitle}</div>
                         {(cpPaid || cpRemain) && (
                           <div className="text-xs text-muted-foreground mt-0.5">
                             {[cpPaid, cpRemain].filter(Boolean).join(" · ")}
@@ -831,7 +831,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                         )}
                       </div>
                       {Number(tx.amount) > 0 && (
-                        <div className="font-black text-lg shrink-0 text-green-400 mt-1">+${fmt(Number(tx.amount))}</div>
+                        <div className="font-black text-lg shrink-0 text-green-700 mt-1">+${fmt(Number(tx.amount))}</div>
                       )}
                     </div>
                   );
@@ -855,7 +855,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                         <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
                         <div className="text-sm font-black mt-0.5" style={{ color: "var(--primary)" }}>{ccTitle}</div>
                         {ccItems && <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed break-words whitespace-normal">{ccItems}</div>}
-                        {ccAmount && <div className="text-sm font-black text-green-400 mt-0.5">{ccAmount}</div>}
+                        {ccAmount && <div className="text-sm font-black text-green-700 mt-0.5">{ccAmount}</div>}
                         {ccDiscAmt > 0 && (
                           <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
                             {ccDiscOrig != null && (
@@ -928,7 +928,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
-                    <span className="font-black text-sm text-green-400">+${fmt(Number(o.total))}</span>
+                    <span className="font-black text-sm text-green-700">+${fmt(Number(o.total))}</span>
                     <button
                       onClick={() => handleEditOrder(o)}
                       className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
@@ -1418,12 +1418,12 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
                             if (isTransferIn) {
                               return (
                                 <div key={tx.id} className="px-4 py-3 flex items-center gap-3 bg-green-500/5">
-                                  <ArrowDownLeft className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                                  <ArrowDownLeft className="h-3.5 w-3.5 text-green-700 shrink-0" />
                                   <div className="flex-1 min-w-0">
-                                    <div className="text-xs text-green-400 font-bold break-words whitespace-normal">{tx.note ?? "Cleared from cashier"}</div>
+                                    <div className="text-xs text-green-700 font-bold break-words whitespace-normal">{tx.note ?? "Cleared from cashier"}</div>
                                     <div className="text-xs text-muted-foreground mt-0.5">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
                                   </div>
-                                  <span className="font-black text-sm text-green-400">
+                                  <span className="font-black text-sm text-green-700">
                                     +${Number(tx.amount).toFixed(2)}
                                   </span>
                                 </div>
@@ -1435,7 +1435,7 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
                                 <div key={tx.id} className={`px-4 py-3 flex items-start gap-3 ${isPack ? "bg-green-500/5" : "bg-amber-500/5"}`}>
                                   <span className="text-base shrink-0">{isPack ? "🚬" : "🍾"}</span>
                                   <div className="flex-1 min-w-0">
-                                    <div className={`text-xs font-bold break-words whitespace-normal ${isPack ? "text-green-400" : "text-amber-400"}`}>{tx.note}</div>
+                                    <div className={`text-xs font-bold break-words whitespace-normal ${isPack ? "text-green-700" : "text-amber-400"}`}>{tx.note}</div>
                                     <div className="text-xs text-muted-foreground mt-0.5">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
                                   </div>
                                 </div>
@@ -1459,7 +1459,7 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
                                 <div key={tx.id} className={`px-4 py-3 flex items-start gap-3 ${isPayment ? "bg-green-500/5" : "bg-orange-500/5"}`}>
                                   <span className="text-base shrink-0">{isPayment ? "💳" : "🪙"}</span>
                                   <div className="flex-1 min-w-0">
-                                    <div className={`text-xs font-bold leading-snug ${isPayment ? "text-green-400" : "text-primary"}`}>
+                                    <div className={`text-xs font-bold leading-snug ${isPayment ? "text-green-700" : "text-primary"}`}>
                                       {titlePart}
                                     </div>
                                     {(paidPart || remainPart) && (
@@ -1488,12 +1488,12 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
                                   </div>
                                   {isPayment && (
                                     !isReadOnly ? (
-                                      <span className="font-black text-lg shrink-0 text-green-400">
+                                      <span className="font-black text-lg shrink-0 text-green-700">
                                         +${Number(tx.amount).toFixed(2)}
                                       </span>
                                     ) : cashierPart ? (
                                       <span className="text-xs shrink-0 px-1.5 py-0.5 rounded-full font-semibold"
-                                        style={{ background: "rgba(34,197,94,0.12)", color: "#86efac" }}>
+                                        style={{ background: "rgba(34,197,94,0.12)", color: "#15803d" }}>
                                         with cashier
                                       </span>
                                     ) : null
@@ -2204,7 +2204,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                             style={isRefund ? { background: "rgba(134,239,172,0.04)" } : {}}>
                             <div className="flex-1 min-w-0">
                               <div className="font-black text-sm sm:text-base lg:text-lg"
-                                style={isRefund ? { color: "#86efac" } : {}}>{title}</div>
+                                style={isRefund ? { color: "#15803d" } : {}}>{title}</div>
                               <div className="mt-1 space-y-0.5">
                                 {itemLines.map((line, i) => {
                                   const eqIdx = line.lastIndexOf(" = ");
@@ -2215,7 +2215,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                                   return (
                                     <div key={i} className="flex items-center justify-between gap-2">
                                       <span className="text-xs text-muted-foreground flex-1">{cleanLeft}</span>
-                                      {right && <span className="text-xs font-black shrink-0" style={{ color: isRefund ? "#86efac" : "#f87171" }}>{right}</span>}
+                                      {right && <span className="text-xs font-black shrink-0" style={{ color: isRefund ? "#15803d" : "#f87171" }}>{right}</span>}
                                     </div>
                                   );
                                 })}
@@ -2227,7 +2227,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                                 })}
                               </div>
                             </div>
-                            <span className="font-black text-sm shrink-0" style={{ color: isRefund ? "#86efac" : "#f87171" }}>
+                            <span className="font-black text-sm shrink-0" style={{ color: isRefund ? "#15803d" : "#f87171" }}>
                               {isRefund ? `+$${fmt(Math.abs(amt))}` : `-$${fmt(amt)}`}
                             </span>
                           </div>
@@ -2247,7 +2247,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                           style={isRefund ? { background: "rgba(134,239,172,0.04)" } : {}}>
                           <div className="flex-1 min-w-0">
                             <div className="font-black text-sm sm:text-base lg:text-lg"
-                              style={isRefund ? { color: "#86efac" } : {}}>{title}</div>
+                              style={isRefund ? { color: "#15803d" } : {}}>{title}</div>
                             {detail && (
                               <div className="text-xs text-muted-foreground mt-0.5 break-words whitespace-normal">
                                 {detail}
@@ -2260,7 +2260,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                               })}
                             </div>
                           </div>
-                          <span className="font-black text-sm shrink-0" style={{ color: isRefund ? "#86efac" : "#f87171" }}>
+                          <span className="font-black text-sm shrink-0" style={{ color: isRefund ? "#15803d" : "#f87171" }}>
                             {isRefund ? `+$${fmt(Math.abs(amt))}` : `-$${fmt(amt)}`}
                           </span>
                         </div>
@@ -2497,7 +2497,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
                       <div className="text-sm font-black text-blue-300 mt-0.5">{cashierLabel}</div>
-                      {saleTotal && <div className="text-sm font-black text-green-400 mt-0.5">{saleTotal}</div>}
+                      {saleTotal && <div className="text-sm font-black text-green-700 mt-0.5">{saleTotal}</div>}
                       {itemsStr && <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{itemsStr}</div>}
                       {(paidStr || changeStr) && (
                         <div className="text-xs text-muted-foreground mt-0.5">
@@ -2543,7 +2543,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                      <div className="text-sm font-black mt-0.5" style={{ color: isPayment ? "#86efac" : "var(--primary)" }}>
+                      <div className="text-sm font-black mt-0.5" style={{ color: isPayment ? "#15803d" : "var(--primary)" }}>
                         {titlePart}
                       </div>
                       {/* Payment sub-lines */}
@@ -2557,7 +2557,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                         <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{itemsPart}</div>
                       )}
                       {!isPayment && amountPart && (
-                        <div className="text-sm font-black text-green-400 mt-0.5">{amountPart}</div>
+                        <div className="text-sm font-black text-green-700 mt-0.5">{amountPart}</div>
                       )}
                       {discAmt > 0 && (
                         <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
@@ -2596,7 +2596,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                     ) : isReadOnly && cashierPart ? (
                       <StaffBadge label={(tx.note ?? "").includes("[Manager:") ? "Manager" : "Staff"} />
                     ) : !isReadOnly ? (
-                      <span className="font-black text-lg shrink-0" style={{ color: "#86efac" }}>
+                      <span className="font-black text-lg shrink-0" style={{ color: "#15803d" }}>
                         +${fmt(Number(tx.amount))}
                       </span>
                     ) : null}
@@ -2655,7 +2655,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-2 shrink-0">
-                        <span className="font-black text-sm text-green-400">+${fmt(Number(o.total))}</span>
+                        <span className="font-black text-sm text-green-700">+${fmt(Number(o.total))}</span>
                         <button
                           onClick={() => onEditOrder && onEditOrder(o)}
                           className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
@@ -2684,15 +2684,15 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                   <div key={tx.id} className="rounded-xl p-4 border border-green-500/30 flex items-center gap-3"
                     style={{ background: "#e0f2fe" }}>
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/20 border-green-500/30">
-                      <ArrowDownLeft className="h-4 w-4 text-green-400" />
+                      <ArrowDownLeft className="h-4 w-4 text-green-700" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                      <div className="text-sm font-semibold text-green-300">
+                      <div className="text-sm font-semibold text-green-700">
                         {tx.note ?? "Cleared from cashier"}
                       </div>
                     </div>
-                    <div className="font-black text-lg shrink-0 text-green-400">
+                    <div className="font-black text-lg shrink-0 text-green-700">
                       +${fmt(Number(tx.amount))}
                     </div>
                   </div>
@@ -2721,7 +2721,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                       {sub1 && <div className="text-xs text-muted-foreground mt-0.5">{sub1}</div>}
                       {sub2 && <div className="text-xs text-amber-400 font-semibold mt-0.5">{sub2Display}</div>}
                       {hasNumbers && (
-                        <div className="text-xs font-black mt-1" style={{ color: diff >= 0 ? "#86efac" : "#fca5a5" }}>
+                        <div className="text-xs font-black mt-1" style={{ color: diff >= 0 ? "#15803d" : "#fca5a5" }}>
                           {diff >= 0 ? `Gain: +$${fmt(diff)}` : `Loss: -$${Math.abs(diff).toFixed(2)}`}
                         </div>
                       )}
@@ -2753,12 +2753,12 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/20 border-green-500/30 text-lg">🚬</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                      <div className="text-sm font-black text-green-300 mt-0.5">{title}</div>
+                      <div className="text-sm font-black text-green-700 mt-0.5">{title}</div>
                       {sub1 && <div className="text-xs text-muted-foreground mt-0.5">{sub1}</div>}
                       {sub2 && <div className="text-xs text-muted-foreground mt-0.5">{sub2}</div>}
-                      {sub3 && <div className="text-xs text-green-400 font-semibold mt-0.5">{sub3}</div>}
+                      {sub3 && <div className="text-xs text-green-700 font-semibold mt-0.5">{sub3}</div>}
                       {hasNumbers && (
-                        <div className="text-xs font-black mt-1" style={{ color: diff >= 0 ? "#86efac" : "#fca5a5" }}>
+                        <div className="text-xs font-black mt-1" style={{ color: diff >= 0 ? "#15803d" : "#fca5a5" }}>
                           {diff >= 0 ? `Gain: +$${fmt(diff)}` : `Loss: -$${Math.abs(diff).toFixed(2)}`}
                         </div>
                       )}
@@ -2777,15 +2777,15 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                   className={`rounded-xl p-4 border flex items-center gap-3 ${isReset ? "border-orange-500/30" : "border-green-500/30"}`}
                   style={{ background: isReset ? "#e0f2fe" : "#e0f2fe" }}>
                   <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 border ${isReset ? "bg-orange-500/20 border-orange-500/30" : "bg-green-500/20 border-green-500/30"}`}>
-                    {isReset ? <RotateCcw className="h-4 w-4 text-orange-400" /> : <ArrowDownLeft className="h-4 w-4 text-green-400" />}
+                    {isReset ? <RotateCcw className="h-4 w-4 text-orange-400" /> : <ArrowDownLeft className="h-4 w-4 text-green-700" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                    <div className={`text-sm font-semibold ${isReset ? "text-orange-300" : "text-green-300"}`}>
+                    <div className={`text-sm font-semibold ${isReset ? "text-orange-300" : "text-green-700"}`}>
                       {tx.note ?? (isReset ? "Wallet reset" : "Cleared from cashier")}
                     </div>
                   </div>
-                  <div className={`font-black text-lg shrink-0 ${isReset ? "text-orange-400" : "text-green-400"}`}>
+                  <div className={`font-black text-lg shrink-0 ${isReset ? "text-orange-400" : "text-green-700"}`}>
                     {isReset ? `-$${Math.abs(Number(tx.amount)).toFixed(2)}` : `+$${fmt(Number(tx.amount))}`}
                   </div>
                 </div>
@@ -2836,7 +2836,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  <span className="font-black text-lg text-green-400">+${fmt(Number(o.total))}</span>
+                  <span className="font-black text-lg text-green-700">+${fmt(Number(o.total))}</span>
                   <button
                     onClick={() => onEditOrder && onEditOrder(o)}
                     className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
@@ -3324,7 +3324,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] sm:text-xs font-semibold" style={{ color: "rgba(15,40,80,0.6)" }}>{t("remain", "Remain")}</span>
-                    <span className="font-black text-sm sm:text-base" style={{ color: floatRemaining > 0 ? "#86efac" : "#fca5a5" }}>${fmt(floatRemaining)}</span>
+                    <span className="font-black text-sm sm:text-base" style={{ color: floatRemaining > 0 ? "#15803d" : "#fca5a5" }}>${fmt(floatRemaining)}</span>
                   </div>
                 </>
               ) : (
@@ -3344,11 +3344,6 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
             <div className="flex items-center gap-2 text-sm font-medium" style={{ color: "rgba(0,0,0,0.75)" }}>
               <WalletIcon className="h-4 w-4" /> {t("period_session", "Session")}
             </div>
-            <button onClick={() => setShowStatement(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl active:scale-95 transition text-xs font-black"
-              style={{ background: "#bae6fd", color: "#0c4a6e" }}>
-              <FileText className="h-3.5 w-3.5" /> {t("statement", "Statement")}
-            </button>
           </div>
           {loadingSummary ? (
             <div className="grid grid-cols-2 gap-2">{[0,1,2,3].map(i=><div key={i} className="rounded-2xl h-16 bg-white/10 animate-pulse"/>)}</div>
@@ -3422,7 +3417,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("today_sales", "Today's\nSales")}</div>
-                  <div className="font-black text-xs" style={{ color: "#86efac" }}>${fmt(todayIncome)}</div>
+                  <div className="font-black text-xs" style={{ color: "#15803d" }}>${fmt(todayIncome)}</div>
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("today_stock_cost", "Today's\nStock Cost")}</div>
@@ -3435,7 +3430,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                   {(() => {
                     const tgp = todayIncome - todayStockCost;
                     return (
-                      <div className="font-black text-xs" style={{ color: tgp >= 0 ? "#86efac" : "#fca5a5" }}>
+                      <div className="font-black text-xs" style={{ color: tgp >= 0 ? "#15803d" : "#fca5a5" }}>
                         {tgp >= 0 ? "+" : ""}${fmt(tgp)}
                       </div>
                     );
@@ -3456,7 +3451,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                     const tgp = todayIncome - todayStockCost;
                     const tnp = tgp - todayExpenses;
                     return (
-                      <div className="font-black text-xs" style={{ color: tnp >= 0 ? "#86efac" : "#fca5a5" }}>
+                      <div className="font-black text-xs" style={{ color: tnp >= 0 ? "#15803d" : "#fca5a5" }}>
                         {tnp >= 0 ? "+" : ""}${fmt(tnp)}
                       </div>
                     );
@@ -3473,8 +3468,15 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
         style={{ background: "var(--gradient-hero)", boxShadow: "var(--shadow-glow)" }}>
         <div className="absolute -left-8 -bottom-8 h-36 w-36 rounded-full bg-white/10 blur-2xl" />
         <div className="relative">
-          <div className="flex items-center gap-2 text-sm font-medium mb-3" style={{ color: "rgba(0,0,0,0.75)" }}>
-            <WalletIcon className="h-4 w-4" /> {t("period_all_time", "All Time")}
+          <div className="flex items-center justify-between gap-2 text-sm font-medium mb-3" style={{ color: "rgba(0,0,0,0.75)" }}>
+            <div className="flex items-center gap-2">
+              <WalletIcon className="h-4 w-4" /> {t("period_all_time", "All Time")}
+            </div>
+            <button onClick={() => setShowStatement(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl active:scale-95 transition text-xs font-black"
+              style={{ background: "#bae6fd", color: "#0c4a6e" }}>
+              <FileText className="h-3.5 w-3.5" /> {t("statement", "Statement")}
+            </button>
           </div>
           {loadingSummary ? (
             <div className="grid grid-cols-2 gap-2">{[0,1,2,3].map(i=><div key={i} className="rounded-2xl h-16 bg-white/10 animate-pulse"/>)}</div>
@@ -3484,7 +3486,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("alltime_sales", "Total\nSales")}</div>
-                  <div className="font-black text-xs" style={{ color: "#86efac" }}>${fmt(totalIncome)}</div>
+                  <div className="font-black text-xs" style={{ color: "#15803d" }}>${fmt(totalIncome)}</div>
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("alltime_stock_cost", "Total\nStock Cost")}</div>
@@ -3497,7 +3499,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                   {(() => {
                     const gsp = totalIncome - totalStockSoldCost;
                     return (
-                      <div className="font-black text-xs" style={{ color: gsp >= 0 ? "#86efac" : "#fca5a5" }}>
+                      <div className="font-black text-xs" style={{ color: gsp >= 0 ? "#15803d" : "#fca5a5" }}>
                         {gsp >= 0 ? "+" : ""}${fmt(gsp)}
                       </div>
                     );
@@ -3517,7 +3519,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                   {(() => {
                     const tnp = totalIncome - totalStockSoldCost - totalExpenses;
                     return (
-                      <div className="font-black text-xs" style={{ color: tnp >= 0 ? "#86efac" : "#fca5a5" }}>
+                      <div className="font-black text-xs" style={{ color: tnp >= 0 ? "#15803d" : "#fca5a5" }}>
                         {tnp >= 0 ? "+" : ""}${fmt(tnp)}
                       </div>
                     );
@@ -3528,7 +3530,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("stock_value", "Current\nStock Value")}</div>
-                  <div className="font-black text-xs" style={{ color: "#86efac" }}>
+                  <div className="font-black text-xs" style={{ color: "#15803d" }}>
                     ${fmt(stockResaleValue)}
                   </div>
                 </div>
@@ -3540,7 +3542,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("stock_profit", "Current\nStock Profit")}</div>
-                  <div className="font-black text-xs" style={{ color: stockExpectedProfit >= 0 ? "#86efac" : "#fca5a5" }}>
+                  <div className="font-black text-xs" style={{ color: stockExpectedProfit >= 0 ? "#15803d" : "#fca5a5" }}>
                     {stockExpectedProfit >= 0 ? "+" : ""}${fmt(Math.abs(stockExpectedProfit))}
                   </div>
                 </div>

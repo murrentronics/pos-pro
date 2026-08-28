@@ -491,7 +491,7 @@ function ItemModal({
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-black text-base leading-tight">{product.name}</p>
-            <p className="font-black text-sm mt-0.5" style={{ color: "#86efac" }}>
+            <p className="font-black text-sm mt-0.5" style={{ color: "#15803d" }}>
               ${Number(product.price).toFixed(2)}
               {baseUnitLabel ? ` / ${baseUnitLabel}` : ""}
             </p>
@@ -551,7 +551,7 @@ function ItemModal({
                         </span>
                         <span
                           className="font-black text-base mt-0.5"
-                          style={{ color: baseSelected ? "var(--primary)" : "#86efac" }}
+                          style={{ color: baseSelected ? "var(--primary)" : "#15803d" }}
                         >
                           ${Number(product.price).toFixed(2)}
                         </span>
@@ -630,7 +630,7 @@ function ItemModal({
                         </span>
                         <span
                           className="font-black text-base mt-0.5"
-                          style={{ color: isSelected ? "var(--primary)" : "#86efac" }}
+                          style={{ color: isSelected ? "var(--primary)" : "#15803d" }}
                         >
                           ${Number(v.price).toFixed(2)}
                         </span>
@@ -727,7 +727,7 @@ function ItemModal({
                             </span>
                             <span
                               className="font-black text-base mt-0.5"
-                              style={{ color: isSelected ? "var(--primary)" : "#86efac" }}
+                              style={{ color: isSelected ? "var(--primary)" : "#15803d" }}
                             >
                               ${optPrice.toFixed(2)}
                             </span>
@@ -870,7 +870,7 @@ const ProductGrid = React.memo(function ProductGrid({
   return (
     <>
       <div
-        className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2"
+        className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2"
         onContextMenu={(e) => e.preventDefault()}
       >
         {barOrdered.map((p) => (
@@ -1772,7 +1772,7 @@ export default function RegisterPage() {
             <div className="px-6 pt-6 pb-2 text-center">
               <div
                 className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3"
-                style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac" }}
+                style={{ background: "rgba(22,163,74,0.12)", border: "1.5px solid #15803d" }}
               >
                 <span className="text-2xl">🟢</span>
               </div>
@@ -1843,9 +1843,9 @@ export default function RegisterPage() {
                   disabled={barToggleBusy || !floatBarAmount}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                   style={{
-                    background: "rgba(134,239,172,0.15)",
-                    border: "1.5px solid #86efac",
-                    color: "#86efac",
+                    background: "rgba(22,163,74,0.15)",
+                    border: "1.5px solid #15803d",
+                    color: "#15803d",
                   }}
                 >
                   {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open Store"}
@@ -1914,9 +1914,9 @@ export default function RegisterPage() {
                   onClick={handleOpenBar}
                   className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50"
                   style={{
-                    background: "rgba(134,239,172,0.15)",
-                    border: "1.5px solid #86efac",
-                    color: "#86efac",
+                    background: "rgba(22,163,74,0.15)",
+                    border: "1.5px solid #15803d",
+                    color: "#15803d",
                   }}
                 >
                   {barToggleBusy ? (
@@ -2002,9 +2002,23 @@ export default function RegisterPage() {
         {/* ── Body row: left panel + center grid + right panel ── */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
 
-          {/* LEFT scanner panel — always visible on desktop, same light blue as right panel */}
-          <div className="hidden md:flex w-52 lg:w-60 shrink-0 flex-col min-h-0 overflow-hidden border-r border-sky-200"
+          {/* LEFT scanner panel — icon-only on tablet, full panel on desktop */}
+          <div className="hidden md:flex md:w-14 lg:w-52 xl:w-60 shrink-0 flex-col min-h-0 overflow-hidden border-r border-sky-200"
             style={{ background: "#e0f2fe" }}>
+            {/* On tablet (md/lg breakpoint) show icon-only collapsed state */}
+            <div className="flex lg:hidden flex-col items-center justify-center flex-1 py-3">
+              <button
+                onClick={() => window.dispatchEvent(new Event("pospro-toggle-scanner-panel"))}
+                className="h-10 w-10 rounded-2xl flex items-center justify-center active:scale-95 transition text-primary-foreground shadow"
+                style={{ background: "var(--gradient-hero)" }}
+                title="Scanner"
+              >
+                <ScanLine className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Full panel — only visible on lg+ */}
+            <div className="hidden lg:flex flex-col flex-1 min-h-0 overflow-hidden">
             {showScannerPanel ? (
               <>
                 <div className="px-4 py-3 border-b border-sky-200 flex items-center justify-between shrink-0">
@@ -2063,6 +2077,7 @@ export default function RegisterPage() {
                 <p className="text-[10px] text-slate-500 text-center leading-snug">Connect a barcode scanner</p>
               </div>
             )}
+            </div>
           </div>
 
           {/* CENTER product grid — white background, fills remaining space, scrollable */}
@@ -2093,7 +2108,7 @@ export default function RegisterPage() {
                     <div>
                       {barEditMode ? (
                         <div>
-                          <div ref={barEditGridRef} className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
+                          <div ref={barEditGridRef} className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
                             {barOrdered.map((p) => {
                               const inCart = cart.find((i) => i.id === p.id);
                               const outOfStock = (p.stock_qty ?? 1) === 0;
@@ -2295,7 +2310,7 @@ export default function RegisterPage() {
     </div>{/* end center column */}
 
           {/* RIGHT cart panel — wide sidebar, desktop only, light blue bg */}
-          <div className="hidden md:flex w-80 lg:w-96 shrink-0 flex-col min-h-0 overflow-hidden border-l border-sky-200"
+          <div className="hidden md:flex md:w-44 lg:w-64 xl:w-80 shrink-0 flex-col min-h-0 overflow-hidden border-l border-sky-200"
             style={{ background: "#e0f2fe" }}>
             <div className="px-4 py-3 border-b border-sky-200 shrink-0 flex items-center justify-between gap-2">
               <div>
@@ -2585,13 +2600,13 @@ export default function RegisterPage() {
               {printerResult && (
                 <div className="mt-3 rounded-2xl border p-4 text-center"
                   style={{
-                    borderColor: printerResult.printed ? "#86efac" : "#f87171",
+                    borderColor: printerResult.printed ? "#15803d" : "#f87171",
                     background: printerResult.printed ? "rgba(134,239,172,0.08)" : "rgba(239,68,68,0.08)",
                   }}>
                   <div className="h-10 w-10 rounded-full flex items-center justify-center mx-auto mb-2"
                     style={{
-                      background: printerResult.printed ? "rgba(134,239,172,0.12)" : "rgba(239,68,68,0.12)",
-                      border: "1.5px solid " + (printerResult.printed ? "#86efac" : "#f87171"),
+                      background: printerResult.printed ? "rgba(22,163,74,0.12)" : "rgba(239,68,68,0.12)",
+                      border: "1.5px solid " + (printerResult.printed ? "#15803d" : "#f87171"),
                     }}>
                     <span className="text-lg">{printerResult.printed ? "✅" : "❌"}</span>
                   </div>
