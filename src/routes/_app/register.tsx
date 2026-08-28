@@ -870,7 +870,7 @@ const ProductGrid = React.memo(function ProductGrid({
   return (
     <>
       <div
-        className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2"
+        className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-5 lg:grid-cols-5 xl:grid-cols-7 2xl:grid-cols-8 gap-2"
         onContextMenu={(e) => e.preventDefault()}
       >
         {barOrdered.map((p) => (
@@ -2003,10 +2003,10 @@ export default function RegisterPage() {
         <div className="flex flex-1 min-h-0 overflow-hidden">
 
           {/* LEFT scanner panel — icon-only on tablet, full panel on desktop */}
-          <div className="hidden md:flex md:w-14 lg:w-52 xl:w-60 shrink-0 flex-col min-h-0 overflow-hidden border-r border-sky-200"
+          <div className="hidden md:flex md:w-14 lg:w-14 xl:w-52 2xl:w-60 shrink-0 flex-col min-h-0 overflow-hidden border-r border-sky-200"
             style={{ background: "#e0f2fe" }}>
-            {/* On tablet (md/lg breakpoint) show icon-only collapsed state */}
-            <div className="flex lg:hidden flex-col items-center justify-center flex-1 py-3">
+            {/* On tablet/lg show icon-only collapsed state */}
+            <div className="flex xl:hidden flex-col items-center justify-center flex-1 py-3">
               <button
                 onClick={() => window.dispatchEvent(new Event("pospro-toggle-scanner-panel"))}
                 className="h-10 w-10 rounded-2xl flex items-center justify-center active:scale-95 transition text-primary-foreground shadow"
@@ -2017,8 +2017,8 @@ export default function RegisterPage() {
               </button>
             </div>
 
-            {/* Full panel — only visible on lg+ */}
-            <div className="hidden lg:flex flex-col flex-1 min-h-0 overflow-hidden">
+            {/* Full panel — only visible on xl+ */}
+            <div className="hidden xl:flex flex-col flex-1 min-h-0 overflow-hidden">
             {showScannerPanel ? (
               <>
                 <div className="px-4 py-3 border-b border-sky-200 flex items-center justify-between shrink-0">
@@ -2108,7 +2108,7 @@ export default function RegisterPage() {
                     <div>
                       {barEditMode ? (
                         <div>
-                          <div ref={barEditGridRef} className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
+                          <div ref={barEditGridRef} className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-5 lg:grid-cols-5 xl:grid-cols-7 2xl:grid-cols-8 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
                             {barOrdered.map((p) => {
                               const inCart = cart.find((i) => i.id === p.id);
                               const outOfStock = (p.stock_qty ?? 1) === 0;
@@ -2310,7 +2310,7 @@ export default function RegisterPage() {
     </div>{/* end center column */}
 
           {/* RIGHT cart panel — wide sidebar, desktop only, light blue bg */}
-          <div className="hidden md:flex md:w-44 lg:w-64 xl:w-80 shrink-0 flex-col min-h-0 overflow-hidden border-l border-sky-200"
+          <div className="hidden md:flex md:w-44 lg:w-44 xl:w-64 2xl:w-80 shrink-0 flex-col min-h-0 overflow-hidden border-l border-sky-200"
             style={{ background: "#e0f2fe" }}>
             <div className="px-4 py-3 border-b border-sky-200 shrink-0 flex items-center justify-between gap-2">
               <div>

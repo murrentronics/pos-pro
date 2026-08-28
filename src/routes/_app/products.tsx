@@ -1,6 +1,6 @@
 ﻿import { createFileRoute } from "@tanstack/react-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, ImagePlus, Plus, Trash2, Loader2, X, ChevronLeft, Pencil, ListChecks, CheckCircle2 } from "lucide-react";
+import { Camera, ImagePlus, Plus, Trash2, Loader2, X, ChevronLeft, Pencil, ListChecks, CheckCircle2, ScanLine } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { useTranslation } from "@/lib/i18n";
@@ -1629,65 +1629,86 @@ export default function ProductsPage() {
   const stockNumpadProduct = stockNumpadId ? items.find((p) => p.id === stockNumpadId) : null;
 
   return (
-    <div className={showScannerPanel ? "md:ml-72" : ""}>
-      {/* Left scanner panel - fixed on desktop, hidden on mobile */}
-      {showScannerPanel && (
-        <div className="hidden md:flex fixed left-0 top-14 w-72 h-[calc(100vh-3.5rem)] bg-background/95 backdrop-blur border-r border-border z-30 flex-col">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <h2 className="font-black text-sm">Scanner</h2>
-            <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-            {scannerExternalDetected ? (
-              <div className="text-center space-y-2">
-                <div className="h-12 w-12 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center mx-auto">
-                  <CheckCircle2 className="h-6 w-6 text-green-400" />
-                </div>
-                <p className="text-xs font-black text-green-400">Scanner Connected</p>
-                <p className="text-[10px] text-muted-foreground">Scan barcodes to auto-fill item forms</p>
-              </div>
-            ) : (
-              <div className="text-center space-y-2">
-                <div className="h-12 w-12 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center mx-auto">
-                  <Loader2 className="h-6 w-6 text-amber-400 animate-spin" />
-                </div>
-                <p className="text-xs font-black text-amber-400">No Scanner</p>
-                <p className="text-[10px] text-muted-foreground">Connect external scanner or scan barcode to auto-connect</p>
-              </div>
-            )}
-
-            {scannerLastScanned && (
-              <div className="bg-green-500 text-white px-3 py-2 rounded-xl font-black text-xs shadow-lg text-center">
-                Scanned: {scannerLastScanned}
-              </div>
-            )}
-
-            <div className="text-center pt-2">
-              <p className="text-[10px] text-muted-foreground">Scanned barcodes will auto-fill the barcode field in the item form</p>
-            </div>
-          </div>
-          <div className="p-3 border-t border-border space-y-2">
-            {scannerExternalDetected && (
-              <button
-                onClick={handleChangeScannerDevice}
-                className="w-full h-9 rounded-xl text-[11px] font-black border border-border hover:bg-muted/30 transition"
-              >
-                Change Device
-              </button>
-            )}
-            <button
-              onClick={() => setShowScannerPanel(false)}
-              className="w-full h-10 rounded-xl font-black text-xs text-primary-foreground shadow-lg active:scale-[0.98] transition"
-              style={{ background: "var(--gradient-hero)" }}
-            >
-              Done
-            </button>
-          </div>
+    <div className="flex min-h-0">
+      {/* LEFT scanner panel — always in-flow, never shifts center (same pattern as register) */}
+      <div className="hidden md:flex md:w-14 xl:w-56 shrink-0 flex-col border-r border-border/50 sticky top-0 self-start"
+        style={{ height: "calc(100vh - 3.5rem)", background: "var(--gradient-card)" }}>
+        {/* Tablet (md → xl): icon-only strip */}
+        <div className="flex xl:hidden flex-col items-center justify-center flex-1 py-3">
+          <button
+            onClick={() => window.dispatchEvent(new Event("pospro-toggle-scanner-panel"))}
+            className="h-10 w-10 rounded-2xl flex items-center justify-center active:scale-95 transition text-primary-foreground shadow"
+            style={{ background: "var(--gradient-hero)" }}
+            title="Scanner"
+          >
+            <ScanLine className="h-5 w-5" />
+          </button>
         </div>
-      )}
+        {/* Desktop xl+: full panel, content switches on showScannerPanel */}
+        <div className="hidden xl:flex flex-col flex-1 min-h-0 overflow-hidden">
+          {showScannerPanel ? (
+            <>
+              <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
+                <h2 className="font-black text-sm">Scanner</h2>
+                <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-muted flex items-center justify-center hover:bg-muted/80 transition">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+                {scannerExternalDetected ? (
+                  <div className="text-center space-y-2">
+                    <div className="h-12 w-12 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center mx-auto">
+                      <CheckCircle2 className="h-6 w-6 text-green-400" />
+                    </div>
+                    <p className="text-xs font-black text-green-400">Scanner Connected</p>
+                    <p className="text-[10px] text-muted-foreground">Scan barcodes to auto-fill item forms</p>
+                  </div>
+                ) : (
+                  <div className="text-center space-y-2">
+                    <div className="h-12 w-12 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center mx-auto">
+                      <Loader2 className="h-6 w-6 text-amber-400 animate-spin" />
+                    </div>
+                    <p className="text-xs font-black text-amber-400">No Scanner</p>
+                    <p className="text-[10px] text-muted-foreground">Connect external scanner or scan barcode to auto-connect</p>
+                  </div>
+                )}
+                {scannerLastScanned && (
+                  <div className="bg-green-500 text-white px-3 py-2 rounded-xl font-black text-xs shadow-lg text-center">
+                    Scanned: {scannerLastScanned}
+                  </div>
+                )}
+                <p className="text-[10px] text-muted-foreground text-center pt-2">Scanned barcodes will auto-fill the barcode field in the item form</p>
+              </div>
+              <div className="p-3 border-t border-border space-y-2 shrink-0">
+                {scannerExternalDetected && (
+                  <button onClick={handleChangeScannerDevice} className="w-full h-9 rounded-xl text-[11px] font-black border border-border hover:bg-muted/30 transition">
+                    Change Device
+                  </button>
+                )}
+                <button onClick={() => setShowScannerPanel(false)}
+                  className="w-full h-10 rounded-xl font-black text-xs text-primary-foreground shadow-lg active:scale-[0.98] transition"
+                  style={{ background: "var(--gradient-hero)" }}>
+                  Done
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center flex-1 gap-3 px-3">
+              <button
+                onClick={() => window.dispatchEvent(new Event("pospro-toggle-scanner-panel"))}
+                className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 active:scale-95 transition text-primary-foreground shadow-lg"
+                style={{ background: "var(--gradient-hero)" }}
+              >
+                <ScanLine className="h-4 w-4 shrink-0" /> Scan
+              </button>
+              <p className="text-[10px] text-muted-foreground text-center leading-snug">Connect a barcode scanner</p>
+            </div>
+          )}
+        </div>
+      </div>
 
+      {/* CENTER content — flex-1, never shifts */}
+      <div className="flex-1 min-w-0">
       {/* Sticky sub-header — sits below the app header */}
       <div className="sticky top-0 z-30 -mx-3 px-3 py-2 bg-background/95 backdrop-blur border-b border-border space-y-2">
         <div className="flex items-center justify-between">
@@ -1982,6 +2003,7 @@ export default function ProductsPage() {
           }}
         />
       )}
+      </div>
     </div>
   );
 }

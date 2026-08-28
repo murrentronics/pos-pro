@@ -3311,7 +3311,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
             <button
               onClick={() => { setFloatInput(""); setShowSetFloat(true); }}
               className="shrink-0 w-24 rounded-2xl font-black text-[11px] leading-tight active:scale-95 transition flex items-center justify-center text-center px-2 py-3"
-              style={{ background: "#000000", color: "#3b82f6", border: "1.5px solid #1d4ed8" }}>
+              style={{ background: "rgba(255,255,255,0.18)", color: "#ffffff", border: "2px solid #3b82f6", backdropFilter: "blur(4px)" }}>
               {cashierFloat > 0 ? "Update\nFloat" : "Set\nFloat"}
             </button>
             <div className="flex-1 flex flex-col justify-center gap-0.5 rounded-2xl px-4 py-2"
@@ -3359,7 +3359,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("session_stock_cost", "Session\nStock Cost")}</div>
-                  <div className="font-black text-xs" style={{ color: barIsOpenWallet ? "#e11d48" : "rgba(15,40,80,0.35)" }}>
+                  <div className="font-black text-xs" style={{ color: barIsOpenWallet ? "#b91c1c" : "rgba(15,40,80,0.35)" }}>
                     {barIsOpenWallet ? `$${fmt(sessionStockCost)}` : "—"}
                   </div>
                 </div>
@@ -3379,7 +3379,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("session_expenses", "Session\nExpenses")}</div>
-                  <div className="font-black text-xs" style={{ color: "#fca5a5" }}>
+                  <div className="font-black text-xs" style={{ color: "#b45309" }}>
                     {barIsOpenWallet ? `$${fmt(sessionExpense)}` : "$0.00"}
                   </div>
                 </div>
@@ -3421,7 +3421,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("today_stock_cost", "Today's\nStock Cost")}</div>
-                  <div className="font-black text-xs" style={{ color: "#fca5a5" }}>
+                  <div className="font-black text-xs" style={{ color: "#b91c1c" }}>
                     {todayStockCost > 0 ? `$${fmt(todayStockCost)}` : "$0.00"}
                   </div>
                 </div>
@@ -3441,7 +3441,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("today_expenses", "Today's\nExpenses")}</div>
-                  <div className="font-black text-xs" style={{ color: "#fca5a5" }}>
+                  <div className="font-black text-xs" style={{ color: "#b45309" }}>
                     {todayExpenses > 0 ? `$${fmt(todayExpenses)}` : "$0.00"}
                   </div>
                 </div>
@@ -3490,7 +3490,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("alltime_stock_cost", "Total\nStock Cost")}</div>
-                  <div className="font-black text-xs" style={{ color: "#fca5a5" }}>
+                  <div className="font-black text-xs" style={{ color: "#b91c1c" }}>
                     ${fmt(totalStockSoldCost)}
                   </div>
                 </div>
@@ -3510,7 +3510,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("alltime_expenses", "Total\nExpenses")}</div>
-                  <div className="font-black text-xs" style={{ color: "#fca5a5" }}>
+                  <div className="font-black text-xs" style={{ color: "#b45309" }}>
                     ${fmt(totalExpenses)}
                   </div>
                 </div>
@@ -3536,7 +3536,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("stock_cost_current", "Current\nStock Cost")}</div>
-                  <div className="font-black text-xs" style={{ color: "#fca5a5" }}>
+                  <div className="font-black text-xs" style={{ color: "#b91c1c" }}>
                     ${fmt(stockCost)}
                   </div>
                 </div>

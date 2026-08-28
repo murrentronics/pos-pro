@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   UserPlus, X, ChevronDown, CheckCircle2,
-  ClipboardList, Trash2, FileDown, Loader2, Pencil, Share2,
+  ClipboardList, Trash2, FileDown, Loader2, Pencil, Share2, Printer,
 } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { downloadPdf } from "@/lib/download";
@@ -578,6 +578,185 @@ function BillModal({ account, ownerName, onClose }: {
   );
 }
 
+// ── Single-Transaction Receipt Modal ─────────────────────────────────────────
+function SingleReceiptModal({ tx, account, ownerName, onClose }: {
+  tx: CreditTx;
+  account: CreditAccount;
+  ownerName: string;
+  onClose: () => void;
+}) {
+  const { profile } = useAuth();
+  const [busy, setBusy] = useState<"print" | "download" | "share" | null>(null);
+  const [printed, setPrinted] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+  const isCharge = tx.type === "charge";
+  const safeName = account.full_name.replace(/\s+/g, "-").toLowerCase();
+  const dt = new Date(tx.created_at);
+  const dateTag = dt.toISOString().slice(0, 10);
+  const filename = `receipt-${safeName}-${dateTag}.pdf`;
+
+  // Build ReceiptData for this single transaction (thermal print)
+  const buildReceiptData = (): ReceiptData => {
+    const items: { name: string; qty: number; price: number }[] = [];
+    let subtotal = 0;
+    if (isCharge && Array.isArray(tx.items) && tx.items.length > 0) {
+      for (const it of tx.items as any[]) {
+        const qty = Number(it?.qty ?? 1);
+        const price = Number(it?.price ?? 0);
+        items.push({ name: it?.name || "Item", qty, price });
+        subtotal += qty * price;
+      }
+    } else {
+      const itemTitle = (tx.note ?? "").replace(/^\[CASH\]\s*/, "") || (isCharge ? "Charge" : "Payment");
+      items.push({ name: itemTitle, qty: 1, price: Number(tx.amount) });
+      subtotal = Number(tx.amount);
+    }
+    return {
+      storeName: ownerName || "Store",
+      locationName: "Main location",
+      orderNumber: isCharge ? "CHARGE" : "PAYMENT",
+      serverName: profile?.username || "Staff",
+      customerName: account.full_name,
+      items,
+      subtotal,
+      total: Number(tx.amount),
+      paid: isCharge ? 0 : Number(tx.amount),
+      change: 0,
+      payMode: isCharge ? "credit" : "cash",
+      date: dt.toLocaleString("en-US", {
+        month: "numeric", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true,
+      }),
+    };
+  };
+
+  const handlePrint = async () => {
+    setBusy("print");
+    try {
+      const res = await printReceipt(buildReceiptData());
+      if (res.printed) { toast.success("Sent to printer"); setPrinted(true); setTimeout(() => setPrinted(false), 5000); }
+      else if (res.error) toast.error(res.error);
+    } catch (e: any) { toast.error("Print failed: " + (e?.message ?? "unknown")); }
+    setBusy(null);
+  };
+
+  const handleDownload = async () => {
+    setBusy("download");
+    try {
+      const b64 = await buildSingleRecordPdf(tx, account, ownerName);
+      if (b64) {
+        await downloadPdf(filename, b64);
+        setDownloaded(true);
+        toast.success(Capacitor.isNativePlatform() ? "Saved to Documents" : "PDF downloaded");
+        setTimeout(() => setDownloaded(false), 5000);
+      }
+    } catch (e: any) {
+      if (!String(e?.message ?? "").includes("cancel")) toast.error("Download failed: " + (e?.message ?? "unknown"));
+    }
+    setBusy(null);
+  };
+
+  const handleShare = async () => {
+    setBusy("share");
+    try {
+      const b64 = await buildSingleRecordPdf(tx, account, ownerName);
+      if (!b64) { setBusy(null); return; }
+      if (Capacitor.isNativePlatform()) {
+        const { Filesystem, Directory } = await import("@capacitor/filesystem");
+        const { Share } = await import("@capacitor/share");
+        const base64Data = b64.replace(/^data:[^;]+;base64,/, "");
+        const writeResult = await Filesystem.writeFile({ path: filename, data: base64Data, directory: Directory.Cache });
+        await Share.share({
+          title: `Receipt — ${account.full_name}`,
+          text: `Hi ${account.full_name}, please find your receipt attached.`,
+          url: writeResult.uri,
+          dialogTitle: "Send Receipt",
+        });
+      } else {
+        await downloadPdf(filename, b64);
+        toast.success("Receipt saved");
+      }
+    } catch (e: any) {
+      if (!String(e?.message ?? "").includes("cancel")) toast.error("Share failed: " + (e?.message ?? "unknown"));
+    }
+    setBusy(null);
+    onClose();
+  };
+
+  const dateStr = dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const timeStr = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/75 backdrop-blur-sm"
+      onClick={onClose}>
+      <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
+        style={{ background: "var(--gradient-card)" }}
+        onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border/40">
+          <div className="text-left">
+            <h3 className="font-black text-lg leading-tight">{isCharge ? "Charge Receipt" : "Payment Receipt"}</h3>
+            <p className="text-xs text-muted-foreground font-semibold truncate max-w-[200px]">{account.full_name}</p>
+          </div>
+          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Summary */}
+          <div className="rounded-2xl p-4 border border-border/60 bg-muted/20 space-y-1">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-semibold text-muted-foreground">{isCharge ? "Amount Charged" : "Amount Paid"}</span>
+              <span className={`text-xl font-black ${isCharge ? "text-red-400" : "text-green-400"}`}>
+                {isCharge ? "+" : "-"}${Number(tx.amount).toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-muted-foreground">Balance Owed</span>
+              <span className="text-sm font-black text-amber-400">${Number(account.balance_owed).toFixed(2)}</span>
+            </div>
+            <div className="text-[10px] text-muted-foreground mt-1">{dateStr} · {timeStr}</div>
+          </div>
+
+          {/* Print + Download */}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={handlePrint}
+              disabled={!!busy}
+              className="h-20 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 text-white shadow-lg"
+              style={{ background: "var(--gradient-hero)" }}
+            >
+              {busy === "print" ? <Loader2 className="h-6 w-6 animate-spin" /> : printed ? <CheckCircle2 className="h-6 w-6" /> : <span className="text-xl">🖨️</span>}
+              <span className="text-xs font-black">{printed ? "Printed!" : "Print Receipt"}</span>
+            </button>
+            <button
+              onClick={handleDownload}
+              disabled={!!busy}
+              className="h-20 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 text-foreground border border-border/80 shadow-sm"
+              style={{ background: "rgba(255,255,255,0.06)" }}
+            >
+              {busy === "download" ? <Loader2 className="h-6 w-6 animate-spin text-primary" /> : downloaded ? <CheckCircle2 className="h-6 w-6 text-green-400" /> : <FileDown className="h-6 w-6 text-primary" />}
+              <span className="text-xs font-black">{downloaded ? "Downloaded!" : "Download PDF"}</span>
+            </button>
+          </div>
+
+          {/* WhatsApp Share */}
+          <button
+            onClick={handleShare}
+            disabled={!!busy}
+            className="w-full h-11 rounded-2xl font-black text-xs flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 border border-green-500/40"
+            style={{ background: "rgba(37,211,102,0.12)", color: "#25D366" }}
+          >
+            {busy === "share" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+            Share via WhatsApp
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function CreditPage() {
   const { profile } = useAuth();
@@ -702,7 +881,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteTx, setConfirmDeleteTx] = useState<CreditTx | null>(null);
   const [billAccount, setBillAccount] = useState<CreditAccount | null>(null);
-  const [txGenerating, setTxGenerating] = useState<string | null>(null);
+  const [receiptTx, setReceiptTx] = useState<{ tx: CreditTx; account: CreditAccount } | null>(null);
   // Inline payment
   const [payAmount, setPayAmount]   = useState("");
   const [padOpen, setPadOpen]       = useState(false);
@@ -750,25 +929,6 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
     setPayAmount("");
     loadTxs(account.id);
     onRefresh();
-  };
-
-  const handleSingleRecordPdf = async (tx: CreditTx, account: CreditAccount) => {
-    setTxGenerating(tx.id);
-    try {
-      const b64 = await buildSingleRecordPdf(tx, account, ownerName);
-      if (b64) {
-        const safeName = account.full_name.replace(/\s+/g, "-").toLowerCase();
-        const dt = new Date(tx.created_at);
-        const dateTag = dt.toISOString().slice(0, 10);
-        await downloadPdf(`receipt-${safeName}-${dateTag}.pdf`, b64);
-        toast.success("Receipt downloaded");
-      }
-    } catch (e: any) {
-      if (!String(e?.message ?? "").includes("cancel")) {
-        toast.error("Failed: " + (e?.message ?? "unknown"));
-      }
-    }
-    setTxGenerating(null);
   };
 
   const deleteCharge = async (tx: CreditTx) => {
@@ -986,16 +1146,12 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
                         </span>
                         {/* Per-record PDF button */}
                         <button
-                          onClick={() => handleSingleRecordPdf(tx, a)}
-                          disabled={txGenerating === tx.id}
-                          className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-primary/10 transition disabled:opacity-40"
+                          onClick={() => setReceiptTx({ tx, account: a })}
+                          className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-primary/10 transition"
                           style={{ color: "var(--primary)" }}
-                          title="Download receipt"
+                          title="View receipt"
                         >
-                          {txGenerating === tx.id
-                            ? <div className="h-3.5 w-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                            : <FileDown className="h-3.5 w-3.5" />
-                          }
+                          <Printer className="h-3.5 w-3.5" />
                         </button>
                         {canDelete && (
                           <button
@@ -1057,6 +1213,10 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
       {billAccount && (
         <BillModal account={billAccount} ownerName={ownerName} onClose={() => setBillAccount(null)} />
       )}
+      {/* Single receipt modal */}
+      {receiptTx && (
+        <SingleReceiptModal tx={receiptTx.tx} account={receiptTx.account} ownerName={ownerName} onClose={() => setReceiptTx(null)} />
+      )}
     </div>
   );
 }
@@ -1071,7 +1231,7 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
   const [confirmDelete, setConfirmDelete] = useState<CreditAccount | null>(null);
   const [deleting, setDeleting]   = useState(false);
   const [billAccount, setBillAccount] = useState<CreditAccount | null>(null);
-  const [txGenerating, setTxGenerating] = useState<string | null>(null);
+  const [receiptTx, setReceiptTx] = useState<{ tx: CreditTx; account: CreditAccount } | null>(null);
 
   const toggleExpand = async (accountId: string) => {
     if (expanded === accountId) { setExpanded(null); setTxs([]); return; }
@@ -1086,23 +1246,6 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
     setTxLoading(false);
   };
 
-  const handleSingleRecordPdf = async (tx: CreditTx, account: CreditAccount) => {
-    setTxGenerating(tx.id);
-    try {
-      const b64 = await buildSingleRecordPdf(tx, account, ownerName);
-      if (b64) {
-        const safeName = account.full_name.replace(/\s+/g, "-").toLowerCase();
-        const dateTag = new Date(tx.created_at).toISOString().slice(0, 10);
-        await downloadPdf(`receipt-${safeName}-${dateTag}.pdf`, b64);
-        toast.success("Receipt downloaded");
-      }
-    } catch (e: any) {
-      if (!String(e?.message ?? "").includes("cancel")) {
-        toast.error("Failed: " + (e?.message ?? "unknown"));
-      }
-    }
-    setTxGenerating(null);
-  };
 
   const deleteAccount = async (account: CreditAccount) => {
     setDeleting(true);
@@ -1214,18 +1357,14 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
                         <span className={`text-sm font-black ${isCharge ? "text-red-400" : "text-green-400"}`}>
                           {isCharge ? "+" : "-"}${Number(tx.amount).toFixed(2)}
                         </span>
-                        {/* Per-record PDF button */}
+                        {/* Per-record receipt button */}
                         <button
-                          onClick={() => handleSingleRecordPdf(tx, a)}
-                          disabled={txGenerating === tx.id}
-                          className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-primary/10 transition disabled:opacity-40"
+                          onClick={() => setReceiptTx({ tx, account: a })}
+                          className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-primary/10 transition"
                           style={{ color: "var(--primary)" }}
-                          title="Download receipt"
+                          title="View receipt"
                         >
-                          {txGenerating === tx.id
-                            ? <div className="h-3.5 w-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                            : <FileDown className="h-3.5 w-3.5" />
-                          }
+                          <Printer className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
@@ -1271,6 +1410,10 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
       {/* Bill modal */}
       {billAccount && (
         <BillModal account={billAccount} ownerName={ownerName} onClose={() => setBillAccount(null)} />
+      )}
+      {/* Single receipt modal */}
+      {receiptTx && (
+        <SingleReceiptModal tx={receiptTx.tx} account={receiptTx.account} ownerName={ownerName} onClose={() => setReceiptTx(null)} />
       )}
     </div>
   );

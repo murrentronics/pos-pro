@@ -455,7 +455,7 @@ export default function BillingPage() {
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-sm text-foreground">{plan?.name ?? "Plan"}</p>
                         <p className="font-mono text-xs text-muted-foreground mt-0.5">{p.reference_number}</p>
-                        {p.notes && <p className="text-xs text-yellow-500 mt-0.5">{p.notes}</p>}
+                        {p.notes && <p className="text-xs font-semibold mt-0.5" style={{ color: "#1e3a5f" }}>{p.notes}</p>}
                         <p className="text-xs text-muted-foreground mt-0.5">{new Date(p.created_at).toLocaleDateString("en-GB")}</p>
                       </div>
                       <div className="text-right shrink-0">

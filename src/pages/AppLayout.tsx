@@ -376,11 +376,6 @@ export default function AppLayout() {
           >
             <div className="px-5 py-4 border-b border-border/50">
               <span className="text-sm font-semibold text-muted-foreground truncate block">{profile.username}</span>
-              {isChainOwner && activeBar && <span className="text-xs font-black text-primary truncate block mt-0.5">📍 {activeBar.bar_name}</span>}
-              {isChainOwner && !activeBar && <span className="text-xs font-black text-amber-400 truncate block mt-0.5">{t("no_bar_selected", "⚠ No store selected")}</span>}
-              {!isChainOwner && isMultiBarOwner && activeBar && <span className="text-xs font-black text-primary truncate block mt-0.5">📍 {activeBar.bar_name}</span>}
-              {!isChainOwner && isMultiBarOwner && !activeBar && <span className="text-xs font-black text-amber-400 truncate block mt-0.5">{t("no_bar_selected", "⚠ No store selected")}</span>}
-
             </div>
 
             {/* Pending users — only Billing + Logout */}
