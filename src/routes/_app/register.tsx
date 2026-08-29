@@ -2331,30 +2331,21 @@ export default function RegisterPage() {
                 <p className="text-center text-slate-400 text-xs py-8">Cart is empty</p>
               ) : (
                 cart.map((item) => (
-                  <div key={item.id} className="flex items-start gap-2 p-2 rounded-xl border border-sky-200 bg-white/60">
-                    <div className="h-10 w-10 rounded-lg bg-sky-100 flex items-center justify-center shrink-0 overflow-hidden mt-0.5">
-                      {item.image_url ? (
-                        <img src={item.image_url} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <span className="text-sm">📷</span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0 flex flex-col gap-1">
-                      <p className="text-xs font-bold truncate text-slate-800">{item.name}</p>
-                      <div className="flex items-center justify-between gap-1">
-                        <p className="text-[11px] font-black text-slate-700 shrink-0">${(Number(item.price) * item.qty).toFixed(2)}</p>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button onClick={() => dec(item.id)} className="h-7 w-7 rounded-md bg-sky-200 flex items-center justify-center text-slate-700 hover:bg-sky-300 transition">
-                            <Minus className="h-3.5 w-3.5" />
-                          </button>
-                          <span className="text-xs font-black w-5 text-center text-slate-800">{item.qty}</span>
-                          <button onClick={() => addToCart(item)} className="h-7 w-7 rounded-md flex items-center justify-center transition active:scale-95" style={{ background: "var(--gradient-hero)" }}>
-                            <Plus className="h-3.5 w-3.5 text-black" />
-                          </button>
-                          <button onClick={() => removeItem(item.id)} className="h-7 w-7 rounded-md bg-red-100 flex items-center justify-center text-red-600 hover:bg-red-200 transition active:scale-95 ml-0.5">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
+                  <div key={item.id} className="p-2 rounded-xl border border-sky-200 bg-white/60">
+                    <p className="text-xs font-bold truncate text-slate-800 mb-1.5">{item.name}</p>
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="text-[11px] font-black text-slate-700 shrink-0">${(Number(item.price) * item.qty).toFixed(2)}</p>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button onClick={() => dec(item.id)} className="h-6 w-6 rounded-md bg-sky-200 flex items-center justify-center text-slate-700 hover:bg-sky-300 transition">
+                          <Minus className="h-3 w-3" />
+                        </button>
+                        <span className="text-xs font-black w-5 text-center text-slate-800">{item.qty}</span>
+                        <button onClick={() => addToCart(item)} className="h-6 w-6 rounded-md flex items-center justify-center transition active:scale-95" style={{ background: "var(--gradient-hero)" }}>
+                          <Plus className="h-3 w-3 text-black" />
+                        </button>
+                        <button onClick={() => removeItem(item.id)} className="h-6 w-6 rounded-md bg-red-100 flex items-center justify-center text-red-600 hover:bg-red-200 transition active:scale-95 ml-0.5">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
                       </div>
                     </div>
                   </div>
