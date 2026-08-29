@@ -1821,8 +1821,8 @@ export default function RegisterPage() {
                         }}
                         className={`h-12 rounded-xl font-black text-lg transition active:scale-95 ${
                           k === "⌫"
-                            ? "bg-destructive/20 text-destructive hover:bg-destructive/30"
-                            : "bg-muted hover:bg-muted/70 text-foreground"
+                            ? "bg-red-600/40 text-red-200 hover:bg-red-600/55"
+                            : "bg-slate-600/70 hover:bg-slate-500/80 text-white"
                         }`}
                       >
                         {k}
@@ -3103,7 +3103,7 @@ function CashOverlay({
                                 setDiscountVal((v) => (v === "0" ? k : v + k));
                               }
                             }}
-                            className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
+                            className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-red-600/40 text-red-200 hover:bg-red-600/55" : "bg-slate-600/70 hover:bg-slate-500/80 text-white"}`}
                           >
                             {k}
                           </button>
@@ -3211,24 +3211,25 @@ function CashOverlay({
                 ) : (
                   <>
                     <div
-                      className="rounded-xl border border-green-500/30 px-4 py-3 text-center"
-                      style={{ background: "oklch(0.22 0.06 145 / 0.4)" }}
+                      className="rounded-xl border border-green-500/50 px-4 py-3 text-center"
+                      style={{ background: "oklch(0.18 0.07 145 / 0.85)" }}
                     >
-                      <div className="text-xs font-semibold text-green-300/70 uppercase tracking-widest mb-1">
+                      <div className="text-xs font-semibold text-green-300 uppercase tracking-widest mb-1">
                         Amount Received
                       </div>
-                      <div className="text-3xl font-black text-green-100">${paid || "0.00"}</div>
+                      <div className="text-3xl font-black text-white">${paid || "0.00"}</div>
                     </div>
                     <div
-                      className={`rounded-xl px-4 py-4 text-center border transition-all ${Number(paid) === 0 ? "opacity-40 bg-green-500/10 border-green-500/20" : enough ? "bg-green-500/25 border-green-500/40" : "bg-red-500/25 border-red-500/40"}`}
+                      className={`rounded-xl px-4 py-4 text-center border transition-all ${Number(paid) === 0 ? "opacity-40 bg-green-500/15 border-green-500/30" : enough ? "border-green-500/60" : "border-red-500/60"}`}
+                      style={{ background: Number(paid) !== 0 ? (enough ? "oklch(0.18 0.08 145 / 0.8)" : "oklch(0.18 0.08 25 / 0.8)") : undefined }}
                     >
                       <div
-                        className={`text-xs font-semibold uppercase tracking-widest mb-1 ${enough ? "text-green-300/70" : "text-red-300/70"}`}
+                        className={`text-xs font-semibold uppercase tracking-widest mb-1 ${enough ? "text-green-300" : "text-red-300"}`}
                       >
                         {enough ? "Change to Give" : "Short by"}
                       </div>
                       <div
-                        className={`text-5xl font-black ${enough ? "text-green-300" : "text-red-400"}`}
+                        className={`text-5xl font-black ${enough ? "text-green-200" : "text-red-300"}`}
                       >
                         $
                         {Number(paid) === 0
@@ -3251,7 +3252,7 @@ function CashOverlay({
                               setPaid((v) => (v === "0" ? k : v + k));
                             }
                           }}
-                          className={`h-14 rounded-2xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive hover:bg-destructive/30" : "bg-muted hover:bg-muted/70 text-foreground"}`}
+                          className={`h-14 rounded-2xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-red-600/40 text-red-200 hover:bg-red-600/55" : "bg-slate-600/70 hover:bg-slate-500/80 text-white"}`}
                         >
                           {k}
                         </button>
@@ -3873,24 +3874,25 @@ function CashCustomerOverlay({
                 </div>
               </div>
               <div
-                className="rounded-xl border border-green-500/30 px-4 py-3 text-center"
-                style={{ background: "oklch(0.22 0.06 145 / 0.4)" }}
+                className="rounded-xl border border-green-500/50 px-4 py-3 text-center"
+                style={{ background: "oklch(0.18 0.07 145 / 0.85)" }}
               >
-                <div className="text-xs font-semibold text-green-300/70 uppercase tracking-widest mb-1">
+                <div className="text-xs font-semibold text-green-300 uppercase tracking-widest mb-1">
                   Amount Received
                 </div>
-                <div className="text-3xl font-black text-green-100">${paid || "0.00"}</div>
+                <div className="text-3xl font-black text-white">${paid || "0.00"}</div>
               </div>
               <div
-                className={`rounded-xl px-4 py-4 text-center border transition-all ${Number(paid) === 0 ? "opacity-40 bg-green-500/10 border-green-500/20" : enough ? "bg-green-500/25 border-green-500/40" : "bg-red-500/25 border-red-500/40"}`}
+                className={`rounded-xl px-4 py-4 text-center border transition-all ${Number(paid) === 0 ? "opacity-40 bg-green-500/15 border-green-500/30" : enough ? "border-green-500/60" : "border-red-500/60"}`}
+                style={{ background: Number(paid) !== 0 ? (enough ? "oklch(0.18 0.08 145 / 0.8)" : "oklch(0.18 0.08 25 / 0.8)") : undefined }}
               >
                 <div
-                  className={`text-xs font-semibold uppercase tracking-widest mb-1 ${enough ? "text-green-300/70" : "text-red-300/70"}`}
+                  className={`text-xs font-semibold uppercase tracking-widest mb-1 ${enough ? "text-green-300" : "text-red-300"}`}
                 >
                   {enough ? "Change to Give" : "Short by"}
                 </div>
                 <div
-                  className={`text-5xl font-black ${enough ? "text-green-300" : "text-red-400"}`}
+                  className={`text-5xl font-black ${enough ? "text-green-200" : "text-red-300"}`}
                 >
                   $
                   {Number(paid) === 0
@@ -3913,7 +3915,7 @@ function CashCustomerOverlay({
                         setPaid((v) => (v === "0" ? k : v + k));
                       }
                     }}
-                    className={`h-14 rounded-2xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive hover:bg-destructive/30" : "bg-muted hover:bg-muted/70 text-foreground"}`}
+                    className={`h-14 rounded-2xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-red-600/40 text-red-200 hover:bg-red-600/55" : "bg-slate-600/70 hover:bg-slate-500/80 text-white"}`}
                   >
                     {k}
                   </button>
