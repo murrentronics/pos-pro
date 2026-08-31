@@ -2749,6 +2749,53 @@ function CashOverlay({
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(false);
 
+  // Inline create-customer form in right panel
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createContact, setCreateContact] = useState("");
+  const [createIdType, setCreateIdType] = useState<"drivers_permit" | "national_id">("national_id");
+  const [createIdNumber, setCreateIdNumber] = useState("");
+  const [createActiveField, setCreateActiveField] = useState<null | "name" | "idNumber" | "contact">(null);
+  const [createBusy, setCreateBusy] = useState(false);
+  const toggleCreate = (f: "name" | "idNumber" | "contact") =>
+    setCreateActiveField((cur) => (cur === f ? null : f));
+
+  const createCustomer = async () => {
+    if (!createName.trim() || !ownerId || !profile) return;
+    if (!isOnline) {
+      toast.error("No internet connection — connect to create a new customer.");
+      return;
+    }
+    setCreateBusy(true);
+    const { data: acc, error } = await supabase
+      .from("credit_accounts")
+      .insert({
+        owner_id: ownerId,
+        full_name: createName.trim(),
+        contact_number: createContact.trim() ? "868-" + createContact.trim() : null,
+        id_number: createIdNumber.trim()
+          ? `${createIdType === "drivers_permit" ? "DP" : "NID"}: ${createIdNumber.trim()}`
+          : null,
+        status: "closed",
+      })
+      .select()
+      .single();
+    setCreateBusy(false);
+    if (error || !acc) {
+      toast.error(error?.message ?? "Failed to create customer");
+      return;
+    }
+    const newCustomer = acc as CreditAccount;
+    setCustomers((prev) => [...prev, newCustomer].sort((a, b) => a.full_name.localeCompare(b.full_name)));
+    setSelectedCustomer(newCustomer);
+    setCreateName("");
+    setCreateContact("");
+    setCreateIdNumber("");
+    setCreateActiveField(null);
+    setShowCreateCustomer(false);
+    toast.success(`Customer "${newCustomer.full_name}" created`);
+  };
+
   useEffect(() => {
     if (!ownerId) return;
     setLoadingCustomers(true);
@@ -3358,49 +3405,165 @@ function CashOverlay({
             </div>
             {/* Customer list — visible when Cash or Credit is selected */}
             {payMode && (
-              <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2 min-h-0 pt-1">
-                {loadingCustomers ? (
-                  <div className="flex justify-center py-6">
-                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  </div>
-                ) : customers.length === 0 ? (
-                  <p className="text-xs text-white/30 text-center py-6">No customers yet</p>
-                ) : (
-                  customers.map((c) => (
+              <div className="flex-1 overflow-y-auto px-4 pb-2 space-y-2 min-h-0 pt-1">
+                {showCreateCustomer ? (
+                  /* ── Inline create customer form ── */
+                  <div className="space-y-3 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-white/80 uppercase tracking-widest">New Customer</span>
+                      <button
+                        type="button"
+                        onClick={() => { setShowCreateCustomer(false); setCreateActiveField(null); }}
+                        className="text-xs text-white/40 hover:text-white/70 transition"
+                      >
+                        ✕ Cancel
+                      </button>
+                    </div>
+                    {/* Full Name */}
+                    <div>
+                      <p className="text-xs text-white/50 mb-1">Full Name *</p>
+                      <button
+                        type="button"
+                        onClick={() => toggleCreate("name")}
+                        className="w-full h-10 rounded-xl border border-white/20 bg-white/5 px-3 text-left"
+                      >
+                        <span className={`text-sm font-black ${createName ? "text-white" : "text-white/30"}`}>
+                          {createName || "e.g. John Smith"}
+                        </span>
+                      </button>
+                      {createActiveField === "name" && (
+                        <CreditAlphaKeyboard
+                          value={createName}
+                          onChange={setCreateName}
+                          onDone={() => setCreateActiveField(null)}
+                        />
+                      )}
+                    </div>
+                    {/* Contact Number */}
+                    <div>
+                      <p className="text-xs text-white/50 mb-1">Contact Number</p>
+                      <div className="flex items-center">
+                        <span className="h-10 px-3 flex items-center rounded-l-xl border border-r-0 border-white/20 bg-white/10 text-xs font-bold text-white/60 select-none">
+                          868
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => toggleCreate("contact")}
+                          className="flex-1 h-10 rounded-r-xl border border-white/20 bg-white/5 px-3 text-left"
+                        >
+                          <span className={`text-sm font-black ${createContact ? "text-white" : "text-white/30"}`}>
+                            {createContact || "XXX-XXXX"}
+                          </span>
+                        </button>
+                      </div>
+                      {createActiveField === "contact" && (
+                        <CreditContactPad
+                          value={createContact}
+                          onChange={setCreateContact}
+                          onDone={() => setCreateActiveField(null)}
+                        />
+                      )}
+                    </div>
+                    {/* ID Type + Number */}
+                    <div>
+                      <p className="text-xs text-white/50 mb-1">ID Type</p>
+                      <select
+                        value={createIdType}
+                        onChange={(e) => setCreateIdType(e.target.value as "drivers_permit" | "national_id")}
+                        className="w-full h-10 rounded-xl border border-white/20 bg-white/5 px-3 text-sm font-semibold text-white"
+                      >
+                        <option value="drivers_permit">Driver's Permit</option>
+                        <option value="national_id">National ID</option>
+                      </select>
+                    </div>
+                    <div>
+                      <p className="text-xs text-white/50 mb-1">ID Number</p>
+                      <button
+                        type="button"
+                        onClick={() => toggleCreate("idNumber")}
+                        className="w-full h-10 rounded-xl border border-white/20 bg-white/5 px-3 text-left"
+                      >
+                        <span className={`text-sm font-black ${createIdNumber ? "text-white" : "text-white/30"}`}>
+                          {createIdNumber || "e.g. 00000000"}
+                        </span>
+                      </button>
+                      {createActiveField === "idNumber" && (
+                        <CreditNumPad
+                          value={createIdNumber}
+                          onChange={setCreateIdNumber}
+                          maxLen={20}
+                          onDone={() => setCreateActiveField(null)}
+                        />
+                      )}
+                    </div>
                     <button
-                      key={c.id}
-                      onClick={() => setSelectedCustomer(selectedCustomer?.id === c.id ? null : c)}
-                      className="w-full flex items-center justify-between px-4 py-4 rounded-2xl text-left transition active:scale-[0.98] min-h-[60px]"
-                      style={
-                        selectedCustomer?.id === c.id
-                          ? {
-                              background: "var(--gradient-hero)",
-                              color: "var(--primary-foreground)",
-                            }
-                          : { background: "oklch(0.22 0.02 60)", color: "rgba(255,255,255,0.85)" }
-                      }
+                      type="button"
+                      disabled={createBusy || !createName.trim()}
+                      onClick={createCustomer}
+                      className="w-full h-11 rounded-2xl font-black text-sm text-primary-foreground transition active:scale-95 disabled:opacity-40 flex items-center justify-center gap-2"
+                      style={{ background: "var(--gradient-hero)" }}
                     >
-                      <span
-                        className={`text-sm font-black leading-tight flex-1 pr-3 ${selectedCustomer?.id === c.id ? "text-black" : ""}`}
-                      >
-                        {c.full_name}
-                      </span>
-                      <span
-                        className={`text-xs font-black shrink-0 ${
-                          selectedCustomer?.id === c.id
-                            ? "text-black"
-                            : Number(c.balance_owed) > 0
-                              ? "text-red-400"
-                              : "text-amber-700"
-                        }`}
-                      >
-                        {Number(c.balance_owed) > 0
-                          ? `-$${Number(c.balance_owed).toFixed(2)}`
-                          : "$0.00"}
-                      </span>
+                      {createBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "+ Create Customer"}
                     </button>
-                  ))
+                  </div>
+                ) : (
+                  /* ── Customer list ── */
+                  loadingCustomers ? (
+                    <div className="flex justify-center py-6">
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    </div>
+                  ) : customers.length === 0 ? (
+                    <p className="text-xs text-white/30 text-center py-6">No customers yet</p>
+                  ) : (
+                    customers.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => setSelectedCustomer(selectedCustomer?.id === c.id ? null : c)}
+                        className="w-full flex items-center justify-between px-4 py-4 rounded-2xl text-left transition active:scale-[0.98] min-h-[60px]"
+                        style={
+                          selectedCustomer?.id === c.id
+                            ? {
+                                background: "var(--gradient-hero)",
+                                color: "var(--primary-foreground)",
+                              }
+                            : { background: "oklch(0.22 0.02 60)", color: "rgba(255,255,255,0.85)" }
+                        }
+                      >
+                        <span
+                          className={`text-sm font-black leading-tight flex-1 pr-3 ${selectedCustomer?.id === c.id ? "text-black" : ""}`}
+                        >
+                          {c.full_name}
+                        </span>
+                        <span
+                          className={`text-xs font-black shrink-0 ${
+                            selectedCustomer?.id === c.id
+                              ? "text-black"
+                              : Number(c.balance_owed) > 0
+                                ? "text-red-400"
+                                : "text-amber-700"
+                          }`}
+                        >
+                          {Number(c.balance_owed) > 0
+                            ? `-$${Number(c.balance_owed).toFixed(2)}`
+                            : "$0.00"}
+                        </span>
+                      </button>
+                    ))
+                  )
                 )}
+              </div>
+            )}
+            {/* Create Customer footer button — shown when a pay mode is active and not already creating */}
+            {payMode && !showCreateCustomer && (
+              <div className="shrink-0 px-4 pb-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowCreateCustomer(true); setCreateActiveField(null); }}
+                  className="w-full h-10 rounded-2xl font-black text-sm border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition active:scale-95 flex items-center justify-center gap-1.5"
+                  style={{ background: "oklch(0.22 0.02 60)" }}
+                >
+                  <span className="text-base leading-none">＋</span> New Customer
+                </button>
               </div>
             )}
             {!payMode && (
