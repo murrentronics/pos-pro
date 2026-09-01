@@ -3422,15 +3422,15 @@ function CashOverlay({
                     {/* Full Name */}
                     <div>
                       <p className="text-xs text-white/50 mb-1">Full Name *</p>
-                      <button
-                        type="button"
-                        onClick={() => toggleCreate("name")}
-                        className="w-full h-10 rounded-xl border border-white/20 bg-white/5 px-3 text-left"
-                      >
-                        <span className={`text-sm font-black ${createName ? "text-white" : "text-white/30"}`}>
-                          {createName || "e.g. John Smith"}
-                        </span>
-                      </button>
+                      <input
+                        type="text"
+                        inputMode="none"
+                        value={createName}
+                        onChange={(e) => setCreateName(e.target.value)}
+                        onFocus={() => setCreateActiveField("name")}
+                        placeholder="e.g. John Smith"
+                        className="w-full h-10 rounded-xl border border-white/20 bg-white/5 px-3 text-sm font-black text-white placeholder:text-white/30 outline-none focus:border-white/50"
+                      />
                       {createActiveField === "name" && (
                         <CreditAlphaKeyboard
                           value={createName}
@@ -3446,15 +3446,16 @@ function CashOverlay({
                         <span className="h-10 px-3 flex items-center rounded-l-xl border border-r-0 border-white/20 bg-white/10 text-xs font-bold text-white/60 select-none">
                           868
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => toggleCreate("contact")}
-                          className="flex-1 h-10 rounded-r-xl border border-white/20 bg-white/5 px-3 text-left"
-                        >
-                          <span className={`text-sm font-black ${createContact ? "text-white" : "text-white/30"}`}>
-                            {createContact || "XXX-XXXX"}
-                          </span>
-                        </button>
+                        <input
+                          type="text"
+                          inputMode="none"
+                          value={createContact}
+                          onChange={(e) => setCreateContact(e.target.value.replace(/[^0-9\-]/g, ""))}
+                          onFocus={() => setCreateActiveField("contact")}
+                          placeholder="XXX-XXXX"
+                          maxLength={8}
+                          className="flex-1 h-10 rounded-r-xl border border-white/20 bg-white/5 px-3 text-sm font-black text-white placeholder:text-white/30 outline-none focus:border-white/50"
+                        />
                       </div>
                       {createActiveField === "contact" && (
                         <CreditContactPad
@@ -3478,15 +3479,15 @@ function CashOverlay({
                     </div>
                     <div>
                       <p className="text-xs text-white/50 mb-1">ID Number</p>
-                      <button
-                        type="button"
-                        onClick={() => toggleCreate("idNumber")}
-                        className="w-full h-10 rounded-xl border border-white/20 bg-white/5 px-3 text-left"
-                      >
-                        <span className={`text-sm font-black ${createIdNumber ? "text-white" : "text-white/30"}`}>
-                          {createIdNumber || "e.g. 00000000"}
-                        </span>
-                      </button>
+                      <input
+                        type="text"
+                        inputMode="none"
+                        value={createIdNumber}
+                        onChange={(e) => setCreateIdNumber(e.target.value.replace(/[^0-9]/g, "").slice(0, 20))}
+                        onFocus={() => setCreateActiveField("idNumber")}
+                        placeholder="e.g. 00000000"
+                        className="w-full h-10 rounded-xl border border-white/20 bg-white/5 px-3 text-sm font-black text-white placeholder:text-white/30 outline-none focus:border-white/50"
+                      />
                       {createActiveField === "idNumber" && (
                         <CreditNumPad
                           value={createIdNumber}

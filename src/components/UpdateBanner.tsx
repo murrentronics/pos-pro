@@ -2,10 +2,15 @@
  * UpdateBanner
  *
  * Shows a full-screen modal when a new APK version is available on GitHub.
- * Tapping "Update Now" opens the download page via the Capacitor Browser
- * plugin (falls back to window.open).
  *
- * The user can dismiss it and continue using the current version.
+ * On native Android:
+ *   1. Opens the direct APK URL via Capacitor Browser — Android intercepts
+ *      the .apk MIME type and hands it to the system DownloadManager, which
+ *      shows a progress notification and an "Open" tap when done.
+ *   2. After a short delay, opens download.html in a second Browser tab so
+ *      the install instructions are visible while the download runs.
+ *
+ * On web: opens the download page in a new tab as before.
  */
 
 import { useState } from "react";
@@ -21,24 +26,50 @@ interface Props {
 
 export function UpdateBanner({ update, onDismiss }: Props) {
   const [downloading, setDownloading] = useState(false);
+  const [started, setStarted] = useState(false);
 
-  const DOWNLOAD_PAGE = "https://pos-pro.pages.dev";
+  const DOWNLOAD_PAGE = "https://pos-pro.pages.dev/download.html";
 
   const handleUpdate = async () => {
+    if (downloading) return;
     setDownloading(true);
+
     try {
       if (Capacitor.isNativePlatform()) {
         const { Browser } = await import("@capacitor/browser");
+
+        // Step 1: Open the direct APK URL.
+        // Android intercepts .apk downloads and routes them through the
+        // system DownloadManager — shows a status-bar progress notification
+        // and an "Open / Install" action when the download finishes.
+        await Browser.open({
+          url: update.apkUrl,
+          presentationStyle: "fullscreen",
+          toolbarColor: "#000d1a",
+        });
+
+        setStarted(true);
+
+        // Step 2: After a brief moment open the download/install guide page
+        // so the user can read the install steps while the APK downloads.
+        await new Promise((r) => setTimeout(r, 1800));
         await Browser.open({
           url: DOWNLOAD_PAGE,
           presentationStyle: "fullscreen",
           toolbarColor: "#000d1a",
         });
       } else {
-        window.open(DOWNLOAD_PAGE, "_blank");
+        // Web fallback — direct APK link triggers a browser download
+        window.open(update.apkUrl, "_blank");
       }
     } catch {
-      window.open(DOWNLOAD_PAGE, "_blank");
+      // If anything fails fall back to the download page
+      try {
+        const { Browser } = await import("@capacitor/browser");
+        await Browser.open({ url: DOWNLOAD_PAGE, presentationStyle: "fullscreen", toolbarColor: "#000d1a" });
+      } catch {
+        window.open(DOWNLOAD_PAGE, "_blank");
+      }
     } finally {
       setDownloading(false);
     }
@@ -90,6 +121,15 @@ export function UpdateBanner({ update, onDismiss }: Props) {
             </div>
           )}
 
+          {/* Status hint shown after download has kicked off */}
+          {started && (
+            <div className="rounded-xl px-4 py-3 text-sm text-green-300 font-semibold flex items-center gap-2"
+              style={{ background: "oklch(0.18 0.08 145 / 0.7)", border: "1px solid oklch(0.4 0.12 145 / 0.5)" }}>
+              <Download className="h-4 w-4 shrink-0" />
+              Download started — check your notifications bar
+            </div>
+          )}
+
           <div className="space-y-2 pt-1">
             <Button
               className="w-full h-12 text-base font-black gap-2"
@@ -98,7 +138,7 @@ export function UpdateBanner({ update, onDismiss }: Props) {
               disabled={downloading}
             >
               <Download className="h-5 w-5" />
-              {downloading ? "Opening download…" : "Update Now"}
+              {downloading ? "Starting download…" : started ? "Open again" : "Update Now"}
             </Button>
             <Button
               variant="ghost"
