@@ -1252,6 +1252,15 @@ export default function RegisterPage() {
     }
   };
 
+  const handleOpenDrawer = async () => {
+    setOpeningDrawer(true);
+    try {
+      await openCashDrawer();
+    } finally {
+      setOpeningDrawer(false);
+    }
+  };
+
   const [products, setProducts] = useState<Product[]>([]);
   const [category, setCategory] = useState<string>("__all__");
 
@@ -1413,6 +1422,7 @@ export default function RegisterPage() {
   const [lastSale, setLastSale] = useState<ReceiptData | null>(null);
   const [printingReceipt, setPrintingReceipt] = useState(false);
   const [printerResult, setPrinterResult] = useState<PrintResult | null>(null);
+  const [openingDrawer, setOpeningDrawer] = useState(false);
 
   // Persist cart to localStorage whenever it changes
   useEffect(() => {
@@ -2614,30 +2624,40 @@ export default function RegisterPage() {
             </div>
 
             {/* Actions */}
-            <div className="px-6 pb-5 pt-2 flex gap-2 shrink-0">
+            <div className="px-6 pb-5 pt-2 flex flex-col gap-2 shrink-0">
+              {/* Row 1 — Open Drawer */}
+              <button
+                onClick={handleOpenDrawer}
+                disabled={openingDrawer}
+                className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 border border-border hover:bg-muted/30 text-foreground/80"
+              >
+                {openingDrawer ? <Loader2 className="h-4 w-4 animate-spin" /> : "🗃️ Open Drawer"}
+              </button>
+
+              {/* Row 2 — Print + Done (or just Done after print result) */}
               {!printerResult ? (
-                <>
+                <div className="flex gap-2">
                   <button
                     onClick={handlePrintAndDone}
                     disabled={printingReceipt}
-                    className="flex-1 h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
+                    className="flex-1 h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
                     style={{ background: "var(--gradient-hero)" }}
                   >
-                    {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : "🖨️ Print & Done"}
+                    {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : "🖨️ Print"}
                   </button>
                   <button
                     onClick={handleSaleDone}
-                    className="flex-1 h-14 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95 text-foreground/80"
+                    className="flex-1 h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95 text-foreground/80"
                   >
                     Done
                   </button>
-                </>
+                </div>
               ) : (
                 <button
                   onClick={handleSaleDone}
                   className="w-full h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95"
                 >
-                  Close
+                  Done
                 </button>
               )}
             </div>
@@ -3323,7 +3343,6 @@ function CashOverlay({
                   className="flex-1 h-12 font-black text-base"
                   disabled={(payMode === "credit" ? false : !enough) || busy}
                   onClick={() => {
-                    if (payMode !== "credit") void openCashDrawer();
                     submit();
                   }}
                   style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}

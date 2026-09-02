@@ -1,6 +1,6 @@
 ﻿import { createFileRoute } from "@tanstack/react-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, ImagePlus, Plus, Trash2, Loader2, X, ChevronLeft, Pencil, ListChecks, CheckCircle2 } from "lucide-react";
+import { Camera, ImagePlus, Plus, Trash2, Loader2, X, ChevronLeft, Pencil, ListChecks, CheckCircle2, Search, LayoutGrid, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { useTranslation } from "@/lib/i18n";
@@ -234,38 +234,74 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
   unit?: string;
   onClose: () => void;
   onBack?: () => void;
-  onSaved: (patch: Partial<Pick<Product, "stock_qty" | "stock_qty_undo" | "stock_qty_undo_saved" | "stock_last_expense_id">>) => void;
+  onSaved: (patch: Partial<Pick<Product, "stock_qty" | "stock_qty_undo" | "stock_qty_undo_saved" | "stock_last_expense_id" | "cost_price">>) => void;
 }) {
-  const [input, setInput]     = useState("");
+  // counts[i] = how many times button i has been tapped
+  const [counts, setCounts]   = useState([0, 0, 0, 0, 0, 0]);
+  const [totalCost, setTotalCost] = useState("");
   const [busy, setBusy]       = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
   const confirmDialog = useConfirm();
 
-  const addAmount = parseInt(input, 10) || 0;
+  const addAmount = STOCK_BTNS.reduce((s, b, i) => s + b.qty * counts[i], 0);
   const newTotal  = currentQty + addAmount;
   const unitLabel = unit && unit !== "each" ? unit : "";
+  const batchTotal   = parseFloat(totalCost) || 0;
+  const perItemCost  = addAmount > 0 && batchTotal > 0 ? batchTotal / addAmount : 0;
+
+  const costNumpadKeys = ["1","2","3","4","5","6","7","8","9",".","0","⌫"];
+  const totalCostRef = React.useRef(totalCost);
+  totalCostRef.current = totalCost;
+
+  const handleCostNumpad = (k: string) => {
+    if (k === "⌫") { setTotalCost((v) => v.slice(0, -1)); return; }
+    if (k === ".") { if (!totalCost.includes(".")) setTotalCost((v) => v + "."); return; }
+    const dotIdx = totalCost.indexOf(".");
+    if (dotIdx !== -1 && totalCost.length - dotIdx > 2) return;
+    setTotalCost((v) => (v === "0" ? k : v + k));
+  };
+
+  // Keyboard support for the cost numpad
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key >= "0" && e.key <= "9") { e.preventDefault(); handleCostNumpad(e.key); }
+      else if (e.key === ".") { e.preventDefault(); handleCostNumpad("."); }
+      else if (e.key === "Backspace") { e.preventDefault(); handleCostNumpad("⌫"); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalCost]);
+
+  const tap   = (i: number) => setCounts((c) => c.map((v, j) => j === i ? v + 1 : v));
+  const untap = (i: number) => setCounts((c) => c.map((v, j) => j === i ? Math.max(0, v - 1) : v));
+  const reset = () => setCounts([0, 0, 0, 0, 0, 0]);
 
   const canUndo = stockQtyUndo !== null && stockQtyUndoSaved !== null && currentQty === stockQtyUndoSaved;
-
-  const handleNumpad = (k: string) => {
-    if (k === "⌫") { setInput((v) => v.slice(0, -1)); return; }
-    if (input.length >= 6) return; // cap at 999999
-    setInput((v) => v === "0" ? k : v + k);
-  };
 
   const save = async () => {
     if (addAmount <= 0) return;
     setBusy(true);
+
+    // Derive per-item cost from batch total entered by user
+    const newCpPerItem = addAmount > 0 && batchTotal > 0 ? batchTotal / addAmount : costPrice;
+
+    // Weighted average cost: blend existing inventory value with new batch value
+    const oldValue   = currentQty * costPrice;
+    const newValue   = addAmount * newCpPerItem;
+    const totalValue = oldValue + newValue;
+    const totalQty   = currentQty + addAmount;
+    const finalCp    = totalQty > 0 ? totalValue / totalQty : newCpPerItem;
+
     let newExpenseId: string | null = null;
-    if (costPrice > 0) {
-      const expenseAmount = costPrice * addAmount;
+    if (batchTotal > 0) {
       const today = new Date().toISOString().split("T")[0];
       const { data: expData, error: expErr } = await supabase
         .from("owner_expenses")
         .insert({
           owner_id: ownerId,
-          amount: expenseAmount,
-          description: `${productName} ×${addAmount}${unitLabel ? " " + unitLabel : ""} @ $${costPrice.toFixed(2)} each`,
+          amount: batchTotal,
+          description: `${productName} ×${addAmount}${unitLabel ? " " + unitLabel : ""} total $${batchTotal.toFixed(2)} ($${finalCp.toFixed(2)} each)`,
           expense_date: today,
         })
         .select("id")
@@ -273,6 +309,7 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
       if (expErr) { toast.error(expErr.message); setBusy(false); return; }
       newExpenseId = expData?.id ?? null;
     }
+
     const { error } = await supabase
       .from("products")
       .update({
@@ -280,12 +317,14 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
         stock_qty_undo: currentQty,
         stock_qty_undo_saved: newTotal,
         stock_last_expense_id: newExpenseId,
+        cost_price: finalCp,
       })
       .eq("id", productId);
     setBusy(false);
     if (error) { toast.error(error.message); return; }
-    onSaved({ stock_qty: newTotal, stock_qty_undo: currentQty, stock_qty_undo_saved: newTotal, stock_last_expense_id: newExpenseId });
-    setInput("");
+    onSaved({ stock_qty: newTotal, stock_qty_undo: currentQty, stock_qty_undo_saved: newTotal, stock_last_expense_id: newExpenseId, cost_price: finalCp });
+    reset();
+    setTotalCost("");
     onClose();
   };
 
@@ -317,99 +356,174 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="w-full max-w-sm rounded-t-3xl border border-border shadow-2xl"
-        style={{ background: "var(--gradient-card)" }}
+        className="w-full max-w-sm rounded-t-3xl border border-border shadow-2xl flex flex-col"
+        style={{ background: "var(--gradient-card)", maxHeight: "90svh" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative flex items-center justify-center px-5 pt-5 pb-3">
+        <div className="relative flex items-center justify-center px-5 pt-5 pb-3 shrink-0">
           <button onClick={onBack ?? onClose} className="absolute left-5 flex items-center gap-1 text-sm font-bold text-muted-foreground hover:text-foreground transition">
             <ChevronLeft className="h-4 w-4" /> Back
           </button>
           <span className="text-base font-black">Add Stock</span>
         </div>
 
-        {/* Stats row */}
-        <div className="mx-5 mb-4 grid grid-cols-3 gap-2">
-          <div className="px-3 py-2 rounded-xl bg-muted/30 text-center">
-            <div className="text-xs text-muted-foreground">Current</div>
-            <div className="text-xl font-black">{currentQty}</div>
-          </div>
-          <div className="px-3 py-2 rounded-xl bg-muted/30 text-center border border-primary/30">
-            <div className="text-xs text-muted-foreground">Adding</div>
-            <div className="text-xl font-black text-primary">+{addAmount}</div>
-          </div>
-          <div className="px-3 py-2 rounded-xl bg-muted/30 text-center relative">
-            <div className="text-xs text-muted-foreground">Total</div>
-            <div className="text-xl font-black text-green-400">{newTotal}</div>
-            <button
-              type="button"
-              disabled={addAmount !== 0 || currentQty === 0}
-              onClick={() => setRevertOpen(true)}
-              className="absolute -bottom-2 -right-2 h-7 w-7 rounded-full flex items-center justify-center shadow-lg transition active:scale-90 disabled:opacity-30"
-              style={{ background: addAmount === 0 && currentQty > 0 ? "var(--gradient-hero)" : "rgba(255,255,255,0.08)" }}
-              title="Revert stock quantity"
-            >
-              <Pencil className="h-3 w-3 text-black" />
-            </button>
-          </div>
-        </div>
-
-        <div className="px-5 pb-5 space-y-3">
-          {/* Prompt */}
-          <p className="text-sm font-black text-center" style={{ color: "var(--primary)" }}>
-            How many {unitLabel || "units"} are you adding?
-          </p>
-
-          {/* Display */}
-          <div className="rounded-2xl border-2 border-primary/40 bg-muted/20 h-14 flex items-center justify-center">
-            <span className="text-3xl font-black tracking-widest" style={{ color: "var(--primary)" }}>
-              {input || "0"}{unitLabel && <span className="text-lg font-semibold text-muted-foreground ml-2">{unitLabel}</span>}
-            </span>
+        <div className="overflow-y-auto flex-1 min-h-0">
+          {/* Stats row */}
+          <div className="mx-5 mb-4 grid grid-cols-3 gap-2">
+            <div className="px-3 py-2 rounded-xl bg-muted/30 text-center">
+              <div className="text-xs text-muted-foreground">Current</div>
+              <div className="text-xl font-black">{currentQty}</div>
+            </div>
+            <div className="px-3 py-2 rounded-xl bg-muted/30 text-center border border-primary/30">
+              <div className="text-xs text-muted-foreground">Adding</div>
+              <div className="text-xl font-black text-primary">+{addAmount}</div>
+            </div>
+            <div className="px-3 py-2 rounded-xl bg-muted/30 text-center relative">
+              <div className="text-xs text-muted-foreground">Total</div>
+              <div className="text-xl font-black text-green-400">{newTotal}</div>
+              <button
+                type="button"
+                disabled={addAmount !== 0 || currentQty === 0}
+                onClick={() => setRevertOpen(true)}
+                className="absolute -bottom-2 -right-2 h-7 w-7 rounded-full flex items-center justify-center shadow-lg transition active:scale-90 disabled:opacity-30"
+                style={{ background: addAmount === 0 && currentQty > 0 ? "var(--gradient-hero)" : "rgba(255,255,255,0.08)" }}
+                title="Revert stock quantity"
+              >
+                <Pencil className="h-3 w-3 text-black" />
+              </button>
+            </div>
           </div>
 
-          {/* Numpad */}
-          <div className="grid grid-cols-3 gap-2">
-            {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k, idx) =>
-              k === "" ? <div key={idx} /> : (
+          {/* Total Cost Paid input + numpad */}
+          <div className="px-5 pb-3">
+            <label className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-1 block">
+              Total Cost Paid
+            </label>
+            <div className="h-12 rounded-xl border border-border bg-muted/30 flex items-center px-4">
+              <span className="text-lg font-black text-muted-foreground">
+                ${batchTotal > 0 ? batchTotal.toFixed(2) : "0.00"}
+              </span>
+            </div>
+            {addAmount > 0 && batchTotal > 0 && (
+              <p className="text-xs mt-1 font-bold" style={{ color: "var(--primary)" }}>
+                Per item: ${perItemCost.toFixed(2)}
+                {currentQty > 0 && (
+                  <span className="text-muted-foreground font-normal ml-2">
+                    · New avg CP: ${(((currentQty * costPrice) + (addAmount * perItemCost)) / (currentQty + addAmount)).toFixed(2)}
+                  </span>
+                )}
+              </p>
+            )}
+            {/* Cost numpad */}
+            <div className="grid grid-cols-3 gap-1.5 mt-2">
+              {costNumpadKeys.map((k) => (
                 <button
                   key={k}
                   type="button"
-                  onClick={() => handleNumpad(k)}
-                  className={`h-12 rounded-xl font-black text-xl transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
-                >{k}</button>
-              )
+                  onClick={() => handleCostNumpad(k)}
+                  className={`h-10 rounded-xl font-black text-sm transition active:scale-95 ${
+                    k === "⌫" ? "bg-destructive/20 text-destructive hover:bg-destructive/30" : "bg-muted hover:bg-muted/70 text-foreground"
+                  }`}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Qty tap-buttons — 3×2 grid */}
+          <div className="px-5 pb-5">
+            <p className="text-sm font-black text-center mb-3" style={{ color: "var(--primary)" }}>
+              Select qty by Case / Pack / Single
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {STOCK_BTNS.map((b, i) => {
+                const count = counts[i];
+                const active = count > 0;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => tap(i)}
+                    className="relative flex items-center justify-center rounded-2xl border-2 overflow-hidden transition active:scale-95"
+                    style={{
+                      height: "110px",
+                      background: active ? "oklch(0.22 0.06 50 / 0.6)" : "rgba(255,255,255,0.05)",
+                      borderColor: active ? "var(--primary)" : "rgba(255,255,255,0.1)",
+                      boxShadow: active ? "0 4px 18px rgba(251,146,60,0.3)" : "none",
+                      paddingBottom: active ? "36px" : "0",
+                    }}
+                  >
+                    {active && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setCounts((c) => c.map((v, j) => j === i ? 0 : v)); }}
+                        className="absolute top-1.5 right-1.5 h-7 w-7 rounded-full flex items-center justify-center text-black shadow z-10 active:scale-90 transition"
+                        style={{ background: "#dc2626" }}
+                      >
+                        <span className="text-xs font-black">×</span>
+                      </button>
+                    )}
+                    <span className="text-3xl font-black text-white leading-none">{b.qty}</span>
+                    {active && (
+                      <div
+                        className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-3 py-1.5"
+                        style={{ background: "rgba(0,0,0,0.80)" }}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); untap(i); }}
+                          className="h-7 w-7 rounded-full flex items-center justify-center active:scale-90 transition"
+                          style={{ background: "#ef4444" }}
+                        >
+                          <span className="text-xs font-black text-black leading-none">−</span>
+                        </button>
+                        <div
+                          className="h-7 w-7 rounded-full flex items-center justify-center text-sm font-black text-black"
+                          style={{ background: "var(--gradient-hero)" }}
+                        >
+                          {count}
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Undo + Add buttons */}
+            <div className="flex gap-2 pt-4">
+              <button
+                onClick={doUndo}
+                disabled={busy || !canUndo}
+                className="flex-[2] rounded-2xl font-black text-sm py-4 active:scale-95 transition disabled:opacity-40 flex items-center justify-center gap-1.5"
+                style={{
+                  background: canUndo ? "rgba(220,38,38,0.15)" : "rgba(255,255,255,0.05)",
+                  border: `2px solid ${canUndo ? "#dc2626" : "rgba(255,255,255,0.08)"}`,
+                  color: canUndo ? "#f87171" : "var(--muted-foreground)",
+                }}
+              >
+                <span className="text-base leading-none">↩</span> Undo Last Edit
+              </button>
+              <button
+                onClick={reset}
+                disabled={addAmount === 0}
+                className="flex-1 rounded-2xl font-black text-sm py-4 bg-muted/60 text-muted-foreground active:scale-95 transition disabled:opacity-40"
+              >Clear</button>
+            </div>
+
+            <button
+              onClick={save}
+              disabled={busy || addAmount <= 0 || batchTotal <= 0}
+              className="w-full mt-3 rounded-2xl font-black text-base text-primary-foreground transition active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 py-4"
+              style={{ background: "var(--gradient-hero)" }}
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : `Add ${addAmount}${unitLabel ? " " + unitLabel : ""} → ${newTotal}${unitLabel ? " " + unitLabel : ""}`}
+            </button>
+            {addAmount > 0 && batchTotal <= 0 && (
+              <p className="text-center text-xs text-muted-foreground mt-2">Enter total cost paid above to confirm</p>
             )}
           </div>
-
-          {/* Actions */}
-          <div className="flex gap-2 pt-1">
-            <button
-              onClick={doUndo}
-              disabled={busy || !canUndo}
-              className="flex-[2] rounded-2xl font-black text-sm py-4 active:scale-95 transition disabled:opacity-40 flex items-center justify-center gap-1.5"
-              style={{
-                background: canUndo ? "rgba(220,38,38,0.15)" : "rgba(255,255,255,0.05)",
-                border: `2px solid ${canUndo ? "#dc2626" : "rgba(255,255,255,0.08)"}`,
-                color: canUndo ? "#f87171" : "var(--muted-foreground)",
-              }}
-            >
-              <span className="text-base leading-none">↩</span> Undo Last Edit
-            </button>
-            <button
-              onClick={() => setInput("")}
-              disabled={!input}
-              className="flex-1 rounded-2xl font-black text-sm py-4 bg-muted/60 text-muted-foreground active:scale-95 transition disabled:opacity-40"
-            >Clear</button>
-          </div>
-
-          <button
-            onClick={save}
-            disabled={busy || addAmount <= 0}
-            className="w-full rounded-2xl font-black text-base text-primary-foreground transition active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 py-4"
-            style={{ background: "var(--gradient-hero)" }}
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : `Add ${addAmount}${unitLabel ? " " + unitLabel : ""} → ${newTotal}${unitLabel ? " " + unitLabel : ""}`}
-          </button>
         </div>
       </div>
 
@@ -431,6 +545,115 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
   );
 }
 
+// ─── Template Picker ──────────────────────────────────────────────────────────
+function TemplatePicker({
+  onSelect,
+  onToggle,
+  selectedUrls,
+  ownerId,
+  category,
+  search,
+}: {
+  onSelect: (url: string, label: string, category: string) => void;
+  onToggle?: (url: string, label: string, category: string) => void;
+  selectedUrls?: Set<string>;
+  ownerId: string;
+  category: string;
+  search: string;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [available, setAvailable] = useState<{ url: string; label: string }[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      const { data: usedData } = await supabase
+        .from("products")
+        .select("image_url")
+        .eq("owner_id", ownerId);
+      const usedUrls = new Set(
+        (usedData ?? [])
+          .map((r: { image_url: string | null }) => r.image_url)
+          .filter((u): u is string => !!u),
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: dbTemplates } = await (supabase as any)
+        .from("template_images")
+        .select("url, label")
+        .eq("category", category)
+        .order("label", { ascending: true });
+      const templates = ((dbTemplates as { url: string; label: string }[]) ?? []).filter(
+        (t) => !usedUrls.has(t.url),
+      );
+      if (!cancelled) { setAvailable(templates); setLoading(false); }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [ownerId, category]);
+
+  const q = search.trim().toLowerCase();
+  const visible = q ? available.filter((t) => t.label.toLowerCase().includes(q)) : available;
+
+  if (loading) {
+    return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+  }
+  if (available.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center text-center text-muted-foreground gap-2 py-12">
+        <LayoutGrid className="h-10 w-10 opacity-30" />
+        <p className="text-sm font-semibold">No templates in this category yet.</p>
+        <p className="text-xs opacity-60">Ask your admin to import some from the Admin → Import tab.</p>
+      </div>
+    );
+  }
+  if (visible.length === 0) {
+    return <div className="flex flex-col items-center justify-center text-center text-muted-foreground gap-2 py-12"><p className="text-sm">No results for "{search}"</p></div>;
+  }
+
+  const isMulti = !!onToggle;
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {visible.map((t) => {
+        const isSelected = selectedUrls?.has(t.url) ?? false;
+        return (
+          <button
+            key={t.url}
+            onClick={() => isMulti ? onToggle!(t.url, t.label, category) : onSelect(t.url, t.label, category)}
+            onDragStart={(e) => e.preventDefault()}
+            className="aspect-[3/4] relative rounded-xl overflow-hidden border-2 active:scale-95 transition touch-manipulation select-none"
+            style={{
+              background: "var(--gradient-card)",
+              borderColor: isSelected ? "var(--primary)" : "rgba(255,255,255,0.1)",
+              boxShadow: isSelected ? "0 0 0 2px var(--primary)" : "none",
+            }}
+          >
+            <div className="absolute inset-0 flex items-center justify-center text-4xl">
+              {categoryIcon(category)}
+            </div>
+            <img
+              src={t.url}
+              alt=""
+              draggable={false}
+              loading="lazy"
+              className="absolute inset-0 w-full h-full object-contain p-1"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            />
+            {isSelected && (
+              <div className="absolute top-1 right-1 h-5 w-5 rounded-full flex items-center justify-center bg-primary shadow">
+                <CheckCircle2 className="h-3.5 w-3.5 text-black" />
+              </div>
+            )}
+            <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1.5 py-1">
+              <p className="text-white text-[10px] font-bold leading-tight truncate text-center">{t.label}</p>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Bulk Edit Modal ──────────────────────────────────────────────────────────
 function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
   items: Product[];
@@ -442,9 +665,9 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
   const { t } = useTranslation();
   // newQty keyed by product id — only items with a value > 0 will be processed
   const [newQtys, setNewQtys] = useState<Record<string, string>>({});
-  // editable cost price and sell price — pre-seeded from items
+  // costPrices stores TOTAL batch cost for added qty — starts empty until user enters it
   const [costPrices, setCostPrices] = useState<Record<string, string>>(() =>
-    Object.fromEntries(items.map((p) => [p.id, String(p.cost_price ?? "")]))
+    Object.fromEntries(items.map((p) => [p.id, ""]))
   );
   const [sellPrices, setSellPrices] = useState<Record<string, string>>(() =>
     Object.fromEntries(items.map((p) => [p.id, String(p.price ?? "")]))
@@ -607,10 +830,9 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
   const priceOnlyChanges = items.filter((p) => {
     const v = parseInt(newQtys[p.id] ?? "", 10);
     if (!isNaN(v) && v > 0) return false;
-    const newCp = parseFloat(costPrices[p.id] ?? "");
+    // Cost price is no longer directly editable — it's derived via WAC when adding qty
     const newSp = parseFloat(sellPrices[p.id] ?? "");
     const newUnits = parseInt(unitsPerItems[p.id] ?? "", 10);
-    const cpChanged = !isNaN(newCp) && newCp !== Number(p.cost_price ?? 0);
     const spChanged = !isNaN(newSp) && newSp !== Number(p.price ?? 0);
     const unitsChanged = !isNaN(newUnits) && newUnits !== Number(p.units_per_item ?? 0);
     const varChanged = (p.bottle_variations ?? []).some((bv) => {
@@ -638,17 +860,17 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                (!isNaN(sp) && sp !== Number(ex?.price ?? 0));
       });
     })();
-    return cpChanged || spChanged || unitsChanged || varChanged || hasNewLocalVars || retailChanged || specialChanged;
+    return spChanged || unitsChanged || varChanged || hasNewLocalVars || retailChanged || specialChanged;
   });
 
   // All items with any change — shown in preview
   const allChanged = [...updates, ...priceOnlyChanges];
 
   // Use the edited cost price for the expense calc
+  // totalCost = sum of batch totals entered by user across all items with qty > 0
   const totalCost = updates.reduce((sum, p) => {
-    const addQty = parseInt(newQtys[p.id], 10);
-    const cp = parseFloat(costPrices[p.id] ?? "") || Number(p.cost_price ?? 0);
-    return sum + cp * addQty;
+    const batchTotal = parseFloat(costPrices[p.id] ?? "") || 0;
+    return sum + batchTotal;
   }, 0);
 
   const save = async () => {
@@ -660,9 +882,9 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
     // Build description — title then one item per line, no total (shown separately)
     const lines = updates.map((p) => {
       const addQty = parseInt(newQtys[p.id], 10);
-      const cp = parseFloat(costPrices[p.id] ?? "") || Number(p.cost_price ?? 0);
-      const lineTotal = cp * addQty;
-      return `${p.name} ×${addQty} @ $${cp.toFixed(2)} each = $${lineTotal.toFixed(2)}`;
+      const batchTotal = parseFloat(costPrices[p.id] ?? "") || 0;
+      const perItem = addQty > 0 ? batchTotal / addQty : 0;
+      return `${p.name} ×${addQty} total $${batchTotal.toFixed(2)} ($${perItem.toFixed(2)} each)`;
     });
     const description = `Bulk Stock Update\n${lines.join("\n")}`;
 
@@ -683,25 +905,35 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       expenseId = expData?.id ?? null;
     }
 
-    // Update each product — stock qty + any edited prices
+    // Update each product — stock qty + WAC cost_price + any edited sell/units prices
     const patches: { id: string; stock_qty: number; stock_last_expense_id: string | null; cost_price?: number; price?: number; units_per_item?: number }[] = [];
     for (const p of updates) {
       const addQty = parseInt(newQtys[p.id], 10);
-      const newTotal = (p.stock_qty ?? 0) + addQty;
-      const newCp = parseFloat(costPrices[p.id] ?? "");
+      const newStockTotal = (p.stock_qty ?? 0) + addQty;
+      const batchTotalCost = parseFloat(costPrices[p.id] ?? "") || 0;
       const newSp = parseFloat(sellPrices[p.id] ?? "");
       const newUnits = parseInt(unitsPerItems[p.id] ?? "", 10);
-      const cpChanged = !isNaN(newCp) && newCp !== Number(p.cost_price ?? 0);
       const spChanged = !isNaN(newSp) && newSp !== Number(p.price ?? 0);
       const unitsChanged = !isNaN(newUnits) && newUnits !== Number(p.units_per_item ?? 0);
+
+      // Derive per-item cost from the batch total the user entered
+      const newCpPerItem = addQty > 0 && batchTotalCost > 0 ? batchTotalCost / addQty : Number(p.cost_price ?? 0);
+
+      // Weighted average: blend old inventory value with new batch value
+      const oldQty   = p.stock_qty ?? 0;
+      const oldValue = oldQty * Number(p.cost_price ?? 0);
+      const newValue = addQty * newCpPerItem;
+      const totalQty = oldQty + addQty;
+      const finalCp  = totalQty > 0 ? (oldValue + newValue) / totalQty : 0;
+
       const { error } = await supabase
         .from("products")
         .update({
-          stock_qty: newTotal,
+          stock_qty: newStockTotal,
           stock_qty_undo: p.stock_qty ?? 0,
-          stock_qty_undo_saved: newTotal,
+          stock_qty_undo_saved: newStockTotal,
           stock_last_expense_id: expenseId,
-          ...(cpChanged ? { cost_price: newCp } : {}),
+          cost_price: finalCp,
           ...(spChanged ? { price: newSp } : {}),
           ...(unitsChanged ? { units_per_item: newUnits } : {}),
         })
@@ -710,9 +942,9 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       else {
         patches.push({
           id: p.id,
-          stock_qty: newTotal,
+          stock_qty: newStockTotal,
           stock_last_expense_id: expenseId,
-          ...(cpChanged ? { cost_price: newCp } : {}),
+          cost_price: finalCp,
           ...(spChanged ? { price: newSp } : {}),
           ...(unitsChanged ? { units_per_item: newUnits } : {}),
         });
@@ -721,10 +953,9 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
 
     // Also save price-only changes for items where no qty was added
     for (const p of items.filter((p) => !updates.includes(p))) {
-      const newCp = parseFloat(costPrices[p.id] ?? "");
+      // Cost price is NOT directly editable here — only updated via WAC when adding qty
       const newSp = parseFloat(sellPrices[p.id] ?? "");
       const newUnits = parseInt(unitsPerItems[p.id] ?? "", 10);
-      const cpChanged = !isNaN(newCp) && newCp !== Number(p.cost_price ?? 0);
       const spChanged = !isNaN(newSp) && newSp !== Number(p.price ?? 0);
       const unitsChanged = !isNaN(newUnits) && newUnits !== Number(p.units_per_item ?? 0);
       // Check variation price changes
@@ -785,12 +1016,11 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
           ];
         }
       }
-      if (!cpChanged && !spChanged && !unitsChanged && !anyVarChanged && !hasNewLocalVars && !cigVarsChanged) continue;
+      if (!spChanged && !unitsChanged && !anyVarChanged && !hasNewLocalVars && !cigVarsChanged) continue;
       const mergedVars = anyVarChanged || hasNewLocalVars
         ? [...varUpdates.map(({ changed: _c, ...rest }) => rest), ...newLocalVars]
         : cigVarsMerged;
       const updatePayload: Record<string, unknown> = {};
-      if (cpChanged) updatePayload.cost_price = newCp;
       if (spChanged) updatePayload.price = newSp;
       if (unitsChanged) updatePayload.units_per_item = newUnits;
       if (mergedVars) updatePayload.bottle_variations = mergedVars;
@@ -800,7 +1030,6 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
           id: p.id,
           stock_qty: p.stock_qty,
           stock_last_expense_id: p.stock_last_expense_id,
-          ...(cpChanged ? { cost_price: newCp } : {}),
           ...(spChanged ? { price: newSp } : {}),
           ...(unitsChanged ? { units_per_item: newUnits } : {}),
         });
@@ -886,14 +1115,13 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       </div>
       <button
         onClick={() => {
-          // Block if any item has qty > 0 but cp or sp is 0
+          // Block if any item has qty > 0 but sell price is $0
           const invalid = updates.find((p) => {
-            const cp = parseFloat(costPrices[p.id] ?? "") || Number(p.cost_price ?? 0);
             const sp = parseFloat(sellPrices[p.id] ?? "") || Number(p.price ?? 0);
-            return cp === 0 || sp === 0;
+            return sp === 0;
           });
           if (invalid) {
-            toast.error(`"${invalid.name}" has qty > 0 but Cost Price or Sell Price is $0.00 — set both prices first.`);
+            toast.error(`"${invalid.name}" has qty > 0 but Sell Price is $0.00 — set the sell price first.`);
             return;
           }
           if (allChanged.length > 0) setShowPreview(true);
@@ -936,7 +1164,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
               <tr>
                 <th className="text-left pl-3 pr-2 py-2 font-black text-xs text-muted-foreground w-10 sm:w-14"></th>
                 <th className="text-left px-2 py-2 font-black text-xs text-muted-foreground">Name</th>
-                <th className="text-right px-2 py-2 font-black text-xs text-muted-foreground w-[76px] sm:w-[96px]">Cost</th>
+                <th className="text-right px-2 py-2 font-black text-xs text-muted-foreground w-[76px] sm:w-[96px]">Total Cost</th>
                 <th className="text-right px-2 py-2 font-black text-xs text-muted-foreground w-[76px] sm:w-[96px]">Sell</th>
                 <th className="text-right px-2 py-2 font-black text-xs text-muted-foreground w-[56px] leading-tight">Drink/<br/>Retail</th>
                 <th className="text-right px-2 py-2 font-black text-xs text-muted-foreground w-[46px] sm:w-[60px]">Qty</th>
@@ -961,7 +1189,6 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                     const spVal = sellPrices[p.id] ?? "";
                     const unitsVal = unitsPerItems[p.id] ?? "";
                     const isBottleOrPack = p.category === "liquor" || p.category === "cigarettes";
-                    const cpIsZero = hasAdd && (parseFloat(cpVal) || 0) === 0;
                     const spIsZero = hasAdd && (parseFloat(spVal) || 0) === 0;
                     return (
                       <React.Fragment key={p.id}>
@@ -981,14 +1208,14 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                         <td className="px-2 py-1.5 min-w-[110px]">
                           <span className="font-bold text-xs leading-tight line-clamp-2">{p.name}</span>
                         </td>
-                        {/* Cost price — editable */}
+                        {/* Cost — Total Cost Paid for this batch (WAC calculated on save) */}
                         <td className="px-2 py-1.5 w-[76px] sm:w-[96px]">
                           <div
                             onClick={() => setActiveNumpad(activeNumpad?.id === p.id && activeNumpad.field === "cp" ? null : { id: p.id, field: "cp" })}
                             className="h-8 sm:h-11 rounded-lg border text-right pr-2 text-xs sm:text-sm font-black bg-muted/50 flex items-center justify-end cursor-pointer active:bg-muted/70 transition"
-                            style={{ borderColor: activeNumpad?.id === p.id && activeNumpad.field === "cp" ? "var(--primary)" : cpIsZero ? "#ef4444" : "var(--border)", color: "var(--muted-foreground)" }}
+                            style={{ borderColor: activeNumpad?.id === p.id && activeNumpad.field === "cp" ? "var(--primary)" : "var(--border)", color: cpVal ? "var(--foreground)" : "var(--muted-foreground)" }}
                           >
-                            {cpVal || "0.00"}
+                            {cpVal || <span className="text-[10px] font-normal opacity-50">total $</span>}
                           </div>
                         </td>
                         {/* Sell price — editable */}
@@ -1327,12 +1554,15 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
           {allChanged.map((p) => {
             const addQty = parseInt(newQtys[p.id] ?? "", 10);
             const hasQty = !isNaN(addQty) && addQty > 0;
-            const newCp = parseFloat(costPrices[p.id] ?? "");
+            const batchTotalCost = parseFloat(costPrices[p.id] ?? "") || 0;
             const newSp = parseFloat(sellPrices[p.id] ?? "");
-            const cpChanged = !isNaN(newCp) && newCp !== Number(p.cost_price ?? 0);
             const spChanged = !isNaN(newSp) && newSp !== Number(p.price ?? 0);
-            const cp = hasQty ? (parseFloat(costPrices[p.id] ?? "") || Number(p.cost_price ?? 0)) : Number(p.cost_price ?? 0);
-            const lineTotal = hasQty ? cp * addQty : 0;
+            // Compute WAC for preview
+            const newCpPerItem = hasQty && batchTotalCost > 0 ? batchTotalCost / addQty : Number(p.cost_price ?? 0);
+            const oldValue = (p.stock_qty ?? 0) * Number(p.cost_price ?? 0);
+            const newValue = addQty * newCpPerItem;
+            const totalQty = (p.stock_qty ?? 0) + addQty;
+            const finalCp = totalQty > 0 ? (oldValue + newValue) / totalQty : 0;
             return (
               <div key={p.id} className="rounded-2xl border border-border p-3 flex items-start gap-3"
                 style={{ background: "var(--gradient-card)" }}>
@@ -1349,13 +1579,18 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                   {hasQty && (
                     <div className="text-xs font-bold" style={{ color: "var(--primary)" }}>
                       Stock: {p.stock_qty ?? 0} → <span className="text-green-400">{(p.stock_qty ?? 0) + addQty}</span>
-                      <span className="text-muted-foreground ml-2">(+{addQty} @ ${cp.toFixed(2)} = ${lineTotal.toFixed(2)})</span>
+                      {batchTotalCost > 0 && (
+                        <span className="text-muted-foreground ml-2">
+                          (total ${batchTotalCost.toFixed(2)})
+                        </span>
+                      )}
                     </div>
                   )}
-                  {cpChanged && (
+                  {hasQty && (
                     <div className="text-xs text-muted-foreground">
-                      Cost: <span className="line-through">${Number(p.cost_price ?? 0).toFixed(2)}</span>
-                      <span className="text-yellow-400 font-black ml-1"> → ${newCp.toFixed(2)}</span>
+                      Avg CP: <span className="line-through">${Number(p.cost_price ?? 0).toFixed(2)}</span>
+                      <span className="text-yellow-400 font-black ml-1"> → ${finalCp.toFixed(2)}</span>
+                      {batchTotalCost > 0 && <span className="text-muted-foreground ml-1">(avg of {p.stock_qty ?? 0} @ ${Number(p.cost_price ?? 0).toFixed(2)} + {addQty} total ${batchTotalCost.toFixed(2)})</span>}
                     </div>
                   )}
                   {spChanged && (
@@ -1722,6 +1957,36 @@ export default function ProductsPage() {
                   setStockNumpadSource("addDialog");
                   setStockNumpadId(product.id);
                 }}
+                onBulkSelect={async (templates) => {
+                  setOpen(false);
+                  // Insert all stub products in parallel, then open bulk edit immediately
+                  const results = await Promise.all(
+                    templates.map((tmpl) =>
+                      supabase
+                        .from("products")
+                        .insert({
+                          owner_id: ownerIdForQuery,
+                          name: tmpl.label,
+                          image_url: tmpl.url,
+                          category: tmpl.category,
+                          price: 0,
+                          cost_price: 0,
+                          units_per_item: 0,
+                          bottle_variations: null,
+                          stock_qty: 0,
+                        })
+                        .select("*")
+                        .single(),
+                    ),
+                  );
+                  const inserted = results
+                    .filter(({ error }) => !error)
+                    .map(({ data }) => data as Product);
+                  if (inserted.length > 0) {
+                    setItems((prev) => [...prev, ...inserted]);
+                    setBulkAddItems(inserted);
+                  }
+                }}
               />
           </Dialog>
           </div>
@@ -1937,6 +2202,7 @@ export default function ProductsPage() {
           onSaved={(patch) => {
             setItems((prev) => prev.map((p) => p.id === stockNumpadId ? { ...p, ...patch } : p));
           }}
+
         />
       )}
 
@@ -1982,6 +2248,167 @@ export default function ProductsPage() {
           }}
         />
       )}
+
+      {/* Bulk Add from Templates — opens BulkEditModal with only the newly inserted items */}
+      {bulkAddItems && (
+        <BulkEditModal
+          items={bulkAddItems}
+          ownerId={ownerIdForQuery}
+          storeCategories={storeCategories}
+          onClose={() => { setBulkAddItems(null); load(); }}
+          onSaved={(patches) => {
+            setBulkAddItems(null);
+            setItems((prev) => prev.map((p) => {
+              const patch = patches.find((x) => x.id === p.id);
+              return patch ? {
+                ...p,
+                stock_qty: patch.stock_qty,
+                stock_last_expense_id: patch.stock_last_expense_id,
+                ...(patch.cost_price !== undefined ? { cost_price: patch.cost_price } : {}),
+                ...(patch.price !== undefined ? { price: patch.price } : {}),
+              } : p;
+            }));
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── ProdVarsBlock — eBay-style variation rows ────────────────────────────────
+const PV_UNITS = ["each","lb","lbs","oz","kg","g","bag","bunch","bundle","lot","box","pack","case","dozen","pallet"];
+type ProdVar = { id?: string; name: string; price: string; qty: string };
+
+function ProdVarsBlock({ prodVars, setProdVars, activeNumpad, setActiveNumpad, numpadRef }: {
+  prodVars: ProdVar[];
+  setProdVars: React.Dispatch<React.SetStateAction<ProdVar[]>>;
+  activeNumpad: string | null;
+  setActiveNumpad: (v: string | null) => void;
+  numpadRef: React.RefObject<HTMLDivElement>;
+}) {
+  const pvNumpad    = (i: number) => `pv_${i}`;
+  const pvQtyNumpad = (i: number) => `pvq_${i}`;
+  const NUMPAD_KEYS = ["1","2","3","4","5","6","7","8","9",".","0","⌫"];
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs">🏷️ Variations <span className="text-muted-foreground font-normal">(optional)</span></Label>
+        <span className="text-[10px] text-muted-foreground">e.g. 1 lb · $1 | 100 lbs · $50</span>
+      </div>
+      {prodVars.length === 0 ? (
+        <button type="button"
+          onClick={() => setProdVars([{ name: "each", price: "", qty: "1" }])}
+          className="w-full h-9 rounded-lg border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
+          + Add a variation
+        </button>
+      ) : (
+        <div className="space-y-3">
+          {prodVars.map((v, i) => (
+            <div key={i} className="rounded-xl border border-border p-3 space-y-2" style={{ background: "var(--gradient-card)" }}>
+              <div className="flex items-center gap-2">
+                <div className="flex flex-col flex-1">
+                  <span className="text-[10px] text-muted-foreground mb-1">Quantity</span>
+                  <div
+                    className={`h-9 rounded-lg border flex items-center px-3 cursor-pointer transition ${activeNumpad === pvQtyNumpad(i) ? "border-primary bg-muted/50" : "border-border bg-muted/30"}`}
+                    onClick={() => {
+                      if (activeNumpad !== pvQtyNumpad(i)) {
+                        setProdVars(pv => pv.map((x, j) => j === i ? { ...x, qty: "" } : x));
+                      }
+                      setActiveNumpad(activeNumpad === pvQtyNumpad(i) ? null : pvQtyNumpad(i));
+                    }}
+                  >
+                    <span className={`text-sm font-black ${activeNumpad === pvQtyNumpad(i) ? "text-primary" : v.qty ? "text-muted-foreground" : "text-muted-foreground/40"}`}>
+                      {activeNumpad === pvQtyNumpad(i) ? (v.qty || "") : (v.qty || "1")}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col flex-[2]">
+                  <span className="text-[10px] text-muted-foreground mb-1">Unit</span>
+                  <select
+                    value={v.name}
+                    onChange={(e) => setProdVars(pv => pv.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                    className="h-9 rounded-lg border border-border bg-muted px-2 text-sm font-bold outline-none cursor-pointer"
+                  >
+                    {PV_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col flex-[2]">
+                  <span className="text-[10px] text-muted-foreground mb-1">Price</span>
+                  <div
+                    className={`h-9 rounded-lg border flex items-center px-3 cursor-pointer transition ${activeNumpad === pvNumpad(i) ? "border-primary bg-muted/50" : "border-border bg-muted/30"}`}
+                    onClick={() => setActiveNumpad(activeNumpad === pvNumpad(i) ? null : pvNumpad(i))}
+                  >
+                    <span className={`text-sm font-black ${activeNumpad === pvNumpad(i) ? "text-primary" : "text-muted-foreground"}`}>
+                      ${v.price || "0.00"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col justify-end">
+                  <span className="text-[10px] text-transparent mb-1">·</span>
+                  <button type="button"
+                    onClick={() => setProdVars(pv => pv.filter((_, j) => j !== i))}
+                    className="h-9 w-9 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/10 transition">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              {v.qty && v.name && v.price && parseFloat(v.price) > 0 && (
+                <p className="text-xs font-bold" style={{ color: "var(--primary)" }}>
+                  {v.qty} {v.name} — ${parseFloat(v.price).toFixed(2)}
+                </p>
+              )}
+
+              {activeNumpad === pvQtyNumpad(i) && (
+                <div ref={numpadRef} className="grid grid-cols-3 gap-1.5">
+                  {NUMPAD_KEYS.map((k) => (
+                    <button key={k} type="button"
+                      onClick={() => {
+                        setProdVars(pv => pv.map((x, j) => {
+                          if (j !== i) return x;
+                          const cur = x.qty ?? "";
+                          if (k === "⌫") return { ...x, qty: cur.slice(0, -1) };
+                          if (k === ".") return cur.includes(".") ? x : { ...x, qty: cur + "." };
+                          const dotIdx = cur.indexOf(".");
+                          if (dotIdx !== -1 && cur.length - dotIdx > 2) return x;
+                          return { ...x, qty: cur === "0" ? k : cur + k };
+                        }));
+                      }}
+                      className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
+                    >{k}</button>
+                  ))}
+                </div>
+              )}
+
+              {activeNumpad === pvNumpad(i) && (
+                <div ref={numpadRef} className="grid grid-cols-3 gap-1.5">
+                  {NUMPAD_KEYS.map((k) => (
+                    <button key={k} type="button"
+                      onClick={() => {
+                        setProdVars(pv => pv.map((x, j) => {
+                          if (j !== i) return x;
+                          if (k === "⌫") return { ...x, price: x.price.slice(0, -1) };
+                          if (k === ".") return x.price.includes(".") ? x : { ...x, price: x.price + "." };
+                          const dotIdx = x.price.indexOf(".");
+                          if (dotIdx !== -1 && x.price.length - dotIdx > 2) return x;
+                          return { ...x, price: x.price === "0" ? k : x.price + k };
+                        }));
+                      }}
+                      className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
+                    >{k}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          <button type="button"
+            onClick={() => setProdVars(pv => [...pv, { name: "each", price: "", qty: "1" }])}
+            className="w-full h-9 rounded-xl border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
+            + Add another option
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2024,7 +2451,6 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   const [baseUnitQty,  setBaseUnitQty]  = useState(editProduct ? String(editProduct.units_per_item || "") : "");
   const [baseUnit,     setBaseUnit]     = useState("each");
   // Generic product variations (eBay-style: qty + unit + price) — for all categories
-  type ProdVar = { id?: string; name: string; price: string; qty: string };
   const [prodVars, setProdVars] = useState<ProdVar[]>(() => {
     // On edit: no existing rows yet (loaded via useEffect), start empty
     return [];
@@ -2086,6 +2512,11 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   const [busy, setBusy] = useState(false);
   // which field the numpad is for: "selling" | "cost" | "units" | "shotprice" | "var_{i}_shots" | "var_{i}_price" | null
   const [activeNumpad, setActiveNumpad] = useState<string | null>(null);
+  // Template browser state
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState("");
+  const [templateCat, setTemplateCat] = useState("drinks");
+  const [selectedTemplates, setSelectedTemplates] = useState<Map<string, { label: string; category: string }>>(new Map());
   const fileRef = useRef<HTMLInputElement>(null);
   const camRef  = useRef<HTMLInputElement>(null);
   const skipStockRef = useRef(false);
@@ -2096,6 +2527,15 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
       setTimeout(() => numpadRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
     }
   }, [activeNumpad]);
+
+  // ── template select handler ───────────────────────────────────────────────
+  const onTemplateSelect = (url: string, label: string, cat: string) => {
+    setPreview(url);
+    setTemplateUrl(url);
+    setName(label);
+    setCategory(cat);
+    setShowTemplates(false);
+  };
 
   // ── numpad ───────────────────────────────────────────────────────────────
   const handleNumpad = (k: string) => {
@@ -2212,13 +2652,113 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
     >
       <DialogHeader className="shrink-0 pb-3">
         <div className="flex items-center gap-3">
-          <DialogTitle>{isEdit ? t("edit_item", "Edit Item") : t("add_item", "Add Item")}</DialogTitle>
+          {showTemplates && (
+            <button
+              onClick={() => setShowTemplates(false)}
+              className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition shrink-0"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+          <DialogTitle>
+            {showTemplates
+              ? t("choose_template", "Choose Template")
+              : isEdit
+                ? t("edit_item", "Edit Item")
+                : t("add_item", "Add Item")}
+          </DialogTitle>
+          {/* Done button — shown in template view when ≥1 item selected */}
+          {showTemplates && onBulkSelect && (
+            <button
+              onClick={() => {
+                if (selectedTemplates.size === 0) return;
+                const arr = Array.from(selectedTemplates.entries()).map(
+                  ([url, { label, category }]) => ({ url, label, category }),
+                );
+                if (arr.length === 1) {
+                  onTemplateSelect(arr[0].url, arr[0].label, arr[0].category);
+                  return;
+                }
+                onBulkSelect(arr);
+              }}
+              disabled={selectedTemplates.size === 0}
+              className="ml-auto mr-8 h-8 px-4 rounded-xl font-black text-sm text-primary-foreground flex items-center gap-1.5 transition active:scale-95 disabled:opacity-40 shrink-0"
+              style={{
+                background: selectedTemplates.size > 0 ? "var(--gradient-hero)" : "rgba(255,255,255,0.08)",
+              }}
+            >
+              Done{" "}
+              {selectedTemplates.size > 0 && (
+                <span className="h-5 min-w-[1.25rem] px-1 rounded-full bg-black/30 flex items-center justify-center text-xs font-black">
+                  {selectedTemplates.size}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </DialogHeader>
 
-      <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(251,146,60,0.4) transparent" }}>
+      {showTemplates && (
+        <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(251,146,60,0.4) transparent" }}>
+          <div className="flex flex-col h-full">
+            <div className="sticky top-0 z-10 pb-2 space-y-2" style={{ background: "var(--background)", paddingTop: "1px" }}>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                  <input
+                    type="text"
+                    value={templateSearch}
+                    onChange={(e) => setTemplateSearch(e.target.value)}
+                    placeholder="Search templates…"
+                    className="w-full pl-8 h-8 text-sm rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                {templateSearch && (
+                  <button
+                    onClick={() => setTemplateSearch("")}
+                    className="h-8 px-3 rounded-md text-xs font-black transition active:scale-95 shrink-0 border"
+                    style={{ background: "#000", color: "#ef4444", borderColor: "#ef4444" }}
+                  >Clear</button>
+                )}
+              </div>
+              <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+                {storeCategories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setTemplateCat(cat.id)}
+                    className={`h-9 shrink-0 rounded-xl font-black transition flex items-center justify-center px-3 text-xs ${templateCat === cat.id ? "text-primary-foreground" : "bg-muted text-muted-foreground"}`}
+                    style={templateCat === cat.id ? { background: "var(--gradient-hero)" } : {}}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <TemplatePicker
+              onSelect={onTemplateSelect}
+              onToggle={
+                onBulkSelect
+                  ? (url, label, cat) => {
+                      setSelectedTemplates((prev) => {
+                        const next = new Map(prev);
+                        if (next.has(url)) next.delete(url);
+                        else next.set(url, { label, category: cat });
+                        return next;
+                      });
+                    }
+                  : undefined
+              }
+              selectedUrls={onBulkSelect ? new Set(selectedTemplates.keys()) : undefined}
+              ownerId={ownerId}
+              category={templateCat}
+              search={templateSearch}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1 min-h-0 overflow-y-auto" style={{ display: showTemplates ? "none" : "", scrollbarWidth: "thin", scrollbarColor: "rgba(251,146,60,0.4) transparent" }}>
         <div className="space-y-3">
-            {/* Image area */}
             <div className="flex gap-3 items-stretch">
               <div className="relative w-1/2 aspect-[3/4] rounded-xl border-2 border-dashed border-border overflow-hidden shrink-0" style={{ background: "var(--gradient-card)" }}>
                 {preview
@@ -2234,6 +2774,11 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                 <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => onPick(e.target.files?.[0])} />
               </div>
               <div className="flex flex-col gap-2 flex-1 justify-center">
+                {!isEdit && onBulkSelect && (
+                  <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => setShowTemplates(true)}>
+                    <LayoutGrid className="h-5 w-5 mr-2" /> {t("template_btn", "Template")}
+                  </Button>
+                )}
                 <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => camRef.current?.click()}>
                   <Camera className="h-5 w-5 mr-2" /> Take Photo
                 </Button>
@@ -2278,17 +2823,6 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                   </select>
                 </div>
                 <div className="flex-1">
-                  <Label className="text-xs">{t("cost_price_label", "Cost Price")}</Label>
-                  <div
-                    className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
-                    onClick={() => setActiveNumpad(activeNumpad === "cost" ? null : "cost")}
-                  >
-                    <span className={`text-base font-black ${activeNumpad === "cost" ? "text-primary" : "text-muted-foreground"}`}>
-                      ${costPrice || "0.00"}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex-1">
                   <Label className="text-xs">{category === "cigarettes" ? t("sell_price_label", "Sell Price") + " (Pack)" : category === "liquor" ? "Bottle Price" : t("sell_price_label", "Sell Price")}</Label>
                   <div
                     className="mt-1 h-9 rounded-lg border border-border bg-muted/30 flex items-center px-3 cursor-pointer active:bg-muted/50 transition"
@@ -2300,7 +2834,6 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                   </div>
                 </div>
               </div>
-              <InlineNumpad forField="cost" />
               <InlineNumpad forField="selling" />
             </div>
 
@@ -2521,169 +3054,28 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
             )}
 
             {/* ── Variations — eBay-style (qty + unit + price per option) ── */}
-            {(() => {
-              const UNITS = ["each","lb","lbs","oz","kg","g","bag","bunch","bundle","lot","box","pack","case","dozen","pallet"];
-              const pvNumpad = (i: number) => `pv_${i}`;
-              const pvQtyNumpad = (i: number) => `pvq_${i}`;
-              return (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs">🏷️ Variations <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                    <span className="text-[10px] text-muted-foreground">e.g. 1 lb · $1&nbsp;&nbsp;|&nbsp;&nbsp;100 lbs · $50</span>
-                  </div>
-                  {prodVars.length === 0 ? (
-                    <button type="button"
-                      onClick={() => setProdVars([{ name: "each", price: "", qty: "1" }])}
-                      className="w-full h-9 rounded-lg border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
-                      + Add a variation
-                    </button>
-                  ) : (
-                    <div className="space-y-3">
-                      {prodVars.map((v, i) => (
-                        <div key={i} className="rounded-xl border border-border p-3 space-y-2" style={{ background: "var(--gradient-card)" }}>
-                          {/* Row 1: Qty + Unit + delete */}
-                          <div className="flex items-center gap-2">
-                            {/* Qty tap-to-numpad */}
-                            <div className="flex flex-col flex-1">
-                              <span className="text-[10px] text-muted-foreground mb-1">Quantity</span>
-                              <div
-                                className={`h-9 rounded-lg border flex items-center px-3 cursor-pointer transition ${activeNumpad === pvQtyNumpad(i) ? "border-primary bg-muted/50" : "border-border bg-muted/30"}`}
-                                onClick={() => {
-                                  if (activeNumpad !== pvQtyNumpad(i)) {
-                                    // Clear the field so typing replaces instead of appending
-                                    setProdVars(pv => pv.map((x, j) => j === i ? { ...x, qty: "" } : x));
-                                  }
-                                  setActiveNumpad(activeNumpad === pvQtyNumpad(i) ? null : pvQtyNumpad(i));
-                                }}
-                              >
-                                <span className={`text-sm font-black ${activeNumpad === pvQtyNumpad(i) ? "text-primary" : v.qty ? "text-muted-foreground" : "text-muted-foreground/40"}`}>
-                                  {activeNumpad === pvQtyNumpad(i) ? (v.qty || "") : (v.qty || "1")}
-                                </span>
-                              </div>
-                            </div>
-                            {/* Unit picker */}
-                            <div className="flex flex-col flex-[2]">
-                              <span className="text-[10px] text-muted-foreground mb-1">Unit</span>
-                              <select
-                                value={v.name}
-                                onChange={(e) => setProdVars(pv => pv.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-                                className="h-9 rounded-lg border border-border bg-muted px-2 text-sm font-bold outline-none cursor-pointer"
-                              >
-                                {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                              </select>
-                            </div>
-                            {/* Price */}
-                            <div className="flex flex-col flex-[2]">
-                              <span className="text-[10px] text-muted-foreground mb-1">Price</span>
-                              <div
-                                className={`h-9 rounded-lg border flex items-center px-3 cursor-pointer transition ${activeNumpad === pvNumpad(i) ? "border-primary bg-muted/50" : "border-border bg-muted/30"}`}
-                                onClick={() => setActiveNumpad(activeNumpad === pvNumpad(i) ? null : pvNumpad(i))}
-                              >
-                                <span className={`text-sm font-black ${activeNumpad === pvNumpad(i) ? "text-primary" : "text-muted-foreground"}`}>
-                                  ${v.price || "0.00"}
-                                </span>
-                              </div>
-                            </div>
-                            {/* Delete */}
-                            <div className="flex flex-col justify-end">
-                              <span className="text-[10px] text-transparent mb-1">·</span>
-                              <button type="button"
-                                onClick={() => setProdVars(pv => pv.filter((_, j) => j !== i))}
-                                className="h-9 w-9 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/10 transition">
-                                <X className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </div>
+            <ProdVarsBlock
+              prodVars={prodVars}
+              setProdVars={setProdVars}
+              activeNumpad={activeNumpad}
+              setActiveNumpad={setActiveNumpad}
+              numpadRef={numpadRef}
+            />
 
-                          {/* Preview label */}
-                          {v.qty && v.name && v.price && parseFloat(v.price) > 0 && (
-                            <p className="text-xs font-bold" style={{ color: "var(--primary)" }}>
-                              {v.qty} {v.name} — ${parseFloat(v.price).toFixed(2)}
-                            </p>
-                          )}
-
-                          {/* Qty numpad */}
-                          {activeNumpad === pvQtyNumpad(i) && (
-                            <div ref={numpadRef} className="grid grid-cols-3 gap-1.5">
-                              {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => (
-                                <button key={k} type="button"
-                                  onClick={() => {
-                                    setProdVars(pv => pv.map((x, j) => {
-                                      if (j !== i) return x;
-                                      const cur = x.qty ?? "";
-                                      if (k === "⌫") return { ...x, qty: cur.slice(0, -1) };
-                                      if (k === ".") return cur.includes(".") ? x : { ...x, qty: cur + "." };
-                                      const dotIdx = cur.indexOf(".");
-                                      if (dotIdx !== -1 && cur.length - dotIdx > 2) return x;
-                                      return { ...x, qty: cur === "0" ? k : cur + k };
-                                    }));
-                                  }}
-                                  className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
-                                >{k}</button>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Price numpad */}
-                          {activeNumpad === pvNumpad(i) && (
-                            <div ref={numpadRef} className="grid grid-cols-3 gap-1.5">
-                              {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) => (
-                                <button key={k} type="button"
-                                  onClick={() => {
-                                    setProdVars(pv => pv.map((x, j) => {
-                                      if (j !== i) return x;
-                                      if (k === "⌫") return { ...x, price: x.price.slice(0, -1) };
-                                      if (k === ".") return x.price.includes(".") ? x : { ...x, price: x.price + "." };
-                                      const dotIdx = x.price.indexOf(".");
-                                      if (dotIdx !== -1 && x.price.length - dotIdx > 2) return x;
-                                      return { ...x, price: x.price === "0" ? k : x.price + k };
-                                    }));
-                                  }}
-                                  className={`h-11 rounded-xl font-black text-lg transition active:scale-95 ${k === "⌫" ? "bg-destructive/20 text-destructive" : "bg-muted hover:bg-muted/70 text-foreground"}`}
-                                >{k}</button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      <button type="button"
-                        onClick={() => setProdVars(pv => [...pv, { name: "each", price: "", qty: "1" }])}
-                        className="w-full h-9 rounded-xl border border-dashed border-border text-xs font-bold text-muted-foreground hover:bg-muted/20 transition">
-                        + Add another option
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-          </div>
         </div>
+      </div>
 
-      <div className="pt-3 space-y-2">
+      <div className="pt-3 space-y-2" style={{ display: showTemplates ? "none" : "" }}>
           <Button
             onClick={() => { skipStockRef.current = false; submit(); }}
-            disabled={
-              busy ||
-              !name ||
-              !price ||
-              // Require cost price on new items, and on edits where cost price was never set (0 or null)
-              (!isEdit && (!costPrice || parseFloat(costPrice) <= 0)) ||
-              (isEdit && (editProduct?.cost_price ?? 0) === 0 && (!costPrice || parseFloat(costPrice) <= 0))
-            }
+            disabled={busy || !name || !price}
             className="w-full font-bold h-11 shrink-0"
             style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t("next", "Next →")}
           </Button>
           <Button
             onClick={() => { skipStockRef.current = true; submit(); }}
-            disabled={
-              busy ||
-              !name ||
-              !price ||
-              (!isEdit && (!costPrice || parseFloat(costPrice) <= 0)) ||
-              (isEdit && (editProduct?.cost_price ?? 0) === 0 && (!costPrice || parseFloat(costPrice) <= 0))
-            }
+            disabled={busy || !name || !price}
             variant="outline"
             className="w-full font-bold h-11 shrink-0"
           >
