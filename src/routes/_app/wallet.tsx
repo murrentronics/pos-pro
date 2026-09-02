@@ -9,13 +9,14 @@ import {
   Wallet as WalletIcon, Receipt, ChevronLeft, ChevronRight,
   ArrowDownLeft, RotateCcw, Loader2, FileText, Download, X,
   TrendingUp, TrendingDown, DollarSign, ChevronDown,
-  BarChart3, List, Trash2, Pencil, Printer,
+  BarChart3, List, Trash2, Pencil, Printer, Share2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
 import { printReceipt, type ReceiptData } from "@/lib/receiptPrinter";
+import { Capacitor } from "@capacitor/core";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Order = {
@@ -169,43 +170,135 @@ function ExpenseRow({ expense: e }: { expense: OwnerExpense }) {
 }
 
 // ─── Shared print helper for order rows ──────────────────────────────────────
-async function printOrderReceipt(o: Order, ownerName: string) {
-  // Fetch cashier name from profiles
-  let cashierName = "Staff";
-  if (o.cashier_id) {
-    const { data } = await supabase
-      .from("profiles")
-      .select("username")
-      .eq("id", o.cashier_id)
-      .single();
-    if (data?.username) cashierName = data.username;
-  }
+// ─── Order Receipt Modal ──────────────────────────────────────────────────────
+function OrderReceiptModal({ order, ownerName, onClose }: {
+  order: Order;
+  ownerName: string;
+  onClose: () => void;
+}) {
+  const [busy, setBusy] = useState<"print" | "share" | null>(null);
 
-  const items = (o.items || []).map((i: any) => ({
-    name: i.name as string,
-    qty: Number(i.qty),
-    price: Number(i.price),
-  }));
-  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
-  const receiptData: ReceiptData = {
-    storeName: ownerName || "Store",
-    locationName: "",
-    orderNumber: o.id.slice(-6).toUpperCase(),
-    serverName: cashierName,
-    items,
-    subtotal,
-    total: Number(o.total),
-    paid: Number(o.paid),
-    change: Number(o.change_given),
-    payMode: "cash",
-    date: new Date(o.created_at).toLocaleString("en-US", {
+  const buildReceiptText = (): string => {
+    const lines: string[] = [];
+    lines.push(`*${ownerName || "Store"}*`);
+    lines.push(`Order #${order.id.slice(-6).toUpperCase()}`);
+    lines.push(new Date(order.created_at).toLocaleString("en-US", {
       month: "numeric", day: "numeric", year: "numeric",
       hour: "numeric", minute: "2-digit", hour12: true,
-    }),
+    }));
+    lines.push("─────────────────");
+    (order.items || []).forEach((i: any) => {
+      lines.push(`${i.qty}x ${i.name}  $${(Number(i.qty) * Number(i.price)).toFixed(2)}`);
+    });
+    lines.push("─────────────────");
+    lines.push(`Total: $${Number(order.total).toFixed(2)}`);
+    lines.push(`Paid: $${Number(order.paid).toFixed(2)}`);
+    lines.push(`Change: $${Number(order.change_given).toFixed(2)}`);
+    return lines.join("\n");
   };
-  const res = await printReceipt(receiptData);
-  if (res.printed) toast.success("Sent to printer");
-  else if (res.error) toast.error(res.error);
+
+  const handlePrint = async () => {
+    setBusy("print");
+    try {
+      let cashierName = "Staff";
+      if (order.cashier_id) {
+        const { data } = await supabase.from("profiles").select("username").eq("id", order.cashier_id).single();
+        if (data?.username) cashierName = data.username;
+      }
+      const items = (order.items || []).map((i: any) => ({
+        name: i.name as string,
+        qty: Number(i.qty),
+        price: Number(i.price),
+      }));
+      const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+      const receiptData: ReceiptData = {
+        storeName: ownerName || "Store",
+        locationName: "",
+        orderNumber: order.id.slice(-6).toUpperCase(),
+        serverName: cashierName,
+        items,
+        subtotal,
+        total: Number(order.total),
+        paid: Number(order.paid),
+        change: Number(order.change_given),
+        payMode: "cash",
+        date: new Date(order.created_at).toLocaleString("en-US", {
+          month: "numeric", day: "numeric", year: "numeric",
+          hour: "numeric", minute: "2-digit", hour12: true,
+        }),
+      };
+      const res = await printReceipt(receiptData);
+      if (res.printed) toast.success("Sent to printer");
+      else if (res.error) toast.error(res.error);
+    } catch (e: any) {
+      toast.error("Print failed: " + (e?.message ?? "unknown"));
+    }
+    setBusy(null);
+  };
+
+  const handleShare = async () => {
+    setBusy("share");
+    try {
+      const text = buildReceiptText();
+      if (Capacitor.isNativePlatform()) {
+        const { Share } = await import("@capacitor/share");
+        await Share.share({
+          title: `Receipt #${order.id.slice(-6).toUpperCase()}`,
+          text,
+          dialogTitle: "Share Receipt",
+        });
+      } else {
+        const encoded = encodeURIComponent(text);
+        window.open(`https://wa.me/?text=${encoded}`, "_blank");
+      }
+    } catch (e: any) {
+      if (!String(e?.message ?? "").includes("cancel")) toast.error("Share failed: " + (e?.message ?? "unknown"));
+    }
+    setBusy(null);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-t-3xl p-6 space-y-4"
+        style={{ background: "var(--background)", paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Order #{order.id.slice(-6).toUpperCase()}</p>
+            <p className="text-lg font-black">${Number(order.total).toFixed(2)}</p>
+          </div>
+          <button onClick={onClose} className="h-9 w-9 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition active:scale-90">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Print */}
+        <button
+          onClick={handlePrint}
+          disabled={!!busy}
+          className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50"
+          style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.4)", color: "#60a5fa" }}
+        >
+          {busy === "print" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+          Print Receipt
+        </button>
+
+        {/* WhatsApp Share */}
+        <button
+          onClick={handleShare}
+          disabled={!!busy}
+          className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 border border-green-500/40"
+          style={{ background: "rgba(37,211,102,0.12)", color: "#25D366" }}
+        >
+          {busy === "share" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+          Share via WhatsApp
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function CashierWallet({ profile }: { profile: { id: string; wallet_balance: number; role: string; username?: string; parent_id?: string | null } }) {
@@ -221,6 +314,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
   const [loading, setLoading] = useState(true);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [deletableOrderId, setDeletableOrderId] = useState<string | null>(null);
+  const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
 
   // ── Float cards state ────────────────────────────────────────────────────────
   const [floatAmount, setFloatAmount] = useState<number | null>(null);
@@ -965,7 +1059,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                     <span className="font-black text-sm text-green-700">+${fmt(Number(o.total))}</span>
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => printOrderReceipt(o, profile.username ?? "Store")}
+                        onClick={() => setReceiptOrder(o)}
                         className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
                         style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.4)" }}
                         title="Print receipt"
@@ -1174,6 +1268,13 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
           </div>
         )}
       </section>
+      )}
+      {receiptOrder && (
+        <OrderReceiptModal
+          order={receiptOrder}
+          ownerName={profile.username ?? "Store"}
+          onClose={() => setReceiptOrder(null)}
+        />
       )}
     </div>
   );
@@ -2703,7 +2804,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                         <span className="font-black text-sm text-green-700">+${fmt(Number(o.total))}</span>
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={() => printOrderReceipt(o, ownerName)}
+                            onClick={() => setReceiptOrder(o)}
                             className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
                             style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.4)" }}
                             title="Print receipt"
@@ -2894,7 +2995,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                   <span className="font-black text-lg text-green-700">+${fmt(Number(o.total))}</span>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => printOrderReceipt(o, ownerName)}
+                      onClick={() => setReceiptOrder(o)}
                       className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
                       style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.4)" }}
                       title="Print receipt"
@@ -2961,6 +3062,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
 
   // ── Float used: sum of cashier_expense txs AFTER the last float reset ──────
   const [floatUsed, setFloatUsed] = useState<number>(0);
+  const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
 
   const loadFloatUsed = useCallback(async () => {
     // Get all cashier profiles under this owner
@@ -3662,6 +3764,13 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
           confirmLabel={savingFloat ? "Saving…" : cashierFloat > 0 ? "Update Float" : "Set Float"}
           sessionType={cashierFloat > 0 ? floatSessionMode : undefined}
           onSessionChange={cashierFloat > 0 ? setFloatSessionMode : undefined}
+        />
+      )}
+      {receiptOrder && (
+        <OrderReceiptModal
+          order={receiptOrder}
+          ownerName={profile.username ?? "Store"}
+          onClose={() => setReceiptOrder(null)}
         />
       )}
     </div>

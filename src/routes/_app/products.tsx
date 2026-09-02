@@ -688,7 +688,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
   const [busy, setBusy] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   // id + field for active numpad in the table
-  const [activeNumpad, setActiveNumpad] = useState<{ id: string; field: "cp" | "sp" | "qty" | "units" | "vp" | "vu" | "rp" | "sq" | "spp" } | null>(null);
+  const [activeNumpad, setActiveNumpad] = useState<{ id: string; field: "cp" | "sp" | "qty" | "units" | "vp" | "vu" } | null>(null);
   // Product id whose qty is being reverted via the pencil
   const [revertItem, setRevertItem] = useState<Product | null>(null);
   // Live qty map so pencil shows updated qty after a revert without needing parent reload
@@ -697,37 +697,10 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
   );
   // Draft variations added inline in the table (keyed by product id)
   const [localVars, setLocalVars] = useState<Record<string, BottleVariation[]>>({});
-  // Cigarette retail price per cig (keyed by product id)
-  const [cigRetailPrices, setCigRetailPrices] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    items.forEach((p) => {
-      if (p.category === "cigarettes") {
-        const rv = (p.bottle_variations ?? []).find((v) => v.key === "retail");
-        if (rv) init[p.id] = String(rv.price);
-      }
-    });
-    return init;
-  });
-  // Cigarette special offers — array of rows per product id
-  // Each row is { qty: string; price: string }. At least one empty row is always kept.
-  const [cigSpecialData, setCigSpecialData] = useState<Record<string, { qty: string; price: string }[]>>(() => {
-    const init: Record<string, { qty: string; price: string }[]> = {};
-    items.forEach((p) => {
-      if (p.category === "cigarettes") {
-        // Collect all special* variations (key starts with "special")
-        const specials = (p.bottle_variations ?? []).filter((v) => v.key === "special" || v.key.startsWith("special_"));
-        init[p.id] = specials.length > 0
-          ? specials.map((sv) => ({ qty: String(sv.units_consumed), price: String(sv.price) }))
-          : [{ qty: "", price: "" }];
-      }
-    });
-    return init;
-  });
-
   const handleNumpad = (k: string) => {
     if (!activeNumpad) return;
     const { id, field } = activeNumpad;
-    const isDecimal = field === "cp" || field === "sp" || field === "vp" || field === "rp" || field === "spp";
+    const isDecimal = field === "cp" || field === "sp" || field === "vp";
 
     // ── "vu" = variation units (integer), id = "${productId}__${varIdx}" ──
     if (field === "vu") {
@@ -743,53 +716,6 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
         else if (k === ".") { return prev; } // integer only
         else { next = cur === "0" ? k : cur + k; }
         arr[varIdx] = { ...arr[varIdx], units_consumed: parseInt(next) || 0 };
-        return { ...prev, [productId]: arr };
-      });
-      return;
-    }
-
-    // ── "rp" = cig retail price per cig ──
-    if (field === "rp") {
-      const cur = cigRetailPrices[id] ?? "";
-      let next: string;
-      if (k === "⌫") { next = cur.slice(0, -1); }
-      else if (k === ".") { next = cur.includes(".") ? cur : cur + "."; }
-      else { const di = cur.indexOf("."); if (di !== -1 && cur.length - di > 2) return; next = cur === "0" ? k : cur + k; }
-      setCigRetailPrices((p) => ({ ...p, [id]: next }));
-      return;
-    }
-    // ── "sq" = cig special qty (integer), id = "${productId}__specIdx__${idx}" ──
-    if (field === "sq") {
-      const sepIdx = id.lastIndexOf("__specIdx__");
-      const productId = sepIdx !== -1 ? id.slice(0, sepIdx) : id;
-      const specIdx = sepIdx !== -1 ? parseInt(id.slice(sepIdx + 11), 10) : 0;
-      const rows = cigSpecialData[productId] ?? [{ qty: "", price: "" }];
-      const cur = rows[specIdx]?.qty ?? "";
-      let next: string;
-      if (k === "⌫") { next = cur.slice(0, -1); }
-      else if (k === ".") { return; }
-      else { next = cur === "0" ? k : cur + k; }
-      setCigSpecialData((prev) => {
-        const arr = [...(prev[productId] ?? [{ qty: "", price: "" }])];
-        arr[specIdx] = { ...arr[specIdx], qty: next };
-        return { ...prev, [productId]: arr };
-      });
-      return;
-    }
-    // ── "spp" = cig special price, id = "${productId}__specIdx__${idx}" ──
-    if (field === "spp") {
-      const sepIdx = id.lastIndexOf("__specIdx__");
-      const productId = sepIdx !== -1 ? id.slice(0, sepIdx) : id;
-      const specIdx = sepIdx !== -1 ? parseInt(id.slice(sepIdx + 11), 10) : 0;
-      const rows = cigSpecialData[productId] ?? [{ qty: "", price: "" }];
-      const cur = rows[specIdx]?.price ?? "";
-      let next: string;
-      if (k === "⌫") { next = cur.slice(0, -1); }
-      else if (k === ".") { next = cur.includes(".") ? cur : cur + "."; }
-      else { const di = cur.indexOf("."); if (di !== -1 && cur.length - di > 2) return; next = cur === "0" ? k : cur + k; }
-      setCigSpecialData((prev) => {
-        const arr = [...(prev[productId] ?? [{ qty: "", price: "" }])];
-        arr[specIdx] = { ...arr[specIdx], price: next };
         return { ...prev, [productId]: arr };
       });
       return;
@@ -843,24 +769,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       const price = parseFloat(varPrices[`${p.id}__localVar__${idx}`] ?? "") || lv.price;
       return lv.units_consumed > 0 && price > 0;
     });
-    // Cig retail price change
-    const existRetail = (p.bottle_variations ?? []).find((bv) => bv.key === "retail");
-    const newRetail = parseFloat(cigRetailPrices[p.id] ?? "");
-    const retailChanged = p.category === "cigarettes" && !isNaN(newRetail) && newRetail !== Number(existRetail?.price ?? 0);
-    // Cig specials change — compare each row in cigSpecialData array against existing special* variations
-    const specialChanged = p.category === "cigarettes" && (() => {
-      const rows = cigSpecialData[p.id] ?? [];
-      const existSpecials = (p.bottle_variations ?? []).filter((bv) => bv.key === "special" || bv.key.startsWith("special_"));
-      if (rows.length !== existSpecials.length) return true;
-      return rows.some((row, i) => {
-        const sq = parseInt(row.qty, 10);
-        const sp = parseFloat(row.price);
-        const ex = existSpecials[i];
-        return (!isNaN(sq) && sq !== Number(ex?.units_consumed ?? 0)) ||
-               (!isNaN(sp) && sp !== Number(ex?.price ?? 0));
-      });
-    })();
-    return spChanged || unitsChanged || varChanged || hasNewLocalVars || retailChanged || specialChanged;
+    return spChanged || unitsChanged || varChanged || hasNewLocalVars;
   });
 
   // All items with any change — shown in preview
@@ -978,48 +887,10 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
         }))
         .filter((lv) => lv.units_consumed > 0 && lv.price > 0);
       const hasNewLocalVars = newLocalVars.length > 0;
-      // Cig retail / special changes
-      let cigVarsChanged = false;
-      let cigVarsMerged: BottleVariation[] | undefined;
-      if (p.category === "cigarettes") {
-        const newRetail = parseFloat(cigRetailPrices[p.id] ?? "");
-        const existRetail  = (p.bottle_variations ?? []).find((bv) => bv.key === "retail");
-        const existSpecials = (p.bottle_variations ?? []).filter((bv) => bv.key === "special" || bv.key.startsWith("special_"));
-        const retailChanged = !isNaN(newRetail) && newRetail !== Number(existRetail?.price ?? 0);
-        const rows = cigSpecialData[p.id] ?? [];
-        const specialEntries: BottleVariation[] = rows
-          .map((row, i) => {
-            const sq = parseInt(row.qty, 10);
-            const sp = parseFloat(row.price);
-            if (sq > 0 && sp > 0) {
-              const key = i === 0 ? "special" : `special_${i}`;
-              return { key, label: `${sq} for $${sp.toFixed(2)}`, units_consumed: sq, price: sp } as BottleVariation;
-            }
-            return null;
-          })
-          .filter((e): e is BottleVariation => e !== null);
-        const specialChanged = rows.length !== existSpecials.length ||
-          rows.some((row, i) => {
-            const sq = parseInt(row.qty, 10);
-            const sp = parseFloat(row.price);
-            return (!isNaN(sq) && sq !== Number(existSpecials[i]?.units_consumed ?? 0)) ||
-                   (!isNaN(sp) && sp !== Number(existSpecials[i]?.price ?? 0));
-          });
-        if (retailChanged || specialChanged) {
-          cigVarsChanged = true;
-          const retailEntry: BottleVariation | null = (!isNaN(newRetail) && newRetail > 0)
-            ? { key: "retail", label: "Retail", units_consumed: 1, price: newRetail }
-            : existRetail ?? null;
-          cigVarsMerged = [
-            ...(retailEntry ? [retailEntry] : []),
-            ...specialEntries,
-          ];
-        }
-      }
-      if (!spChanged && !unitsChanged && !anyVarChanged && !hasNewLocalVars && !cigVarsChanged) continue;
-      const mergedVars = anyVarChanged || hasNewLocalVars
+      if (!spChanged && !unitsChanged && !anyVarChanged && !hasNewLocalVars) continue;
+      const mergedVars = (anyVarChanged || hasNewLocalVars)
         ? [...varUpdates.map(({ changed: _c, ...rest }) => rest), ...newLocalVars]
-        : cigVarsMerged;
+        : undefined;
       const updatePayload: Record<string, unknown> = {};
       if (spChanged) updatePayload.price = newSp;
       if (unitsChanged) updatePayload.units_per_item = newUnits;
@@ -1052,46 +923,8 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
           price: parseFloat(varPrices[`${p.id}__localVar__${idx}`] ?? "") || lv.price,
         }))
         .filter((lv) => lv.units_consumed > 0 && lv.price > 0);
-      // Cig retail / special changes for items that also had qty updates
-      let cigMerged: BottleVariation[] | null = null;
-      if (p.category === "cigarettes") {
-        const newRetail = parseFloat(cigRetailPrices[p.id] ?? "");
-        const existRetail  = (p.bottle_variations ?? []).find((bv) => bv.key === "retail");
-        const existSpecials = (p.bottle_variations ?? []).filter((bv) => bv.key === "special" || bv.key.startsWith("special_"));
-        const retailChanged = !isNaN(newRetail) && newRetail !== Number(existRetail?.price ?? 0);
-        const rows = cigSpecialData[p.id] ?? [];
-        const specialEntries: BottleVariation[] = rows
-          .map((row, i) => {
-            const sq = parseInt(row.qty, 10);
-            const sp = parseFloat(row.price);
-            if (sq > 0 && sp > 0) {
-              const key = i === 0 ? "special" : `special_${i}`;
-              return { key, label: `${sq} for $${sp.toFixed(2)}`, units_consumed: sq, price: sp } as BottleVariation;
-            }
-            return null;
-          })
-          .filter((e): e is BottleVariation => e !== null);
-        const specialChanged = rows.length !== existSpecials.length ||
-          rows.some((row, i) => {
-            const sq = parseInt(row.qty, 10);
-            const sp = parseFloat(row.price);
-            return (!isNaN(sq) && sq !== Number(existSpecials[i]?.units_consumed ?? 0)) ||
-                   (!isNaN(sp) && sp !== Number(existSpecials[i]?.price ?? 0));
-          });
-        if (retailChanged || specialChanged) {
-          const retailEntry: BottleVariation | null = (!isNaN(newRetail) && newRetail > 0)
-            ? { key: "retail", label: "Retail", units_consumed: 1, price: newRetail }
-            : existRetail ?? null;
-          cigMerged = [
-            ...(retailEntry ? [retailEntry] : []),
-            ...specialEntries,
-          ];
-        }
-      }
-      if (!varUpdates.some((v) => v.changed) && newLocalVars.length === 0 && !cigMerged) continue;
-      const merged = cigMerged
-        ? cigMerged
-        : [...varUpdates.map(({ changed: _c, ...rest }) => rest), ...newLocalVars];
+      if (!varUpdates.some((v) => v.changed) && newLocalVars.length === 0) continue;
+      const merged = [...varUpdates.map(({ changed: _c, ...rest }) => rest), ...newLocalVars];
       await supabase.from("products").update({ bottle_variations: merged }).eq("id", p.id);
     }
 
@@ -1164,11 +997,12 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
               <tr>
                 <th className="text-left pl-3 pr-2 py-2 font-black text-xs text-muted-foreground w-10 sm:w-14"></th>
                 <th className="text-left px-2 py-2 font-black text-xs text-muted-foreground">Name</th>
-                <th className="text-right px-2 py-2 font-black text-xs text-muted-foreground w-[76px] sm:w-[96px]">Total Cost</th>
+                <th className="text-right px-2 py-2 font-black text-xs text-muted-foreground w-[72px] sm:w-[88px] leading-tight">Cost<br/>Price</th>
                 <th className="text-right px-2 py-2 font-black text-xs text-muted-foreground w-[76px] sm:w-[96px]">Sell</th>
                 <th className="text-right px-2 py-2 font-black text-xs text-muted-foreground w-[56px] leading-tight">Drink/<br/>Retail</th>
                 <th className="text-right px-2 py-2 font-black text-xs text-muted-foreground w-[46px] sm:w-[60px]">Qty</th>
-                <th className="text-right pr-4 pl-2 py-2 font-black text-xs w-[76px] sm:w-[96px]" style={{ color: "var(--primary)" }}>+ Add</th>
+                <th className="text-right pr-2 pl-2 py-2 font-black text-xs w-[76px] sm:w-[96px]" style={{ color: "var(--primary)" }}>+ Add</th>
+                <th className="text-right pr-4 pl-2 py-2 font-black text-xs text-muted-foreground w-[76px] sm:w-[96px]">Total Cost</th>
               </tr>
             </thead>
             <tbody>
@@ -1176,7 +1010,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                 <>
                   {/* Category section header */}
                   <tr key={`hdr-${cat.value}`}>
-                    <td colSpan={7} className="pl-3 pt-4 pb-1">
+                    <td colSpan={8} className="pl-3 pt-4 pb-1">
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-black uppercase tracking-widest" style={{ color: "var(--primary)" }}>{cat.label}</span>
                       </div>
@@ -1188,7 +1022,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                     const cpVal = costPrices[p.id] ?? "";
                     const spVal = sellPrices[p.id] ?? "";
                     const unitsVal = unitsPerItems[p.id] ?? "";
-                    const isBottleOrPack = p.category === "liquor" || p.category === "cigarettes";
+                    const isBottleOrPack = p.category === "liquor";
                     const spIsZero = hasAdd && (parseFloat(spVal) || 0) === 0;
                     return (
                       <React.Fragment key={p.id}>
@@ -1208,16 +1042,41 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                         <td className="px-2 py-1.5 min-w-[110px]">
                           <span className="font-bold text-xs leading-tight line-clamp-2">{p.name}</span>
                         </td>
-                        {/* Cost — Total Cost Paid for this batch (WAC calculated on save) */}
-                        <td className="px-2 py-1.5 w-[76px] sm:w-[96px]">
-                          <div
-                            onClick={() => setActiveNumpad(activeNumpad?.id === p.id && activeNumpad.field === "cp" ? null : { id: p.id, field: "cp" })}
-                            className="h-8 sm:h-11 rounded-lg border text-right pr-2 text-xs sm:text-sm font-black bg-muted/50 flex items-center justify-end cursor-pointer active:bg-muted/70 transition"
-                            style={{ borderColor: activeNumpad?.id === p.id && activeNumpad.field === "cp" ? "var(--primary)" : "var(--border)", color: cpVal ? "var(--foreground)" : "var(--muted-foreground)" }}
-                          >
-                            {cpVal || <span className="text-[10px] font-normal opacity-50">total $</span>}
-                          </div>
-                        </td>
+                        {/* Cost Price — read-only, shows WAC preview when qty + total cost entered */}
+                        {(() => {
+                          const addQtyNum = parseInt(addVal, 10);
+                          const batchTotal = parseFloat(cpVal);
+                          const hasQtyNum = !isNaN(addQtyNum) && addQtyNum > 0;
+                          const hasBatch = !isNaN(batchTotal) && batchTotal > 0;
+                          let displayCp: string;
+                          if (hasQtyNum && hasBatch) {
+                            const newCpPerItem = batchTotal / addQtyNum;
+                            const oldQty = p.stock_qty ?? 0;
+                            const oldValue = oldQty * Number(p.cost_price ?? 0);
+                            const newValue = addQtyNum * newCpPerItem;
+                            const totalQty = oldQty + addQtyNum;
+                            const wac = totalQty > 0 ? (oldValue + newValue) / totalQty : newCpPerItem;
+                            displayCp = wac.toFixed(2);
+                          } else {
+                            displayCp = Number(p.cost_price ?? 0) > 0 ? Number(p.cost_price ?? 0).toFixed(2) : "";
+                          }
+                          return (
+                            <td className="px-2 py-1.5 w-[72px] sm:w-[88px]">
+                              <div
+                                className="h-8 sm:h-11 rounded-lg border text-right pr-2 text-xs sm:text-sm font-black bg-muted/20 flex items-center justify-end select-none"
+                                style={{
+                                  borderColor: (hasQtyNum && hasBatch) ? "var(--primary)" : "var(--border)",
+                                  borderStyle: "dashed",
+                                  color: (hasQtyNum && hasBatch) ? "var(--primary)" : "var(--muted-foreground)",
+                                  opacity: displayCp ? 1 : 0.45,
+                                }}
+                                title="Weighted avg cost price — auto-calculated (read-only)"
+                              >
+                                {displayCp || <span className="text-[10px] font-normal">—</span>}
+                              </div>
+                            </td>
+                          );
+                        })()}
                         {/* Sell price — editable */}
                         <td className="px-2 py-1.5 w-[76px] sm:w-[96px]">
                           <div
@@ -1228,7 +1087,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                             {spVal || "0.00"}
                           </div>
                         </td>
-                        {/* Units per item — editable for liquor/cigarettes, dash otherwise */}
+                        {/* Units per item — editable for liquor only */}
                         <td className="px-2 py-1.5 w-[56px]">
                           {isBottleOrPack ? (
                             <div
@@ -1261,8 +1120,8 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                             </button>
                           </div>
                         </td>
-                        {/* New qty input */}
-                        <td className="pr-4 pl-2 py-1.5 text-right w-[76px] sm:w-[96px]">
+                        {/* New qty input — + Add */}
+                        <td className="pr-2 pl-2 py-1.5 text-right w-[76px] sm:w-[96px]">
                           <div
                             onClick={() => setActiveNumpad(activeNumpad?.id === p.id && activeNumpad.field === "qty" ? null : { id: p.id, field: "qty" })}
                             className="h-8 sm:h-11 rounded-lg border text-right pr-2 text-xs sm:text-sm font-black bg-muted/50 flex items-center justify-end cursor-pointer active:bg-muted/70 transition"
@@ -1272,6 +1131,16 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                             }}
                           >
                             {addVal || "0"}
+                          </div>
+                        </td>
+                        {/* Total Cost — editable, batch cost for WAC */}
+                        <td className="pr-4 pl-2 py-1.5 w-[76px] sm:w-[96px]">
+                          <div
+                            onClick={() => setActiveNumpad(activeNumpad?.id === p.id && activeNumpad.field === "cp" ? null : { id: p.id, field: "cp" })}
+                            className="h-8 sm:h-11 rounded-lg border text-right pr-2 text-xs sm:text-sm font-black bg-muted/50 flex items-center justify-end cursor-pointer active:bg-muted/70 transition"
+                            style={{ borderColor: activeNumpad?.id === p.id && activeNumpad.field === "cp" ? "var(--primary)" : "var(--border)", color: cpVal ? "var(--foreground)" : "var(--muted-foreground)" }}
+                          >
+                            {cpVal || <span className="text-[10px] font-normal opacity-50">total $</span>}
                           </div>
                         </td>
                       </tr>
@@ -1296,7 +1165,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                                 {vPrice || "0.00"}
                               </div>
                             </td>
-                            <td colSpan={3} />
+                            <td colSpan={4} />
                           </tr>
                         );
                       })}
@@ -1360,7 +1229,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                                 {vpVal || "0.00"}
                               </div>
                             </td>
-                            <td colSpan={3} />
+                            <td colSpan={4} />
                           </tr>
                         );
                       })}
@@ -1368,7 +1237,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                       {/* Add Variation row — liquor only */}
                       {p.category === "liquor" && (
                         <tr className="border-t border-border/10">
-                          <td colSpan={7} className="pl-8 py-1.5">
+                          <td colSpan={8} className="pl-8 py-1.5">
                             <button
                               type="button"
                               onClick={() => setLocalVars((prev) => {
@@ -1390,106 +1259,6 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                         </tr>
                       )}
 
-                      {/* ── Cigarettes: Retail price row + Special rows ── */}
-                      {p.category === "cigarettes" && (() => {
-                        const rpVal = cigRetailPrices[p.id] ?? "";
-                        const isRpActive = activeNumpad?.id === p.id && activeNumpad.field === "rp";
-                        const specials = cigSpecialData[p.id] ?? [{ qty: "", price: "" }];
-                        return (
-                          <>
-                          {/* Retail price per cig */}
-                          <tr className="border-t border-border/20" style={{ background: "rgba(255,255,255,0.02)" }}>
-                            <td className="pl-3 pr-2 py-1" />
-                            <td className="px-2 py-1">
-                              <span className="text-[10px] font-semibold text-muted-foreground pl-3">↳ Retail / cig</span>
-                            </td>
-                            <td className="px-2 py-1" colSpan={2}>
-                              <div
-                                onClick={() => setActiveNumpad(isRpActive ? null : { id: p.id, field: "rp" })}
-                                className="h-7 rounded-lg border text-right pr-2 text-xs font-black bg-muted/50 flex items-center justify-end cursor-pointer active:bg-muted/70 transition"
-                                style={{ borderColor: isRpActive ? "var(--primary)" : "var(--border)", color: "var(--foreground)" }}
-                              >
-                                {rpVal || "0.00"}
-                              </div>
-                            </td>
-                            <td colSpan={3} />
-                          </tr>
-
-                          {/* Special rows — one per entry in cigSpecialData[p.id] */}
-                          {specials.map((sd, specIdx) => {
-                            const rowId = `${p.id}__specIdx__${specIdx}`;
-                            const isSqActive  = activeNumpad?.id === rowId && activeNumpad.field === "sq";
-                            const isSppActive = activeNumpad?.id === rowId && activeNumpad.field === "spp";
-                            return (
-                              <tr key={rowId} className="border-t border-border/20" style={{ background: "rgba(251,146,60,0.04)" }}>
-                                <td className="pl-2 pr-1 py-1">
-                                  {specials.length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setCigSpecialData((prev) => {
-                                        const arr = (prev[p.id] ?? []).filter((_, i) => i !== specIdx);
-                                        return { ...prev, [p.id]: arr.length > 0 ? arr : [{ qty: "", price: "" }] };
-                                      })}
-                                      className="h-5 w-5 rounded-full flex items-center justify-center"
-                                      style={{ background: "rgba(220,38,38,0.25)", color: "#f87171" }}
-                                    >
-                                      <X className="h-2.5 w-2.5" />
-                                    </button>
-                                  )}
-                                </td>
-                                <td className="px-2 py-1">
-                                  <span className="text-[10px] font-semibold pl-3" style={{ color: "var(--primary)" }}>
-                                    ↳ Special {specials.length > 1 ? specIdx + 1 : ""}
-                                  </span>
-                                </td>
-                                {/* Qty */}
-                                <td className="px-2 py-1">
-                                  <div
-                                    onClick={() => setActiveNumpad(isSqActive ? null : { id: rowId, field: "sq" })}
-                                    className="h-7 rounded-lg border pr-2 text-xs font-black bg-muted/50 flex items-center cursor-pointer active:bg-muted/70 transition"
-                                    style={{ borderColor: isSqActive ? "var(--primary)" : "var(--border)" }}
-                                    title="Qty in bundle"
-                                  >
-                                    <span className="pl-2 text-muted-foreground/60 font-semibold shrink-0">qty:</span>
-                                    <span className="flex-1 text-right" style={{ color: "var(--muted-foreground)" }}>{sd.qty || "0"}</span>
-                                  </div>
-                                </td>
-                                {/* Price */}
-                                <td className="px-2 py-1">
-                                  <div
-                                    onClick={() => setActiveNumpad(isSppActive ? null : { id: rowId, field: "spp" })}
-                                    className="h-7 rounded-lg border text-right pr-2 text-xs font-black bg-muted/50 flex items-center justify-end cursor-pointer active:bg-muted/70 transition"
-                                    style={{ borderColor: isSppActive ? "var(--primary)" : "var(--border)", color: "var(--foreground)" }}
-                                    title="Bundle price"
-                                  >
-                                    {sd.price || "0.00"}
-                                  </div>
-                                </td>
-                                <td colSpan={3} />
-                              </tr>
-                            );
-                          })}
-
-                          {/* + Add Variation — appends another special row */}
-                          <tr className="border-t border-border/10">
-                            <td colSpan={7} className="pl-8 py-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setCigSpecialData((prev) => {
-                                  const arr = prev[p.id] ?? [{ qty: "", price: "" }];
-                                  return { ...prev, [p.id]: [...arr, { qty: "", price: "" }] };
-                                })}
-                                className="flex items-center gap-1 text-[10px] font-black transition active:scale-95"
-                                style={{ color: "var(--primary)" }}
-                              >
-                                <span className="h-4 w-4 rounded-full flex items-center justify-center text-black text-[10px] font-black" style={{ background: "var(--gradient-hero)" }}>+</span>
-                                Add Special
-                              </button>
-                            </td>
-                          </tr>
-                          </>
-                        );
-                      })()}
                       </React.Fragment>
                     );
                   })}
@@ -1505,7 +1274,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
           <div className="shrink-0 border-t border-border px-4 pt-3 pb-2" style={{ background: "var(--background)" }}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-black text-muted-foreground uppercase tracking-widest">
-                {activeNumpad.field === "cp" ? t("numpad_cost", "Cost Price") : activeNumpad.field === "sp" ? t("numpad_sell", "Sell Price") : activeNumpad.field === "units" ? t("numpad_units", "Units per Item") : activeNumpad.field === "vp" ? t("numpad_var_price", "Variation Price") : activeNumpad.field === "vu" ? t("numpad_drinks_used", "Drinks Used") : t("numpad_add_qty", "Add Qty")}
+                {activeNumpad.field === "cp" ? t("numpad_cost", "Total Cost") : activeNumpad.field === "sp" ? t("numpad_sell", "Sell Price") : activeNumpad.field === "units" ? t("numpad_units", "Units per Item") : activeNumpad.field === "vp" ? t("numpad_var_price", "Variation Price") : activeNumpad.field === "vu" ? t("numpad_drinks_used", "Drinks Used") : t("numpad_add_qty", "Add Qty")}
               </span>
               <button onClick={() => setActiveNumpad(null)}
                 className="h-10 px-5 rounded-xl font-black text-sm flex items-center gap-2 active:scale-95 transition"
@@ -1599,33 +1368,6 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                       <span className="text-yellow-400 font-black ml-1"> → ${newSp.toFixed(2)}</span>
                     </div>
                   )}
-                  {/* Cig retail price change */}
-                  {p.category === "cigarettes" && (() => {
-                    const nr = parseFloat(cigRetailPrices[p.id] ?? "");
-                    const er = (p.bottle_variations ?? []).find((bv) => bv.key === "retail");
-                    if (!isNaN(nr) && nr !== Number(er?.price ?? 0)) {
-                      return (
-                        <div className="text-xs text-muted-foreground">
-                          Retail/cig: <span className="line-through">${Number(er?.price ?? 0).toFixed(2)}</span>
-                          <span className="text-yellow-400 font-black ml-1"> → ${nr.toFixed(2)}</span>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                  {/* Cig special change */}
-                  {p.category === "cigarettes" && (() => {
-                    const sq = parseInt(cigSpecialData[p.id]?.[0]?.qty ?? "", 10);
-                    const spr = parseFloat(cigSpecialData[p.id]?.[0]?.price ?? "");
-                    if (!isNaN(sq) && sq > 0 && !isNaN(spr) && spr > 0) {
-                      return (
-                        <div className="text-xs font-bold" style={{ color: "var(--primary)" }}>
-                          Special: {sq} for ${spr.toFixed(2)}
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
                 </div>
               </div>
             );
