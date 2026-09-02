@@ -870,7 +870,7 @@ const ProductGrid = React.memo(function ProductGrid({
   return (
     <>
       <div
-        className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2"
+        className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-6 gap-2"
         onContextMenu={(e) => e.preventDefault()}
       >
         {barOrdered.map((p) => (
@@ -2118,7 +2118,7 @@ export default function RegisterPage() {
                     <div>
                       {barEditMode ? (
                         <div>
-                          <div ref={barEditGridRef} className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
+                          <div ref={barEditGridRef} className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-6 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
                             {barOrdered.map((p) => {
                               const inCart = cart.find((i) => i.id === p.id);
                               const outOfStock = (p.stock_qty ?? 1) === 0;

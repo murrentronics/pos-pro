@@ -37,20 +37,35 @@ export default function LoginPage() {
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center px-3 pt-10 pb-24 overflow-y-auto"
+      className="h-screen flex flex-col items-center px-3 pt-10 pb-24 overflow-y-auto"
       style={{ background: "radial-gradient(circle at 20% 0%, oklch(0.22 0.08 240) 0%, oklch(0.08 0.04 240) 60%)" }}
     >
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex mb-4">
-            <img
-              src="/logo.svg"
-              alt="P.O.S. Pro logo"
-              className="h-16 w-16"
-              style={{ filter: "drop-shadow(var(--shadow-glow))" }}
-            />
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" className="h-16 w-16" style={{ filter: "drop-shadow(0 0 12px rgba(0,180,255,0.5))" }}>
+              <defs>
+                <linearGradient id="lg" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#00d4ff"/>
+                  <stop offset="100%" stopColor="#0055cc"/>
+                </linearGradient>
+                <radialGradient id="bg" cx="40%" cy="35%">
+                  <stop offset="0%" stopColor="#071828"/>
+                  <stop offset="100%" stopColor="#020810"/>
+                </radialGradient>
+              </defs>
+              <circle cx="256" cy="256" r="256" fill="url(#bg)"/>
+              <circle cx="256" cy="256" r="238" fill="none" stroke="url(#lg)" strokeWidth="2.5" opacity="0.4"/>
+              <circle cx="256" cy="256" r="224" fill="none" stroke="#00b4ff" strokeWidth="0.8" opacity="0.15"/>
+              <rect x="155" y="110" width="58" height="260" rx="10" fill="url(#lg)"/>
+              <rect x="155" y="110" width="185" height="54" rx="11" fill="url(#lg)"/>
+              <rect x="155" y="218" width="175" height="50" rx="11" fill="url(#lg)"/>
+              <rect x="281" y="110" width="59" height="158" rx="11" fill="url(#lg)"/>
+              <rect x="270" y="298" width="100" height="34" rx="9" fill="url(#lg)"/>
+              <text x="320" y="321" fontFamily="Arial,sans-serif" fontSize="16" fontWeight="900" textAnchor="middle" fill="#000d1a" letterSpacing="3">PRO</text>
+            </svg>
           </div>
-          <h1 className="text-4xl font-black tracking-tight">P.O.S. Pro</h1>
+          <h1 className="text-4xl font-black tracking-tight" style={{ color: "#ffffff" }}>P.O.S. Pro</h1>
           <p className="text-muted-foreground mt-1">{t("business_pos_wallet", "Business POS & Wallet")}</p>
         </div>
 
