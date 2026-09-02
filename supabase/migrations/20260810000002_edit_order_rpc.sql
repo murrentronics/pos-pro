@@ -75,6 +75,16 @@ BEGIN
      SET wallet_balance = wallet_balance + v_delta
    WHERE id = v_cashier_id;
 
+  -- Build items text (used in both cashier and owner notes)
+  SELECT string_agg((item->>'qty') || 'x ' || (item->>'name'), ', ')
+    INTO v_items_text
+    FROM jsonb_array_elements(p_items) AS item;
+
+  IF p_discount_amount IS NOT NULL AND p_discount_amount > 0 THEN
+    v_discount_text := ' | Disc: -$' || p_discount_amount::text
+                    || ' (orig $'    || COALESCE(p_original_total::text, (p_total + p_discount_amount)::text) || ')';
+  END IF;
+
   -- 6. Replace cashier's wallet_transaction for this order
   DELETE FROM public.wallet_transactions
    WHERE order_id = p_order_id
@@ -82,21 +92,23 @@ BEGIN
      AND type = 'sale';
 
   INSERT INTO public.wallet_transactions(profile_id, amount, type, note, order_id)
-    VALUES (v_cashier_id, p_total, 'sale', 'Order sale (edited)', p_order_id);
+    VALUES (
+      v_cashier_id,
+      p_total,
+      'sale',
+      'Cash: Sale (edited)'
+        || v_discount_text
+        || ' | Items: ' || COALESCE(v_items_text, '')
+        || ' | $' || p_total::text
+        || ' | Paid: $' || p_paid::text
+        || ' · Change: $' || p_change_given::text,
+      p_order_id
+    );
 
   -- 7. Replace owner's cashier_sale wallet_transaction (only when cashier ≠ owner)
   IF v_cashier_id IS DISTINCT FROM v_owner_id THEN
     SELECT username INTO v_cashier_name
       FROM public.profiles WHERE id = v_cashier_id;
-
-    SELECT string_agg((item->>'qty') || 'x ' || (item->>'name'), ', ')
-      INTO v_items_text
-      FROM jsonb_array_elements(p_items) AS item;
-
-    IF p_discount_amount IS NOT NULL AND p_discount_amount > 0 THEN
-      v_discount_text := ' | Disc: -$' || p_discount_amount::text
-                      || ' (orig $'    || COALESCE(p_original_total::text, (p_total + p_discount_amount)::text) || ')';
-    END IF;
 
     DELETE FROM public.wallet_transactions
      WHERE order_id = p_order_id
@@ -113,7 +125,7 @@ BEGIN
         || ' · Paid: $'   || COALESCE(p_paid::text, p_total::text)
         || ' · Change: $' || COALESCE(p_change_given::text, '0')
         || v_discount_text
-        || ' | ' || COALESCE(v_items_text, ''),
+        || ' | Items: ' || COALESCE(v_items_text, ''),
       p_order_id
     );
   END IF;

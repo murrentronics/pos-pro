@@ -9,12 +9,13 @@ import {
   Wallet as WalletIcon, Receipt, ChevronLeft, ChevronRight,
   ArrowDownLeft, RotateCcw, Loader2, FileText, Download, X,
   TrendingUp, TrendingDown, DollarSign, ChevronDown,
-  BarChart3, List, Trash2, Pencil,
+  BarChart3, List, Trash2, Pencil, Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
+import { printReceipt, type ReceiptData } from "@/lib/receiptPrinter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Order = {
@@ -166,6 +167,35 @@ function ExpenseRow({ expense: e }: { expense: OwnerExpense }) {
   );
 }
 
+// ─── Shared print helper for order rows ──────────────────────────────────────
+async function printOrderReceipt(o: Order, ownerName: string) {
+  const items = (o.items || []).map((i: any) => ({
+    name: i.name as string,
+    qty: Number(i.qty),
+    price: Number(i.price),
+  }));
+  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const receiptData: ReceiptData = {
+    storeName: ownerName || "Store",
+    locationName: "",
+    orderNumber: o.id.slice(-6).toUpperCase(),
+    serverName: "",
+    items,
+    subtotal,
+    total: Number(o.total),
+    paid: Number(o.paid),
+    change: Number(o.change_given),
+    payMode: "cash",
+    date: new Date(o.created_at).toLocaleString("en-US", {
+      month: "numeric", day: "numeric", year: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true,
+    }),
+  };
+  const res = await printReceipt(receiptData);
+  if (res.printed) toast.success("Sent to printer");
+  else if (res.error) toast.error(res.error);
+}
+
 function CashierWallet({ profile }: { profile: { id: string; wallet_balance: number; role: string; username?: string; parent_id?: string | null } }) {
   const { t } = useTranslation();
   const { refreshProfile } = useAuth();
@@ -202,30 +232,22 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
     nav("/register");
   };
 
-  // ── Edit credit charge handler — parses items from wallet_tx note ──
-  const handleEditCreditCharge = (tx: WalletTx) => {
+  // ── Edit credit charge handler — fetches real items from the linked order ──
+  const handleEditCreditCharge = async (tx: WalletTx) => {
     if (!tx.order_id) { toast.error("This credit sale cannot be edited (no order reference)"); return; }
-    const parts = (tx.note ?? "").split(" | ");
-    const itemsPart = parts.find(p => p.startsWith("Items:"))?.replace("Items: ", "") ?? "";
-    // Try to reconstruct items from the Items: note fragment
-    // Format: "1x Name, 2x Name2"
-    const items = itemsPart
-      .split(", ")
-      .map((s) => {
-        const m = s.match(/^(\d+)[×x]\s*(.+)$/);
-        if (!m) return null;
-        return { name: m[2].trim(), qty: Number(m[1]), price: 0 };
-      })
-      .filter(Boolean) as { name: string; qty: number; price: number }[];
-    const amtStr = parts.find(p => p.startsWith("$")) ?? "";
-    const totalAmt = parseFloat(amtStr.replace("$", "")) || Number(tx.amount) || 0;
+    const { data: order, error } = await supabase
+      .from("orders")
+      .select("id, items, total, paid, change_given, discount_amount")
+      .eq("id", tx.order_id)
+      .single();
+    if (error || !order) { toast.error("Could not load order details"); return; }
     const editPayload = {
-      orderId: tx.order_id,
-      items,
-      originalTotal: totalAmt,
-      paid: 0,
-      changeGiven: 0,
-      discountAmount: 0,
+      orderId: order.id,
+      items: order.items,
+      originalTotal: Number(order.total),
+      paid: Number(order.paid),
+      changeGiven: Number(order.change_given),
+      discountAmount: Number(order.discount_amount ?? 0),
       type: "credit" as const,
       creditTxId: tx.id,
     };
@@ -665,20 +687,20 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
           {floatAmount !== null && (
             <div className="grid grid-cols-3 gap-2 mt-4">
               <div className="rounded-xl px-2 py-2 flex flex-col gap-0.5 text-center"
-                style={{ background: "#bae6fd" }}>
-                <div className="text-[9px] sm:text-[11px] font-semibold uppercase tracking-wider" style={{ color: "rgba(15,40,80,0.6)" }}>Float</div>
+                style={{ background: "#ffffff" }}>
+                <div className="text-[9px] sm:text-[11px] font-semibold uppercase tracking-wider" style={{ color: "rgba(60,60,60,0.65)" }}>Float</div>
                 <div className="font-black text-xs" style={{ color: "#fbbf24" }}>${fmt(floatAmount)}</div>
               </div>
               <div className="rounded-xl px-2 py-2 flex flex-col gap-0.5 text-center"
-                style={{ background: "#bae6fd" }}>
-                <div className="text-[9px] sm:text-[11px] font-semibold uppercase tracking-wider" style={{ color: "rgba(15,40,80,0.6)" }}>Used</div>
+                style={{ background: "#ffffff" }}>
+                <div className="text-[9px] sm:text-[11px] font-semibold uppercase tracking-wider" style={{ color: "rgba(60,60,60,0.65)" }}>Used</div>
                 <div className="font-black text-xs" style={{ color: floatUsed > 0 ? "#0ea5e9" : "rgba(15,40,80,0.35)" }}>
                   {floatUsed > 0 ? `$${fmt(floatUsed)}` : "—"}
                 </div>
               </div>
               <div className="rounded-xl px-2 py-2 flex flex-col gap-0.5 text-center"
-                style={{ background: "#bae6fd" }}>
-                <div className="text-[9px] sm:text-[11px] font-semibold uppercase tracking-wider" style={{ color: "rgba(15,40,80,0.6)" }}>Restante</div>
+                style={{ background: "#ffffff" }}>
+                <div className="text-[9px] sm:text-[11px] font-semibold uppercase tracking-wider" style={{ color: "rgba(60,60,60,0.65)" }}>Restante</div>
                 <div className="font-black text-xs" style={{
                   color: floatRemaining !== null && floatRemaining > 0 ? "#0ea5e9" : "rgba(15,40,80,0.35)"
                 }}>
@@ -735,7 +757,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                 if (isCashierExpense) {
                   return (
                     <div key={tx.id} className="rounded-xl p-4 border border-pink-500/30 flex items-center gap-3"
-                      style={{ background: "#e0f2fe" }}>
+                      style={{ background: "#ffffff" }}>
                       <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-pink-500/20 border-pink-500/30">
                         <TrendingDown className="h-4 w-4 text-pink-400" />
                       </div>
@@ -751,7 +773,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                 if (isTransferOut) {
                   return (
                     <div key={tx.id} className="rounded-xl p-4 border border-red-500/30 flex items-center gap-3"
-                      style={{ background: "#e0f2fe" }}>
+                      style={{ background: "#ffffff" }}>
                       <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-red-500/20 border-red-500/30">
                         <ArrowDownLeft className="h-4 w-4 text-red-400 rotate-180" />
                       </div>
@@ -767,7 +789,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                 if (isTransferIn) {
                   return (
                     <div key={tx.id} className="rounded-xl p-4 border border-green-500/30 flex items-center gap-3"
-                      style={{ background: "#e0f2fe" }}>
+                      style={{ background: "#ffffff" }}>
                       <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/20 border-green-500/30">
                         <ArrowDownLeft className="h-4 w-4 text-green-700" />
                       </div>
@@ -819,7 +841,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                   const cpRemain    = cpParts.find(p => p.startsWith("Remaining:") || p.startsWith("Balance remaining:")) ?? "";
                   return (
                     <div key={tx.id} className="rounded-xl p-4 border border-green-500/30 flex items-start gap-3"
-                      style={{ background: "#e0f2fe" }}>
+                      style={{ background: "#ffffff" }}>
                       <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/15 border-green-500/30 text-lg">💳</div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
@@ -849,7 +871,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                   const ccDiscOrig = ccDiscMatch?.[2] ? Number(ccDiscMatch[2]) : null;
                   return (
                     <div key={tx.id} className="rounded-xl p-4 border border-orange-500/30 flex items-start gap-3"
-                      style={{ background: "#e0f2fe" }}>
+                      style={{ background: "#ffffff" }}>
                       <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-orange-500/15 border-orange-500/30 text-lg">🪙</div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
@@ -889,7 +911,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
               const o = rec.data as Order;
               return (
                 <div key={o.id} className="rounded-xl p-4 border border-green-500/20 flex items-start gap-3"
-                  style={{ background: "#e0f2fe" }}>
+                  style={{ background: "#ffffff" }}>
                   <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/15 border-green-500/25 text-base">💵</div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
@@ -927,28 +949,38 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                       Paid ${fmt(Number(o.paid))} · Change ${fmt(Number(o.change_given))}
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
+                  <div className="flex flex-col items-end gap-1 shrink-0">
                     <span className="font-black text-sm text-green-700">+${fmt(Number(o.total))}</span>
-                    <button
-                      onClick={() => handleEditOrder(o)}
-                      className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
-                      style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
-                      title="Edit this sale"
-                    >
-                      <Pencil className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
-                    </button>
-                    {o.id === deletableOrderId && (
+                    <div className="flex items-center gap-1">
                       <button
-                        onClick={() => deleteLatestCashierOrder(o)}
-                        disabled={deletingOrderId === o.id}
-                        className="h-8 w-8 rounded-full flex items-center justify-center bg-red-600 active:scale-95 transition disabled:opacity-50"
-                        title="Delete this sale"
+                        onClick={() => printOrderReceipt(o, profile.username ?? "Store")}
+                        className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
+                        style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.4)" }}
+                        title="Print receipt"
                       >
-                        {deletingOrderId === o.id
-                          ? <Loader2 className="h-3.5 w-3.5 text-white animate-spin" />
-                          : <Trash2 className="h-3.5 w-3.5 text-white" />}
+                        <Printer className="h-3.5 w-3.5 text-blue-400" />
                       </button>
-                    )}
+                      <button
+                        onClick={() => handleEditOrder(o)}
+                        className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
+                        style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
+                        title="Edit this sale"
+                      >
+                        <Pencil className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
+                      </button>
+                      {o.id === deletableOrderId && (
+                        <button
+                          onClick={() => deleteLatestCashierOrder(o)}
+                          disabled={deletingOrderId === o.id}
+                          className="h-8 w-8 rounded-full flex items-center justify-center bg-red-600 active:scale-95 transition disabled:opacity-50"
+                          title="Delete this sale"
+                        >
+                          {deletingOrderId === o.id
+                            ? <Loader2 className="h-3.5 w-3.5 text-white animate-spin" />
+                            : <Trash2 className="h-3.5 w-3.5 text-white" />}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -2297,8 +2329,9 @@ function StaffBadge({ label = "Cashier" }: { label?: string }) {
   );
 }
 
-function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }: {
+function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCreditCharge }: {
   profile: { id: string };
+  ownerName: string;
   onDeleted?: () => void;
   onEditOrder?: (o: Order) => void;
   onEditCreditCharge?: (tx: WalletTx) => void;
@@ -2492,7 +2525,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                 const saleTotal   = totalMatch  ? `+$${fmt(parseFloat(totalMatch[1]))}` : "";
                 return (
                   <div key={tx.id} className="rounded-xl p-4 border border-blue-500/20 flex items-start gap-3"
-                    style={{ background: "#e0f2fe" }}>
+                    style={{ background: "#ffffff" }}>
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-blue-500/15 border-blue-500/25 text-base">🧾</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
@@ -2616,7 +2649,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                   const isLatest = o.id === deletableOrderId;
                   return (
                     <div key={tx.id} className="rounded-xl p-4 border border-green-500/20 flex items-start gap-3"
-                      style={{ background: "#e0f2fe" }}>
+                      style={{ background: "#ffffff" }}>
                       <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/15 border-green-500/25 text-base">💵</div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
@@ -2654,35 +2687,45 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                           Paid ${fmt(Number(o.paid))} · Change ${fmt(Number(o.change_given))}
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-2 shrink-0">
+                      <div className="flex flex-col items-end gap-1 shrink-0">
                         <span className="font-black text-sm text-green-700">+${fmt(Number(o.total))}</span>
-                        <button
-                          onClick={() => onEditOrder && onEditOrder(o)}
-                          className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
-                          style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
-                          title="Edit this sale"
-                        >
-                          <Pencil className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
-                        </button>
-                        {isLatest && (
+                        <div className="flex items-center gap-1">
                           <button
-                            onClick={() => deleteLatestOrder(o)}
-                            disabled={deletingOrderId === o.id}
-                            className="h-8 w-8 rounded-full flex items-center justify-center bg-red-600 active:scale-95 transition disabled:opacity-50"
-                            title="Delete this sale"
+                            onClick={() => printOrderReceipt(o, ownerName)}
+                            className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
+                            style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.4)" }}
+                            title="Print receipt"
                           >
-                            {deletingOrderId === o.id
-                              ? <Loader2 className="h-3.5 w-3.5 text-white animate-spin" />
-                              : <Trash2 className="h-3.5 w-3.5 text-white" />}
+                            <Printer className="h-3.5 w-3.5 text-blue-400" />
                           </button>
-                        )}
+                          <button
+                            onClick={() => onEditOrder && onEditOrder(o)}
+                            className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
+                            style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
+                            title="Edit this sale"
+                          >
+                            <Pencil className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
+                          </button>
+                          {isLatest && (
+                            <button
+                              onClick={() => deleteLatestOrder(o)}
+                              disabled={deletingOrderId === o.id}
+                              className="h-8 w-8 rounded-full flex items-center justify-center bg-red-600 active:scale-95 transition disabled:opacity-50"
+                              title="Delete this sale"
+                            >
+                              {deletingOrderId === o.id
+                                ? <Loader2 className="h-3.5 w-3.5 text-white animate-spin" />
+                                : <Trash2 className="h-3.5 w-3.5 text-white" />}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
                 }
                 return (
                   <div key={tx.id} className="rounded-xl p-4 border border-green-500/30 flex items-center gap-3"
-                    style={{ background: "#e0f2fe" }}>
+                    style={{ background: "#ffffff" }}>
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/20 border-green-500/30">
                       <ArrowDownLeft className="h-4 w-4 text-green-700" />
                     </div>
@@ -2713,7 +2756,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                 const sub2Display = sub2.replace(/^Shots revenue/, "Drinks revenue");
                 return (
                   <div key={tx.id} className="rounded-xl p-4 border border-amber-500/30 flex items-start gap-3"
-                    style={{ background: "#e0f2fe" }}>
+                    style={{ background: "#ffffff" }}>
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-amber-500/20 border-amber-500/30 text-lg">🍾</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
@@ -2749,7 +2792,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                 const packCashierName = packCashierPart.replace(/^(By:|Cashier:)\s*/, "").trim();
                 return (
                   <div key={tx.id} className="rounded-xl p-4 border border-green-500/30 flex items-start gap-3"
-                    style={{ background: "#e0f2fe" }}>
+                    style={{ background: "#ffffff" }}>
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/20 border-green-500/30 text-lg">🚬</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
@@ -2797,7 +2840,7 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
             const isNewest = o.id === newestOrderId;
             return (
               <div key={o.id} className="rounded-xl p-4 border border-green-500/20 flex items-start gap-3"
-                style={{ background: "#e0f2fe" }}>
+                style={{ background: "#ffffff" }}>
                 <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/15 border-green-500/25 text-base">💵</div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
@@ -2835,28 +2878,38 @@ function TransactionsTab({ profile, onDeleted, onEditOrder, onEditCreditCharge }
                     Paid ${fmt(Number(o.paid))} · Change ${fmt(Number(o.change_given))}
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-2 shrink-0">
+                <div className="flex flex-col items-end gap-1 shrink-0">
                   <span className="font-black text-lg text-green-700">+${fmt(Number(o.total))}</span>
-                  <button
-                    onClick={() => onEditOrder && onEditOrder(o)}
-                    className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
-                    style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
-                    title="Edit this sale"
-                  >
-                    <Pencil className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
-                  </button>
-                  {isNewest && (
+                  <div className="flex items-center gap-1">
                     <button
-                      onClick={() => deleteLatestOrder(o)}
-                      disabled={deletingOrderId === o.id}
-                      className="h-8 w-8 rounded-full flex items-center justify-center bg-red-600 active:scale-95 transition disabled:opacity-50"
-                      title="Delete this sale"
+                      onClick={() => printOrderReceipt(o, ownerName)}
+                      className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
+                      style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.4)" }}
+                      title="Print receipt"
                     >
-                      {deletingOrderId === o.id
-                        ? <Loader2 className="h-3.5 w-3.5 text-white animate-spin" />
-                        : <Trash2 className="h-3.5 w-3.5 text-white" />}
+                      <Printer className="h-3.5 w-3.5 text-blue-400" />
                     </button>
-                  )}
+                    <button
+                      onClick={() => onEditOrder && onEditOrder(o)}
+                      className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
+                      style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
+                      title="Edit this sale"
+                    >
+                      <Pencil className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
+                    </button>
+                    {isNewest && (
+                      <button
+                        onClick={() => deleteLatestOrder(o)}
+                        disabled={deletingOrderId === o.id}
+                        className="h-8 w-8 rounded-full flex items-center justify-center bg-red-600 active:scale-95 transition disabled:opacity-50"
+                        title="Delete this sale"
+                      >
+                        {deletingOrderId === o.id
+                          ? <Loader2 className="h-3.5 w-3.5 text-white animate-spin" />
+                          : <Trash2 className="h-3.5 w-3.5 text-white" />}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -3270,27 +3323,21 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
   };
 
   // ── Edit credit charge handler for owner wallet ──
-  const handleOwnerEditCreditCharge = (tx: WalletTx) => {
+  const handleOwnerEditCreditCharge = async (tx: WalletTx) => {
     if (!tx.order_id) { toast.error("This credit sale cannot be edited (no order reference)"); return; }
-    const parts = (tx.note ?? "").split(" | ");
-    const itemsPart = parts.find(p => p.startsWith("Items:"))?.replace("Items: ", "") ?? "";
-    const items = itemsPart
-      .split(", ")
-      .map((s) => {
-        const m = s.match(/^(\d+)[×x]\s*(.+)$/);
-        if (!m) return null;
-        return { name: m[2].trim(), qty: Number(m[1]), price: 0 };
-      })
-      .filter(Boolean) as { name: string; qty: number; price: number }[];
-    const amtStr = parts.find(p => p.startsWith("$")) ?? "";
-    const totalAmt = parseFloat(amtStr.replace("$", "")) || Number(tx.amount) || 0;
+    const { data: order, error } = await supabase
+      .from("orders")
+      .select("id, items, total, paid, change_given, discount_amount")
+      .eq("id", tx.order_id)
+      .single();
+    if (error || !order) { toast.error("Could not load order details"); return; }
     const editPayload = {
-      orderId: tx.order_id,
-      items,
-      originalTotal: totalAmt,
-      paid: 0,
-      changeGiven: 0,
-      discountAmount: 0,
+      orderId: order.id,
+      items: order.items,
+      originalTotal: Number(order.total),
+      paid: Number(order.paid),
+      changeGiven: Number(order.change_given),
+      discountAmount: Number(order.discount_amount ?? 0),
       type: "credit" as const,
       creditTxId: tx.id,
     };
@@ -3319,11 +3366,11 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               {cashierFloat > 0 ? (
                 <>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] sm:text-xs font-semibold" style={{ color: "rgba(15,40,80,0.6)" }}>{t("established", "Set")}</span>
+                    <span className="text-[10px] sm:text-xs font-semibold" style={{ color: "rgba(60,60,60,0.65)" }}>{t("established", "Set")}</span>
                     <span className="font-black text-sm sm:text-base" style={{ color: "#fbbf24" }}>${fmt(cashierFloat)}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] sm:text-xs font-semibold" style={{ color: "rgba(15,40,80,0.6)" }}>{t("remain", "Remain")}</span>
+                    <span className="text-[10px] sm:text-xs font-semibold" style={{ color: "rgba(60,60,60,0.65)" }}>{t("remain", "Remain")}</span>
                     <span className="font-black text-sm sm:text-base" style={{ color: floatRemaining > 0 ? "#15803d" : "#fca5a5" }}>${fmt(floatRemaining)}</span>
                   </div>
                 </>
@@ -3351,20 +3398,20 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
             <div className="space-y-2">
               {/* Row 1 — Session Sales / Session Stock Cost / Session Gross Profit */}
               <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("session_sales", "Session\nSales")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("session_sales", "Session\nSales")}</div>
                   <div className="font-black text-xs" style={{ color: barIsOpenWallet ? "#0ea5e9" : "rgba(15,40,80,0.35)" }}>
                     {barIsOpenWallet ? `$${fmt(sessionIncome)}` : "—"}
                   </div>
                 </div>
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("session_stock_cost", "Session\nStock Cost")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("session_stock_cost", "Session\nStock Cost")}</div>
                   <div className="font-black text-xs" style={{ color: barIsOpenWallet ? "#b91c1c" : "rgba(15,40,80,0.35)" }}>
                     {barIsOpenWallet ? `$${fmt(sessionStockCost)}` : "—"}
                   </div>
                 </div>
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("session_gross", "Session\nProfit")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("session_gross", "Session\nProfit")}</div>
                   {(() => {
                     const sgp = sessionIncome - sessionStockCost;
                     return (
@@ -3377,14 +3424,14 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               </div>
               {/* Row 2 — Session Expenses / Session Net Profit */}
               <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("session_expenses", "Session\nExpenses")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("session_expenses", "Session\nExpenses")}</div>
                   <div className="font-black text-xs" style={{ color: "#b45309" }}>
                     {barIsOpenWallet ? `$${fmt(sessionExpense)}` : "$0.00"}
                   </div>
                 </div>
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("session_net", "Session\nNet Profit")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("session_net", "Session\nNet Profit")}</div>
                   {(() => {
                     const sgp = sessionIncome - sessionStockCost;
                     const snp = sgp - sessionExpense;
@@ -3415,18 +3462,18 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
             <div className="space-y-2">
               {/* Row 1 — Today's Sales / Today's Stock Cost / Today's Gross Profit */}
               <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("today_sales", "Today's\nSales")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("today_sales", "Today's\nSales")}</div>
                   <div className="font-black text-xs" style={{ color: "#15803d" }}>${fmt(todayIncome)}</div>
                 </div>
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("today_stock_cost", "Today's\nStock Cost")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("today_stock_cost", "Today's\nStock Cost")}</div>
                   <div className="font-black text-xs" style={{ color: "#b91c1c" }}>
                     {todayStockCost > 0 ? `$${fmt(todayStockCost)}` : "$0.00"}
                   </div>
                 </div>
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("today_gross", "Today's\nProfit")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("today_gross", "Today's\nProfit")}</div>
                   {(() => {
                     const tgp = todayIncome - todayStockCost;
                     return (
@@ -3439,14 +3486,14 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               </div>
               {/* Row 2 — Today's Expenses / Today's Net Profit */}
               <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("today_expenses", "Today's\nExpenses")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("today_expenses", "Today's\nExpenses")}</div>
                   <div className="font-black text-xs" style={{ color: "#b45309" }}>
                     {todayExpenses > 0 ? `$${fmt(todayExpenses)}` : "$0.00"}
                   </div>
                 </div>
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("today_net", "Today's\nNet Profit")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("today_net", "Today's\nNet Profit")}</div>
                   {(() => {
                     const tgp = todayIncome - todayStockCost;
                     const tnp = tgp - todayExpenses;
@@ -3484,18 +3531,18 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
             <div className="space-y-2">
               {/* Row 1 — Total Cash Sales / Total Stock Cost / Gross Sales Profit */}
               <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("alltime_sales", "Total\nSales")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("alltime_sales", "Total\nSales")}</div>
                   <div className="font-black text-xs" style={{ color: "#15803d" }}>${fmt(totalIncome)}</div>
                 </div>
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("alltime_stock_cost", "Total\nStock Cost")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("alltime_stock_cost", "Total\nStock Cost")}</div>
                   <div className="font-black text-xs" style={{ color: "#b91c1c" }}>
                     ${fmt(totalStockSoldCost)}
                   </div>
                 </div>
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("alltime_gross", "Total\nProfit")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("alltime_gross", "Total\nProfit")}</div>
                   {(() => {
                     const gsp = totalIncome - totalStockSoldCost;
                     return (
@@ -3508,14 +3555,14 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               </div>
               {/* Row 2 — Total Expense / Total Net Profit */}
               <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("alltime_expenses", "Total\nExpenses")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("alltime_expenses", "Total\nExpenses")}</div>
                   <div className="font-black text-xs" style={{ color: "#b45309" }}>
                     ${fmt(totalExpenses)}
                   </div>
                 </div>
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("alltime_net", "Total\nNet Profit")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("alltime_net", "Total\nNet Profit")}</div>
                   {(() => {
                     const tnp = totalIncome - totalStockSoldCost - totalExpenses;
                     return (
@@ -3528,20 +3575,20 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
               </div>
               {/* Row 3 — Total Stock Value / Total Stock Cost / Total Stock Profit */}
               <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("stock_value", "Current\nStock Value")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("stock_value", "Current\nStock Value")}</div>
                   <div className="font-black text-xs" style={{ color: "#15803d" }}>
                     ${fmt(stockResaleValue)}
                   </div>
                 </div>
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("stock_cost_current", "Current\nStock Cost")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("stock_cost_current", "Current\nStock Cost")}</div>
                   <div className="font-black text-xs" style={{ color: "#b91c1c" }}>
                     ${fmt(stockCost)}
                   </div>
                 </div>
-                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#bae6fd" }}>
-                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(15,40,80,0.6)" }}>{t("stock_profit", "Current\nStock Profit")}</div>
+                <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
+                  <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("stock_profit", "Current\nStock Profit")}</div>
                   <div className="font-black text-xs" style={{ color: stockExpectedProfit >= 0 ? "#15803d" : "#fca5a5" }}>
                     {stockExpectedProfit >= 0 ? "+" : ""}${fmt(Math.abs(stockExpectedProfit))}
                   </div>
@@ -3576,7 +3623,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
 
       {/* ── Tab content ──────────────────────────────────────────────────── */}
       {activeTab === "transactions" ? (
-        <TransactionsTab profile={profile} onDeleted={loadSummary} onEditOrder={handleOwnerEditOrder} onEditCreditCharge={handleOwnerEditCreditCharge} />
+        <TransactionsTab profile={profile} ownerName={profile.username ?? "Store"} onDeleted={loadSummary} onEditOrder={handleOwnerEditOrder} onEditCreditCharge={handleOwnerEditCreditCharge} />
       ) : (
         <FinancialsTab
           ownerId={profile.id}

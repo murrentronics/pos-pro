@@ -1408,8 +1408,7 @@ export default function RegisterPage() {
       type: payload.type,
       creditTxId: payload.creditTxId,
     });
-    setCashOpen(true);
-    toast.success("Edit mode — adjust items then confirm sale");
+    toast.success("Edit mode — adjust items then tap Update Order");
     // products is the only dep we watch; pendingEditRef is a ref (stable)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products]);
@@ -2291,19 +2290,42 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      {/* Sticky footer — sort button (empty cart) or Place Order (has items) */}
+      {/* Sticky footer — sort button (empty cart) or Place/Update Order (has items) */}
       {!barEditMode && (
       <div className="shrink-0 p-3 border-t border-border" style={{ background: "var(--background)" }}>
         {cartCount > 0 ? (
-          <button
-            onClick={() => setCashOpen(true)}
-            className="md:hidden w-full h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
-            style={{ background: "var(--gradient-hero)" }}
-          >
-            <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">{cartCount}</span>
-            <span>Place Order</span>
-            <span className="text-primary-foreground/80 text-base font-bold">${total.toFixed(2)}</span>
-          </button>
+          editOrder ? (
+            /* ── Edit mode: Cancel + Update Order ── */
+            <div className="flex gap-2 md:hidden">
+              <button
+                onClick={() => { setEditOrder(null); setCart([]); }}
+                className="h-14 rounded-2xl flex items-center justify-center px-5 font-black text-sm border border-border active:scale-[0.98] transition"
+                style={{ background: "var(--background)", color: "var(--foreground)", minWidth: "5rem" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setCashOpen(true)}
+                className="flex-1 h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
+                style={{ background: "var(--gradient-hero)" }}
+              >
+                <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">{cartCount}</span>
+                <span>Update Order</span>
+                <span className="text-primary-foreground/80 text-base font-bold">${total.toFixed(2)}</span>
+              </button>
+            </div>
+          ) : (
+            /* ── Normal mode: Place Order ── */
+            <button
+              onClick={() => setCashOpen(true)}
+              className="md:hidden w-full h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
+              style={{ background: "var(--gradient-hero)" }}
+            >
+              <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">{cartCount}</span>
+              <span>Place Order</span>
+              <span className="text-primary-foreground/80 text-base font-bold">${total.toFixed(2)}</span>
+            </button>
+          )
         ) : (
           <div className="flex justify-center">
             <button
@@ -2364,13 +2386,32 @@ export default function RegisterPage() {
             </div>
             {cartCount > 0 && (
               <div className="p-3 border-t border-sky-200 shrink-0">
-                <button
-                  onClick={() => setCashOpen(true)}
-                  className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"
-                  style={{ background: "var(--gradient-hero)" }}
-                >
-                  Place Order · ${total.toFixed(2)}
-                </button>
+                {editOrder ? (
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => setCashOpen(true)}
+                      className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"
+                      style={{ background: "var(--gradient-hero)" }}
+                    >
+                      Update Order · ${total.toFixed(2)}
+                    </button>
+                    <button
+                      onClick={() => { setEditOrder(null); setCart([]); }}
+                      className="w-full h-9 rounded-2xl font-black text-sm border border-border active:scale-[0.98] transition"
+                      style={{ background: "var(--background)", color: "var(--foreground)" }}
+                    >
+                      Cancel Edit
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setCashOpen(true)}
+                    className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"
+                    style={{ background: "var(--gradient-hero)" }}
+                  >
+                    Place Order · ${total.toFixed(2)}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -2770,6 +2811,7 @@ function CashOverlay({
   const [showRightPanel, setShowRightPanel] = useState(false);
 
   // Inline create-customer form in right panel
+  const isTouchDevice = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createContact, setCreateContact] = useState("");
@@ -3443,14 +3485,14 @@ function CashOverlay({
                       <p className="text-xs text-white/50 mb-1">Full Name *</p>
                       <input
                         type="text"
-                        inputMode="none"
+                        inputMode={isTouchDevice ? "none" : "text"}
                         value={createName}
                         onChange={(e) => setCreateName(e.target.value)}
-                        onFocus={() => setCreateActiveField("name")}
+                        onFocus={() => { if (isTouchDevice) setCreateActiveField("name"); }}
                         placeholder="e.g. John Smith"
                         className="w-full h-10 rounded-xl border border-white/20 bg-white/5 px-3 text-sm font-black text-white placeholder:text-white/30 outline-none focus:border-white/50"
                       />
-                      {createActiveField === "name" && (
+                      {isTouchDevice && createActiveField === "name" && (
                         <CreditAlphaKeyboard
                           value={createName}
                           onChange={setCreateName}
@@ -3947,22 +3989,33 @@ function CashCustomerOverlay({
               <p className="text-sm text-muted-foreground">Create a new customer account</p>
               <div>
                 <Label>Full Name *</Label>
-                <button
-                  type="button"
-                  onClick={() => toggleNew("name")}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1"
-                >
-                  <span
-                    className={`text-sm font-black ${newName ? "text-foreground" : "text-muted-foreground"}`}
-                  >
-                    {newName || "e.g. John Smith"}
-                  </span>
-                </button>
-                {newActiveField === "name" && (
-                  <CreditAlphaKeyboard
+                {isTouchDevice ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => toggleNew("name")}
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1"
+                    >
+                      <span className={`text-sm font-black ${newName ? "text-foreground" : "text-muted-foreground"}`}>
+                        {newName || "e.g. John Smith"}
+                      </span>
+                    </button>
+                    {newActiveField === "name" && (
+                      <CreditAlphaKeyboard
+                        value={newName}
+                        onChange={setNewName}
+                        onDone={() => setNewActiveField(null)}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <input
+                    type="text"
                     value={newName}
-                    onChange={setNewName}
-                    onDone={() => setNewActiveField(null)}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="e.g. John Smith"
+                    required
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-semibold mt-1 outline-none focus:ring-1 focus:ring-primary"
                   />
                 )}
               </div>
@@ -4504,22 +4557,33 @@ function CreditSaleOverlay({
               {/* Full Name */}
               <div>
                 <Label>Full Name *</Label>
-                <button
-                  type="button"
-                  onClick={() => toggleNew("name")}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1"
-                >
-                  <span
-                    className={`text-sm font-black ${newName ? "text-foreground" : "text-muted-foreground"}`}
-                  >
-                    {newName || "e.g. John Smith"}
-                  </span>
-                </button>
-                {newActiveField === "name" && (
-                  <CreditAlphaKeyboard
+                {isTouchDevice ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => toggleNew("name")}
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 text-left mt-1"
+                    >
+                      <span className={`text-sm font-black ${newName ? "text-foreground" : "text-muted-foreground"}`}>
+                        {newName || "e.g. John Smith"}
+                      </span>
+                    </button>
+                    {newActiveField === "name" && (
+                      <CreditAlphaKeyboard
+                        value={newName}
+                        onChange={setNewName}
+                        onDone={() => setNewActiveField(null)}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <input
+                    type="text"
                     value={newName}
-                    onChange={setNewName}
-                    onDone={() => setNewActiveField(null)}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="e.g. John Smith"
+                    required
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-semibold mt-1 outline-none focus:ring-1 focus:ring-primary"
                   />
                 )}
               </div>

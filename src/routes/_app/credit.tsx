@@ -249,17 +249,41 @@ async function printThermalBill(account: CreditAccount, ownerName: string, cashi
 }
 
 // ── Bill Action Modal ─────────────────────────────────────────────────────────
+type CreditTx = {
+  id: string;
+  type: string;
+  amount: number;
+  note: string | null;
+  items: { name: string; price: number; qty: number }[] | null;
+  created_at: string;
+};
+
 function BillModal({ account, ownerName, onClose }: {
   account: CreditAccount;
   ownerName: string;
   onClose: () => void;
 }) {
   const { profile } = useAuth();
+  const [txs, setTxs] = useState<CreditTx[]>([]);
+  const [loadingTxs, setLoadingTxs] = useState(true);
   const [busy, setBusy] = useState<"download" | "print" | "share" | null>(null);
   const [downloaded, setDownloaded] = useState(false);
   const [printed, setPrinted] = useState(false);
   const safeName = account.full_name.replace(/\s+/g, "-").toLowerCase();
   const filename = `credit-bill-${safeName}.pdf`;
+
+  // Fetch all transactions for this account on mount
+  useEffect(() => {
+    supabase
+      .from("credit_transactions")
+      .select("id, type, amount, note, items, created_at")
+      .eq("credit_account_id", account.id)
+      .order("created_at", { ascending: true })
+      .then(({ data, error }) => {
+        if (!error && data) setTxs(data as CreditTx[]);
+        setLoadingTxs(false);
+      });
+  }, [account.id]);
 
   const handleDownload = async () => {
     setBusy("download");
@@ -301,19 +325,15 @@ function BillModal({ account, ownerName, onClose }: {
       if (Capacitor.isNativePlatform()) {
         const { Filesystem, Directory } = await import("@capacitor/filesystem");
         const { Share } = await import("@capacitor/share");
-
         const base64Data = b64.replace(/^data:[^;]+;base64,/, "");
         const writeResult = await Filesystem.writeFile({
           path: filename,
           data: base64Data,
           directory: Directory.Cache,
         });
-
-        const shareText = `Hi ${account.full_name}, please find your credit bill attached.`;
-
         await Share.share({
           title: `Credit Bill — ${account.full_name}`,
-          text: shareText,
+          text: `Hi ${account.full_name}, please find your credit bill attached.`,
           url: writeResult.uri,
           dialogTitle: "Send Bill",
         });
@@ -330,66 +350,146 @@ function BillModal({ account, ownerName, onClose }: {
     onClose();
   };
 
+  const fmtDate = (iso: string) =>
+    new Date(iso).toLocaleString("en-GB", {
+      day: "numeric", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: true,
+    });
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/75 backdrop-blur-sm"
-      onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center"
-        style={{ background: "var(--gradient-card)" }}
+        className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl border border-border shadow-2xl flex flex-col overflow-hidden"
+        style={{ background: "var(--gradient-card)", maxHeight: "90dvh" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border/40">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border/40 shrink-0">
           <div className="text-left">
-            <h3 className="font-black text-lg leading-tight">Customer Bill</h3>
-            <p className="text-xs text-muted-foreground font-semibold truncate max-w-[200px]">{account.full_name}</p>
+            <h3 className="font-black text-lg leading-tight">Bill — {account.full_name}</h3>
+            <p className="text-xs text-muted-foreground">{ownerName}</p>
           </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition">
+          <button
+            onClick={onClose}
+            className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
-          <div className="rounded-2xl p-4 text-center border border-border/60 bg-muted/20">
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Balance Owed</div>
-            <div className="text-3xl font-black text-red-400 mt-0.5">
-              ${Number(account.balance_owed).toFixed(2)}
+        {/* Scrollable receipt body */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0" style={{ scrollbarWidth: "thin" }}>
+          {loadingTxs ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
-          </div>
+          ) : txs.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground py-8">No transactions yet</p>
+          ) : (
+            txs.map((tx) => {
+              const isCharge = tx.type === "charge";
+              const hasItems = Array.isArray(tx.items) && (tx.items as any[]).length > 0;
+              const sessionSubtotal = hasItems
+                ? (tx.items as any[]).reduce((s: number, it: any) => s + Number(it.price ?? 0) * Number(it.qty ?? 1), 0)
+                : Number(tx.amount);
 
+              return (
+                <div
+                  key={tx.id}
+                  className="rounded-xl border border-border/50 overflow-hidden"
+                  style={{ background: isCharge ? "rgba(255,255,255,0.04)" : "rgba(34,197,94,0.06)" }}
+                >
+                  {/* Session date row */}
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-border/30">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
+                      {isCharge ? "Charge" : "Payment"}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">{fmtDate(tx.created_at)}</span>
+                  </div>
+
+                  <div className="px-3 py-2 space-y-1">
+                    {isCharge && hasItems ? (
+                      <>
+                        {/* Item rows */}
+                        {(tx.items as any[]).map((it: any, i: number) => {
+                          const qty = Number(it.qty ?? 1);
+                          const price = Number(it.price ?? 0);
+                          const lineTotal = qty * price;
+                          return (
+                            <div key={i} className="flex items-center justify-between gap-2">
+                              <span className="text-xs text-foreground flex-1 leading-snug">
+                                {qty > 1 && <span className="font-black text-primary mr-1">{qty}x</span>}
+                                {it.name}
+                              </span>
+                              <span className="text-xs font-black shrink-0" style={{ color: "var(--primary)" }}>
+                                ${lineTotal.toFixed(2)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {/* Subtotal */}
+                        <div className="flex items-center justify-between pt-1 border-t border-border/30 mt-1">
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase">Subtotal</span>
+                          <span className="text-xs font-black text-foreground">${sessionSubtotal.toFixed(2)}</span>
+                        </div>
+                      </>
+                    ) : isCharge ? (
+                      /* Fallback: note-only charge (legacy) */
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-foreground flex-1 leading-snug">
+                          {tx.note ? tx.note.replace(/^\[CASH\]\s*/, "") : "Charge"}
+                        </span>
+                        <span className="text-xs font-black" style={{ color: "var(--primary)" }}>
+                          ${Number(tx.amount).toFixed(2)}
+                        </span>
+                      </div>
+                    ) : (
+                      /* Payment row */
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-green-400">Payment received</span>
+                        <span className="text-xs font-black text-green-400">
+                          −${Number(tx.amount).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Balance owed — pinned above buttons */}
+        <div className="shrink-0 mx-4 mb-3 rounded-xl px-4 py-3 flex items-center justify-between border" style={{ background: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.3)" }}>
+          <span className="text-sm font-black text-red-400 uppercase tracking-wide">Balance Owed</span>
+          <span className="text-2xl font-black text-red-400">${Number(account.balance_owed).toFixed(2)}</span>
+        </div>
+
+        {/* Action buttons */}
+        <div className="shrink-0 px-4 pb-5 space-y-2">
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={handlePrintThermal}
               disabled={!!busy}
-              className="h-20 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 text-white shadow-lg"
+              className="h-14 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1 transition active:scale-95 disabled:opacity-50 text-white shadow-lg"
               style={{ background: "var(--gradient-hero)" }}
             >
-              {busy === "print" ? (
-                <Loader2 className="h-6 w-6 animate-spin text-white" />
-              ) : printed ? (
-                <CheckCircle2 className="h-6 w-6 text-white" />
-              ) : (
-                <span className="text-xl leading-none">🖨️</span>
-              )}
-              <span className="text-xs font-black">{printed ? "Printed!" : "Print (Thermal)"}</span>
+              {busy === "print" ? <Loader2 className="h-5 w-5 animate-spin" /> : printed ? <CheckCircle2 className="h-5 w-5" /> : <span className="text-lg leading-none">🖨️</span>}
+              <span className="text-[11px] font-black">{printed ? "Printed!" : "Print (Thermal)"}</span>
             </button>
-
             <button
               onClick={handleDownload}
               disabled={!!busy}
-              className="h-20 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 text-foreground border border-border/80 shadow-sm hover:bg-muted/30"
+              className="h-14 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1 transition active:scale-95 disabled:opacity-50 text-foreground border border-border/80"
               style={{ background: "rgba(255,255,255,0.06)" }}
             >
-              {busy === "download" ? (
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              ) : downloaded ? (
-                <CheckCircle2 className="h-6 w-6 text-green-400" />
-              ) : (
-                <FileDown className="h-6 w-6 text-primary" />
-              )}
-              <span className="text-xs font-black">{downloaded ? "Downloaded!" : "Download PDF"}</span>
+              {busy === "download" ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : downloaded ? <CheckCircle2 className="h-5 w-5 text-green-400" /> : <FileDown className="h-5 w-5 text-primary" />}
+              <span className="text-[11px] font-black">{downloaded ? "Downloaded!" : "Download PDF"}</span>
             </button>
           </div>
-
           <button
             onClick={handleShare}
             disabled={!!busy}

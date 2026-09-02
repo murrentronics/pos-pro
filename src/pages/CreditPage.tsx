@@ -704,19 +704,57 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Summary */}
-          <div className="rounded-2xl p-4 border border-border/60 bg-muted/20 space-y-1">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-semibold text-muted-foreground">{isCharge ? "Amount Charged" : "Amount Paid"}</span>
-              <span className={`text-xl font-black ${isCharge ? "text-red-400" : "text-green-400"}`}>
-                {isCharge ? "+" : "-"}${Number(tx.amount).toFixed(2)}
+          {/* Date + items list */}
+          <div className="rounded-2xl border border-border/60 bg-muted/20 overflow-hidden">
+            {/* Date row */}
+            <div className="flex items-center justify-between px-4 py-2 border-b border-border/30">
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                {isCharge ? "Charge" : "Payment"}
               </span>
+              <span className="text-[10px] text-muted-foreground">{dateStr} · {timeStr}</span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-muted-foreground">Balance Owed</span>
-              <span className="text-sm font-black text-amber-400">${Number(account.balance_owed).toFixed(2)}</span>
+
+            {/* Item rows (charge with items) */}
+            {isCharge && Array.isArray(tx.items) && (tx.items as any[]).length > 0 ? (
+              <div className="px-4 py-2 space-y-1.5">
+                {(tx.items as any[]).map((it: any, i: number) => {
+                  const qty = Number(it?.qty ?? 1);
+                  const price = Number(it?.price ?? 0);
+                  return (
+                    <div key={i} className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-foreground flex-1 leading-snug">
+                        {qty > 1 && <span className="font-black text-primary mr-1">{qty}x</span>}
+                        {it?.name ?? "Item"}
+                      </span>
+                      <span className="text-xs font-black shrink-0" style={{ color: "var(--primary)" }}>
+                        ${(qty * price).toFixed(2)}
+                      </span>
+                    </div>
+                  );
+                })}
+                {/* Subtotal separator */}
+                <div className="flex items-center justify-between pt-1.5 border-t border-border/30 mt-1">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase">Subtotal</span>
+                  <span className="text-xs font-black text-foreground">${Number(tx.amount).toFixed(2)}</span>
+                </div>
+              </div>
+            ) : (
+              /* Fallback: no items — show note or plain amount */
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-xs text-foreground flex-1">
+                  {tx.note ? tx.note.replace(/^\[CASH\]\s*/, "") : isCharge ? "Charge" : "Payment"}
+                </span>
+                <span className={`text-sm font-black ${isCharge ? "text-red-400" : "text-green-400"}`}>
+                  {isCharge ? "+" : "−"}${Number(tx.amount).toFixed(2)}
+                </span>
+              </div>
+            )}
+
+            {/* Balance owed footer */}
+            <div className="flex items-center justify-between px-4 py-2.5 border-t border-border/30" style={{ background: "rgba(239,68,68,0.08)" }}>
+              <span className="text-xs font-bold text-red-400 uppercase tracking-wide">Balance Owed</span>
+              <span className="text-sm font-black text-red-400">${Number(account.balance_owed).toFixed(2)}</span>
             </div>
-            <div className="text-[10px] text-muted-foreground mt-1">{dateStr} · {timeStr}</div>
           </div>
 
           {/* Print + Download */}
@@ -1423,6 +1461,7 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
 type ActiveField = null | "name" | "idNumber" | "contact";
 
 function CreateTab({ ownerId, onCreated }: { ownerId: string; onCreated: (a: CreditAccount) => void }) {
+  const isTouchDevice = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
   const [name, setName]         = useState("");
   const [contact, setContact]   = useState("");
   const [idType, setIdType]     = useState<"drivers_permit" | "national_id">("national_id");
@@ -1479,14 +1518,28 @@ function CreateTab({ ownerId, onCreated }: { ownerId: string; onCreated: (a: Cre
         {/* Full Name */}
         <div>
           <Label>Full Name *</Label>
-          <button type="button" onClick={() => { setDone(false); toggle("name"); }}
-            className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
-            style={{ background: "#ffffff" }}>
-            <span className={`text-sm font-black ${name ? "text-black" : "text-gray-400"}`}>
-              {name || "e.g. John Smith"}
-            </span>
-          </button>
-          {activeField === "name" && <AlphaKeyboard value={name} onChange={setName} onDone={() => setActiveField(null)} />}
+          {isTouchDevice ? (
+            <>
+              <button type="button" onClick={() => { setDone(false); toggle("name"); }}
+                className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
+                style={{ background: "#ffffff" }}>
+                <span className={`text-sm font-black ${name ? "text-black" : "text-gray-400"}`}>
+                  {name || "e.g. John Smith"}
+                </span>
+              </button>
+              {activeField === "name" && <AlphaKeyboard value={name} onChange={(v) => { setName(v); setDone(false); }} onDone={() => setActiveField(null)} />}
+            </>
+          ) : (
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => { setName(e.target.value); setDone(false); }}
+              placeholder="e.g. John Smith"
+              required
+              className="w-full h-10 rounded-md border border-input px-3 text-sm font-semibold mt-1 outline-none focus:ring-1 focus:ring-primary"
+              style={{ background: "#ffffff", color: "#000000" }}
+            />
+          )}
         </div>
 
         {/* ID Type */}
@@ -1662,6 +1715,7 @@ function EditCustomerModal({ account, onClose, onSaved }: {
   const [idNumber, setIdNumber] = useState(parseIdNumber(account.id_number));
   const [busy, setBusy] = useState(false);
   const [activeField, setActiveField] = useState<null | "name" | "idNumber" | "contact">(null);
+  const isTouchDevice = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1705,12 +1759,26 @@ function EditCustomerModal({ account, onClose, onSaved }: {
           <form onSubmit={submit} className="space-y-3">
             <div>
               <Label>Full Name *</Label>
-              <button type="button" onClick={() => setActiveField(f => f === "name" ? null : "name")}
-                className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
-                style={{ background: "#ffffff" }}>
-                <span className={`text-sm font-black ${name ? "text-black" : "text-gray-400"}`}>{name || "e.g. John Smith"}</span>
-              </button>
-              {activeField === "name" && <AlphaKeyboard value={name} onChange={setName} onDone={() => setActiveField(null)} />}
+              {isTouchDevice ? (
+                <>
+                  <button type="button" onClick={() => setActiveField(f => f === "name" ? null : "name")}
+                    className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
+                    style={{ background: "#ffffff" }}>
+                    <span className={`text-sm font-black ${name ? "text-black" : "text-gray-400"}`}>{name || "e.g. John Smith"}</span>
+                  </button>
+                  {activeField === "name" && <AlphaKeyboard value={name} onChange={setName} onDone={() => setActiveField(null)} />}
+                </>
+              ) : (
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. John Smith"
+                  required
+                  className="w-full h-10 rounded-md border border-input px-3 text-sm font-semibold mt-1 outline-none focus:ring-1 focus:ring-primary"
+                  style={{ background: "#ffffff", color: "#000000" }}
+                />
+              )}
             </div>
             <div>
               <Label>ID Type</Label>
