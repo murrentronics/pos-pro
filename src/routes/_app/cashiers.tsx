@@ -13,7 +13,7 @@ import {
   Trash2, Eraser, UserPlus, User, Loader2, FileText, ChevronDown,
   Receipt, ArrowDownLeft, ArrowLeft, X, Download, KeyRound, Eye, EyeOff, DollarSign, CheckCircle2,
   Clock, LogIn, LogOut, CalendarDays, ChevronLeft, ChevronRight,
-  FileDown, Users,
+  FileDown, Users, Pencil, Check, X,
 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -291,6 +291,8 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
   const [tsPdfBusy, setTsPdfBusy] = useState(false);
   const [openDate, setOpenDate] = useState<string | null>(null);
   const [openMonth, setOpenMonth] = useState<string | null>(null);
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [editOutTime, setEditOutTime] = useState("");
 
   const loadEmployees = useCallback(async () => {
     const { data } = await supabase.from("profiles")
@@ -309,6 +311,21 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
   }, [ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadEmployees(); loadCards(); }, [loadEmployees, loadCards]);
+
+  const handleSaveClockOut = async (tc: TimeCardRow) => {
+    if (!editOutTime) return;
+    // Parse "HH:MM" as Trinidad local time (UTC-4) and convert to UTC ISO
+    const [h, m] = editOutTime.split(":").map(Number);
+    const base = new Date(tc.work_date + "T00:00:00Z");
+    // Trinidad is UTC-4, so local HH:MM → UTC: add 4 hours offset
+    const utcMs = Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), h + 4, m, 0);
+    const iso = new Date(utcMs).toISOString();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).from("time_cards").update({ clocked_out_at: iso }).eq("id", tc.id);
+    if (error) { toast.error(error.message); return; }
+    setEditingCardId(null);
+    loadCards();
+  };
   useEffect(() => {
     const ch = supabase.channel(`owner-timecards-${ownerId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "time_cards", filter: `owner_id=eq.${ownerId}` },
@@ -654,27 +671,73 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
                                   </div>
                                 </button>
                                 {dOpen && (
-                                  <div className="divide-y divide-border/30 bg-black/10">
+                                  <div className="divide-y divide-border/30" style={{ background: "#ffffff" }}>
                                     {cards.map(tc => {
                                       const inTime  = fmtClockTime(tc.clocked_in_at);
                                       const outTime = tc.clocked_out_at ? fmtClockTime(tc.clocked_out_at) : null;
                                       const dur     = fmtWorkDuration(tc.clocked_in_at, tc.clocked_out_at);
                                       const isAct   = !tc.clocked_out_at;
+                                      const isEditing = editingCardId === tc.id;
                                       return (
                                         <div key={tc.id} className="px-4 py-3 pl-7 flex items-center gap-3">
                                           <div className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 font-black text-xs"
-                                            style={{ background: isAct ? "rgba(134,239,172,0.15)" : "rgba(255,255,255,0.06)", color: isAct ? "#86efac" : "var(--primary)" }}>
+                                            style={{ background: isAct ? "rgba(22,163,74,0.15)" : "rgba(0,0,0,0.05)", color: isAct ? "#15803d" : "var(--primary)" }}>
                                             {tc.employee_name.charAt(0).toUpperCase()}
                                           </div>
                                           <div className="flex-1 min-w-0">
-                                            <p className="font-black text-sm truncate">{tc.employee_name}</p>
+                                            <p className="font-black text-sm truncate text-slate-800">{tc.employee_name}</p>
                                             <div className="flex items-center gap-1.5 text-xs mt-0.5 flex-wrap">
-                                              <LogIn className="h-3 w-3 text-green-400 shrink-0" />
-                                              <span className="text-green-400 font-bold">{inTime}</span>
-                                              {outTime ? <><span className="text-muted-foreground/40">→</span><LogOut className="h-3 w-3 text-red-400 shrink-0" /><span className="text-red-400 font-bold">{outTime}</span><span className="text-muted-foreground ml-1">· {dur}</span></> : <span className="text-green-400 font-semibold">· still on shift</span>}
+                                              <LogIn className="h-3 w-3 shrink-0" style={{ color: "#15803d" }} />
+                                              <span className="font-bold" style={{ color: "#15803d" }}>{inTime}</span>
+                                              {outTime ? (
+                                                <>
+                                                  <span className="text-slate-300">→</span>
+                                                  <LogOut className="h-3 w-3 text-red-400 shrink-0" />
+                                                  {isEditing ? (
+                                                    <>
+                                                      <input
+                                                        type="time"
+                                                        value={editOutTime}
+                                                        onChange={e => setEditOutTime(e.target.value)}
+                                                        className="h-6 rounded px-1 text-xs font-bold border border-primary outline-none"
+                                                        style={{ color: "#000", background: "#fff", width: "6rem" }}
+                                                      />
+                                                      <button
+                                                        onClick={() => handleSaveClockOut(tc)}
+                                                        className="h-6 w-6 rounded-full flex items-center justify-center bg-green-600 active:scale-95 transition"
+                                                        title="Save"
+                                                      >
+                                                        <Check className="h-3 w-3 text-white" />
+                                                      </button>
+                                                      <button
+                                                        onClick={() => setEditingCardId(null)}
+                                                        className="h-6 w-6 rounded-full flex items-center justify-center bg-slate-200 active:scale-95 transition"
+                                                        title="Cancel"
+                                                      >
+                                                        <X className="h-3 w-3 text-slate-600" />
+                                                      </button>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <span className="text-red-400 font-bold">{outTime}</span>
+                                                      <span className="text-slate-400 ml-1">· {dur}</span>
+                                                      <button
+                                                        onClick={() => { setEditingCardId(tc.id); setEditOutTime(outTime); }}
+                                                        className="h-5 w-5 rounded-full flex items-center justify-center active:scale-95 transition ml-0.5"
+                                                        style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
+                                                        title="Edit clock-out time"
+                                                      >
+                                                        <Pencil className="h-2.5 w-2.5" style={{ color: "var(--primary)" }} />
+                                                      </button>
+                                                    </>
+                                                  )}
+                                                </>
+                                              ) : (
+                                                <span className="font-semibold" style={{ color: "#15803d" }}>· still on shift</span>
+                                              )}
                                             </div>
                                           </div>
-                                          {isAct && <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.35)" }}>Active</span>}
+                                          {isAct && <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(22,163,74,0.12)", color: "#15803d", border: "1px solid rgba(22,163,74,0.3)" }}>Active</span>}
                                         </div>
                                       );
                                     })}

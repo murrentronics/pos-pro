@@ -20,6 +20,7 @@ import { printReceipt, type ReceiptData } from "@/lib/receiptPrinter";
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Order = {
   id: string;
+  cashier_id?: string;
   total: number;
   paid: number;
   change_given: number;
@@ -169,6 +170,17 @@ function ExpenseRow({ expense: e }: { expense: OwnerExpense }) {
 
 // ─── Shared print helper for order rows ──────────────────────────────────────
 async function printOrderReceipt(o: Order, ownerName: string) {
+  // Fetch cashier name from profiles
+  let cashierName = "Staff";
+  if (o.cashier_id) {
+    const { data } = await supabase
+      .from("profiles")
+      .select("username")
+      .eq("id", o.cashier_id)
+      .single();
+    if (data?.username) cashierName = data.username;
+  }
+
   const items = (o.items || []).map((i: any) => ({
     name: i.name as string,
     qty: Number(i.qty),
@@ -179,7 +191,7 @@ async function printOrderReceipt(o: Order, ownerName: string) {
     storeName: ownerName || "Store",
     locationName: "",
     orderNumber: o.id.slice(-6).toUpperCase(),
-    serverName: "",
+    serverName: cashierName,
     items,
     subtotal,
     total: Number(o.total),
