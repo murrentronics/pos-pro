@@ -673,7 +673,7 @@ function StockCheckPage() {
           </div>
         </div>
         {/* Column header row — orange, full bleed */}
-        <div className="-mx-3 flex items-center py-2 px-3 gap-2 text-xs font-black text-black uppercase tracking-wide border-b border-black/20" style={{ background: "var(--gradient-hero)" }}>
+        <div className="-mx-3 flex items-center py-2 px-3 gap-2 text-xs font-black text-white uppercase tracking-wide border-b border-black/20" style={{ background: "var(--gradient-hero)" }}>
           <div className="w-8 shrink-0" />
           <div className="flex-1 min-w-0">Name</div>
           <div className="w-[46px] text-right">Qty</div>

@@ -1,6 +1,6 @@
 ﻿import { createFileRoute } from "@tanstack/react-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, ImagePlus, Plus, Trash2, Loader2, X, ChevronLeft, Pencil, ListChecks, CheckCircle2, Search, LayoutGrid, ArrowLeft } from "lucide-react";
+import { Camera, ImagePlus, Plus, Trash2, Loader2, X, ChevronLeft, Pencil, ListChecks, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { useTranslation } from "@/lib/i18n";
@@ -541,115 +541,6 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
           }}
         />
       )}
-    </div>
-  );
-}
-
-// ─── Template Picker ──────────────────────────────────────────────────────────
-function TemplatePicker({
-  onSelect,
-  onToggle,
-  selectedUrls,
-  ownerId,
-  category,
-  search,
-}: {
-  onSelect: (url: string, label: string, category: string) => void;
-  onToggle?: (url: string, label: string, category: string) => void;
-  selectedUrls?: Set<string>;
-  ownerId: string;
-  category: string;
-  search: string;
-}) {
-  const [loading, setLoading] = useState(true);
-  const [available, setAvailable] = useState<{ url: string; label: string }[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      const { data: usedData } = await supabase
-        .from("products")
-        .select("image_url")
-        .eq("owner_id", ownerId);
-      const usedUrls = new Set(
-        (usedData ?? [])
-          .map((r: { image_url: string | null }) => r.image_url)
-          .filter((u): u is string => !!u),
-      );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: dbTemplates } = await (supabase as any)
-        .from("template_images")
-        .select("url, label")
-        .eq("category", category)
-        .order("label", { ascending: true });
-      const templates = ((dbTemplates as { url: string; label: string }[]) ?? []).filter(
-        (t) => !usedUrls.has(t.url),
-      );
-      if (!cancelled) { setAvailable(templates); setLoading(false); }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [ownerId, category]);
-
-  const q = search.trim().toLowerCase();
-  const visible = q ? available.filter((t) => t.label.toLowerCase().includes(q)) : available;
-
-  if (loading) {
-    return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
-  }
-  if (available.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center text-muted-foreground gap-2 py-12">
-        <LayoutGrid className="h-10 w-10 opacity-30" />
-        <p className="text-sm font-semibold">No templates in this category yet.</p>
-        <p className="text-xs opacity-60">Ask your admin to import some from the Admin → Import tab.</p>
-      </div>
-    );
-  }
-  if (visible.length === 0) {
-    return <div className="flex flex-col items-center justify-center text-center text-muted-foreground gap-2 py-12"><p className="text-sm">No results for "{search}"</p></div>;
-  }
-
-  const isMulti = !!onToggle;
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {visible.map((t) => {
-        const isSelected = selectedUrls?.has(t.url) ?? false;
-        return (
-          <button
-            key={t.url}
-            onClick={() => isMulti ? onToggle!(t.url, t.label, category) : onSelect(t.url, t.label, category)}
-            onDragStart={(e) => e.preventDefault()}
-            className="aspect-[3/4] relative rounded-xl overflow-hidden border-2 active:scale-95 transition touch-manipulation select-none"
-            style={{
-              background: "var(--gradient-card)",
-              borderColor: isSelected ? "var(--primary)" : "rgba(255,255,255,0.1)",
-              boxShadow: isSelected ? "0 0 0 2px var(--primary)" : "none",
-            }}
-          >
-            <div className="absolute inset-0 flex items-center justify-center text-4xl">
-              {categoryIcon(category)}
-            </div>
-            <img
-              src={t.url}
-              alt=""
-              draggable={false}
-              loading="lazy"
-              className="absolute inset-0 w-full h-full object-contain p-1"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            />
-            {isSelected && (
-              <div className="absolute top-1 right-1 h-5 w-5 rounded-full flex items-center justify-center bg-primary shadow">
-                <CheckCircle2 className="h-3.5 w-3.5 text-black" />
-              </div>
-            )}
-            <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1.5 py-1">
-              <p className="text-white text-[10px] font-bold leading-tight truncate text-center">{t.label}</p>
-            </div>
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -1446,8 +1337,6 @@ export default function ProductsPage() {
   // so Back can reliably restore the Edit Item dialog regardless of Radix state.
   const editItemForBackRef = useRef<Product | null>(null);
   const [showBulkEdit, setShowBulkEdit] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [bulkAddItems, setBulkAddItems] = useState<Product[] | null>(null);
   // Preload product images so the grid renders instantly and works offline
   useImageCache(items.map((p) => productImageUrl(p.image_url)));
 
@@ -1698,36 +1587,6 @@ export default function ProductsPage() {
                   editItemForBackRef.current = product;
                   setStockNumpadSource("addDialog");
                   setStockNumpadId(product.id);
-                }}
-                onBulkSelect={async (templates) => {
-                  setOpen(false);
-                  // Insert all stub products in parallel, then open bulk edit immediately
-                  const results = await Promise.all(
-                    templates.map((tmpl) =>
-                      supabase
-                        .from("products")
-                        .insert({
-                          owner_id: ownerIdForQuery,
-                          name: tmpl.label,
-                          image_url: tmpl.url,
-                          category: tmpl.category,
-                          price: 0,
-                          cost_price: 0,
-                          units_per_item: 0,
-                          bottle_variations: null,
-                          stock_qty: 0,
-                        })
-                        .select("*")
-                        .single(),
-                    ),
-                  );
-                  const inserted = results
-                    .filter(({ error }) => !error)
-                    .map(({ data }) => data as Product);
-                  if (inserted.length > 0) {
-                    setItems((prev) => [...prev, ...inserted]);
-                    setBulkAddItems(inserted);
-                  }
                 }}
               />
           </Dialog>
@@ -1990,29 +1849,6 @@ export default function ProductsPage() {
           }}
         />
       )}
-
-      {/* Bulk Add from Templates — opens BulkEditModal with only the newly inserted items */}
-      {bulkAddItems && (
-        <BulkEditModal
-          items={bulkAddItems}
-          ownerId={ownerIdForQuery}
-          storeCategories={storeCategories}
-          onClose={() => { setBulkAddItems(null); load(); }}
-          onSaved={(patches) => {
-            setBulkAddItems(null);
-            setItems((prev) => prev.map((p) => {
-              const patch = patches.find((x) => x.id === p.id);
-              return patch ? {
-                ...p,
-                stock_qty: patch.stock_qty,
-                stock_last_expense_id: patch.stock_last_expense_id,
-                ...(patch.cost_price !== undefined ? { cost_price: patch.cost_price } : {}),
-                ...(patch.price !== undefined ? { price: patch.price } : {}),
-              } : p;
-            }));
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -2156,7 +1992,7 @@ function ProdVarsBlock({ prodVars, setProdVars, activeNumpad, setActiveNumpad, n
 }
 
 // ─── Add Item Dialog ──────────────────────────────────────────────────────────
-function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: { onDone: () => void; onSaved: (product: Product) => void; onBulkSelect?: (templates: { url: string; label: string; category: string }[]) => void; ownerId: string; editProduct?: Product | null }) {
+function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () => void; onSaved: (product: Product) => void; ownerId: string; editProduct?: Product | null }) {
   const { profile } = useAuth();
   const { t } = useTranslation();
   const isEdit = !!editProduct;
@@ -2254,11 +2090,6 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
   const [busy, setBusy] = useState(false);
   // which field the numpad is for: "selling" | "cost" | "units" | "shotprice" | "var_{i}_shots" | "var_{i}_price" | null
   const [activeNumpad, setActiveNumpad] = useState<string | null>(null);
-  // Template browser state
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [templateSearch, setTemplateSearch] = useState("");
-  const [templateCat, setTemplateCat] = useState("drinks");
-  const [selectedTemplates, setSelectedTemplates] = useState<Map<string, { label: string; category: string }>>(new Map());
   const fileRef = useRef<HTMLInputElement>(null);
   const camRef  = useRef<HTMLInputElement>(null);
   const skipStockRef = useRef(false);
@@ -2269,15 +2100,6 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
       setTimeout(() => numpadRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
     }
   }, [activeNumpad]);
-
-  // ── template select handler ───────────────────────────────────────────────
-  const onTemplateSelect = (url: string, label: string, cat: string) => {
-    setPreview(url);
-    setTemplateUrl(url);
-    setName(label);
-    setCategory(cat);
-    setShowTemplates(false);
-  };
 
   // ── numpad ───────────────────────────────────────────────────────────────
   const handleNumpad = (k: string) => {
@@ -2394,112 +2216,13 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
     >
       <DialogHeader className="shrink-0 pb-3">
         <div className="flex items-center gap-3">
-          {showTemplates && (
-            <button
-              onClick={() => setShowTemplates(false)}
-              className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition shrink-0"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-          )}
           <DialogTitle>
-            {showTemplates
-              ? t("choose_template", "Choose Template")
-              : isEdit
-                ? t("edit_item", "Edit Item")
-                : t("add_item", "Add Item")}
+            {isEdit ? t("edit_item", "Edit Item") : t("add_item", "Add Item")}
           </DialogTitle>
-          {/* Done button — shown in template view when ≥1 item selected */}
-          {showTemplates && onBulkSelect && (
-            <button
-              onClick={() => {
-                if (selectedTemplates.size === 0) return;
-                const arr = Array.from(selectedTemplates.entries()).map(
-                  ([url, { label, category }]) => ({ url, label, category }),
-                );
-                if (arr.length === 1) {
-                  onTemplateSelect(arr[0].url, arr[0].label, arr[0].category);
-                  return;
-                }
-                onBulkSelect(arr);
-              }}
-              disabled={selectedTemplates.size === 0}
-              className="ml-auto mr-8 h-8 px-4 rounded-xl font-black text-sm text-primary-foreground flex items-center gap-1.5 transition active:scale-95 disabled:opacity-40 shrink-0"
-              style={{
-                background: selectedTemplates.size > 0 ? "var(--gradient-hero)" : "rgba(255,255,255,0.08)",
-              }}
-            >
-              Done{" "}
-              {selectedTemplates.size > 0 && (
-                <span className="h-5 min-w-[1.25rem] px-1 rounded-full bg-black/30 flex items-center justify-center text-xs font-black">
-                  {selectedTemplates.size}
-                </span>
-              )}
-            </button>
-          )}
         </div>
       </DialogHeader>
 
-      {showTemplates && (
-        <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(251,146,60,0.4) transparent" }}>
-          <div className="flex flex-col h-full">
-            <div className="sticky top-0 z-10 pb-2 space-y-2" style={{ background: "var(--background)", paddingTop: "1px" }}>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                  <input
-                    type="text"
-                    value={templateSearch}
-                    onChange={(e) => setTemplateSearch(e.target.value)}
-                    placeholder="Search templates…"
-                    className="w-full pl-8 h-8 text-sm rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                {templateSearch && (
-                  <button
-                    onClick={() => setTemplateSearch("")}
-                    className="h-8 px-3 rounded-md text-xs font-black transition active:scale-95 shrink-0 border"
-                    style={{ background: "#000", color: "#ef4444", borderColor: "#ef4444" }}
-                  >Clear</button>
-                )}
-              </div>
-              <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-                {storeCategories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setTemplateCat(cat.id)}
-                    className={`h-9 shrink-0 rounded-xl font-black transition flex items-center justify-center px-3 text-xs ${templateCat === cat.id ? "text-primary-foreground" : "bg-muted text-muted-foreground"}`}
-                    style={templateCat === cat.id ? { background: "var(--gradient-hero)" } : {}}
-                  >
-                    {cat.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <TemplatePicker
-              onSelect={onTemplateSelect}
-              onToggle={
-                onBulkSelect
-                  ? (url, label, cat) => {
-                      setSelectedTemplates((prev) => {
-                        const next = new Map(prev);
-                        if (next.has(url)) next.delete(url);
-                        else next.set(url, { label, category: cat });
-                        return next;
-                      });
-                    }
-                  : undefined
-              }
-              selectedUrls={onBulkSelect ? new Set(selectedTemplates.keys()) : undefined}
-              ownerId={ownerId}
-              category={templateCat}
-              search={templateSearch}
-            />
-          </div>
-        </div>
-      )}
-
-      <div className="flex-1 min-h-0 overflow-y-auto" style={{ display: showTemplates ? "none" : "", scrollbarWidth: "thin", scrollbarColor: "rgba(251,146,60,0.4) transparent" }}>
+      <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(251,146,60,0.4) transparent" }}>
         <div className="space-y-3">
             <div className="flex gap-3 items-stretch">
               <div className="relative w-1/2 aspect-[3/4] rounded-xl border-2 border-dashed border-border overflow-hidden shrink-0" style={{ background: "var(--gradient-card)" }}>
@@ -2516,11 +2239,6 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
                 <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => onPick(e.target.files?.[0])} />
               </div>
               <div className="flex flex-col gap-2 flex-1 justify-center">
-                {!isEdit && onBulkSelect && (
-                  <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => setShowTemplates(true)}>
-                    <LayoutGrid className="h-5 w-5 mr-2" /> {t("template_btn", "Template")}
-                  </Button>
-                )}
                 <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => camRef.current?.click()}>
                   <Camera className="h-5 w-5 mr-2" /> Take Photo
                 </Button>
@@ -2807,7 +2525,7 @@ function AddItemDialog({ onDone, onSaved, onBulkSelect, ownerId, editProduct }: 
         </div>
       </div>
 
-      <div className="pt-3 space-y-2" style={{ display: showTemplates ? "none" : "" }}>
+      <div className="pt-3 space-y-2">
           <Button
             onClick={() => { skipStockRef.current = false; submit(); }}
             disabled={busy || !name || !price}
