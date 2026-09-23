@@ -10,6 +10,7 @@
  *   - rpc_record_shot
  *   - rpc_record_pack_unit
  *   - rpc_record_credit_charge
+ *   - rpc_append_to_tab
  *   - credit_transactions_insert
  */
 
@@ -21,6 +22,7 @@ export type OfflineOpType =
   | "rpc_record_shot"
   | "rpc_record_pack_unit"
   | "rpc_record_credit_charge"
+  | "rpc_append_to_tab"
   | "credit_transactions_insert";
 
 export interface OfflineOp {

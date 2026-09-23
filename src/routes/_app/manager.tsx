@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, TrendingDown, X, BarChart3, Pencil, Trash2, AlertTriangle } from "lucide-react";
+import { Loader2, TrendingDown, X, BarChart3, Pencil, Trash2, AlertTriangle, Receipt, Wallet } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_app/manager")({
@@ -17,6 +17,14 @@ type Expense = {
   amount: number;
   description: string | null;
   expense_date: string;
+  created_at: string;
+};
+
+type WalletTx = {
+  id: string;
+  amount: number;
+  type: string;
+  note: string | null;
   created_at: string;
 };
 
@@ -155,6 +163,26 @@ function ManagerExpenses({
   }, [ownerId, managerName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadExpenses(); }, [loadExpenses]);
+
+  const [managerTab, setManagerTab] = useState<"sales" | "expenses">("sales");
+  const [walletTxs, setWalletTxs] = useState<WalletTx[]>([]);
+  const [loadingWallet, setLoadingWallet] = useState(true);
+  const [walletBalance, setWalletBalance] = useState(Number(profile.wallet_balance ?? 0));
+
+  const loadWalletTxs = useCallback(async () => {
+    setLoadingWallet(true);
+    const [{ data }, { data: bal }] = await Promise.all([
+      supabase.from("wallet_transactions").select("id, amount, type, note, created_at").eq("profile_id", profile.id).order("created_at", { ascending: false }).limit(100),
+      supabase.from("profiles").select("wallet_balance").eq("id", profile.id).single(),
+    ]);
+    setWalletTxs((data ?? []) as WalletTx[]);
+    if (bal) setWalletBalance(Number(bal.wallet_balance ?? 0));
+    setLoadingWallet(false);
+  }, [profile.id]);
+
+  useEffect(() => {
+    if (managerTab === "sales") loadWalletTxs();
+  }, [managerTab, loadWalletTxs]);
 
   useEffect(() => {
     const ch = supabase
@@ -336,6 +364,80 @@ function ManagerExpenses({
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="py-3 space-y-4 pb-24">
+      <div className="rounded-3xl px-5 py-4 flex items-center justify-between"
+        style={{ background: "var(--gradient-hero)", boxShadow: "var(--shadow-glow)" }}>
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "rgba(0,0,0,0.55)" }}>Wallet Balance</p>
+          <p className="text-2xl font-black mt-0.5">${walletBalance.toFixed(2)}</p>
+        </div>
+        <Wallet className="h-8 w-8" style={{ color: "rgba(0,0,0,0.25)" }} />
+      </div>
+
+      <div className="rounded-2xl border border-border overflow-hidden">
+        <div className="grid grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setManagerTab("sales")}
+            className={`flex items-center justify-center gap-2 py-3 text-sm font-black transition ${managerTab === "sales" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <Receipt className="h-4 w-4" /> Sales
+          </button>
+          <button
+            type="button"
+            onClick={() => setManagerTab("expenses")}
+            className={`flex items-center justify-center gap-2 py-3 text-sm font-black transition ${managerTab === "expenses" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <TrendingDown className="h-4 w-4" /> Expenses
+          </button>
+        </div>
+      </div>
+
+      {managerTab === "sales" ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-black text-xl">{t("records", "Records")}</h2>
+            <span className="text-sm text-muted-foreground">{walletTxs.length} records</span>
+          </div>
+          {loadingWallet ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="rounded-xl h-16 bg-muted/30 animate-pulse" />
+              ))}
+            </div>
+          ) : walletTxs.length === 0 ? (
+            <div className="text-muted-foreground text-sm py-8 text-center">No records yet.</div>
+          ) : (
+            <div className="space-y-2">
+              {walletTxs.map((tx) => {
+                const isExpense = tx.type === "cashier_expense";
+                const isTransferIn = tx.type === "transfer_in";
+                const isSale = tx.type === "sale";
+                return (
+                  <div key={tx.id} className="rounded-xl p-4 border border-border flex items-center gap-3" style={{ background: "var(--gradient-card)" }}>
+                    <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border"
+                      style={{
+                        background: isExpense ? "rgba(239,68,68,0.10)" : isTransferIn ? "rgba(134,239,172,0.10)" : isSale ? "rgba(251,146,60,0.10)" : "rgba(255,255,255,0.06)",
+                        borderColor: isExpense ? "rgba(239,68,68,0.25)" : isTransferIn ? "rgba(134,239,172,0.25)" : isSale ? "rgba(251,146,60,0.25)" : "var(--border)",
+                      }}>
+                      {isExpense ? <TrendingDown className="h-4 w-4 text-red-700" /> : isSale ? <Receipt className="h-4 w-4 text-orange-700" /> : <Wallet className="h-4 w-4 text-green-700" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}
+                      </div>
+                      <p className="text-sm font-semibold mt-0.5 truncate">{isSale ? "Manager Sale" : tx.note || tx.type}</p>
+                    </div>
+                    <span className="font-black text-sm shrink-0" style={{ color: isTransferIn ? "#15803d" : isExpense ? "#b91c1c" : isSale ? "#c2410c" : "var(--muted-foreground)" }}>
+                      {isTransferIn || isSale ? "+" : isExpense ? "-" : ""}${fmt(Math.abs(Number(tx.amount)))}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+      <>
       {/* Page header */}
       <div className="flex items-center gap-3">
         <div className="h-10 w-10 rounded-2xl flex items-center justify-center shrink-0"
@@ -352,8 +454,8 @@ function ManagerExpenses({
       {!barStateLoading && !barIsOpen && (
         <div className="rounded-2xl px-4 py-3 flex items-center gap-3"
           style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}>
-          <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-          <span className="text-sm font-semibold text-red-400">
+          <AlertTriangle className="h-4 w-4 text-red-700 shrink-0" />
+          <span className="text-sm font-semibold text-red-700">
             {t("bar_closed_msg", "Store is closed — expenses cannot be added, edited, or deleted.")}
           </span>
         </div>
@@ -370,7 +472,7 @@ function ManagerExpenses({
               <div className="rounded-2xl px-2 py-2.5 flex flex-col gap-0.5 text-center"
                 style={{ background: "oklch(0.18 0.04 60)" }}>
                 <div className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.45)" }}>{t("set_lbl", "Set")}</div>
-                <div className="font-black text-sm" style={{ color: "#fbbf24" }}>${fmt(floatSet)}</div>
+                <div className="font-black text-sm" style={{ color: "#a16207" }}>${fmt(floatSet)}</div>
                 {floatSetAt && (
                   <div className="text-[8px] leading-tight" style={{ color: "rgba(255,255,255,0.3)" }}>
                     {new Date(floatSetAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true })}
@@ -380,7 +482,7 @@ function ManagerExpenses({
               <div className="rounded-2xl px-2 py-2.5 flex flex-col gap-0.5 text-center"
                 style={{ background: "oklch(0.18 0.04 60)" }}>
                 <div className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.45)" }}>{t("used_lbl", "Used")}</div>
-                <div className="font-black text-sm" style={{ color: floatUsed > 0 ? "#fca5a5" : "rgba(255,255,255,0.3)" }}>
+                <div className="font-black text-sm" style={{ color: floatUsed > 0 ? "#b91c1c" : "rgba(255,255,255,0.3)" }}>
                   {floatUsed > 0 ? `$${fmt(floatUsed)}` : "—"}
                 </div>
               </div>
@@ -388,7 +490,7 @@ function ManagerExpenses({
                 style={{ background: "oklch(0.18 0.04 60)" }}>
                 <div className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.45)" }}>{t("remaining_lbl2", "Remaining")}</div>
                 <div className="font-black text-sm" style={{
-                  color: floatRemaining !== null && floatRemaining > 0 ? "#86efac" : "#fca5a5"
+                  color: floatRemaining !== null && floatRemaining > 0 ? "#15803d" : "#b91c1c"
                 }}>
                   {floatRemaining !== null ? `$${fmt(floatRemaining)}` : "—"}
                 </div>
@@ -407,21 +509,21 @@ function ManagerExpenses({
           <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center"
             style={{ background: "oklch(0.18 0.02 60)" }}>
             <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.5)" }}>{t("session_expense", "Session")}{"\n"}{t("total_expense", "Expense")}</div>
-            <div className="font-black text-xs" style={{ color: barIsOpen ? "#fca5a5" : "rgba(255,255,255,0.3)" }}>
+            <div className="font-black text-xs" style={{ color: barIsOpen ? "#b91c1c" : "rgba(255,255,255,0.3)" }}>
               {barIsOpen ? `$${fmt(sessionExpenses)}` : "—"}
             </div>
           </div>
           <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center"
             style={{ background: "oklch(0.18 0.02 60)" }}>
             <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.5)" }}>{t("todays_expense", "Today's")}{"\n"}{t("total_expense", "Expense")}</div>
-            <div className="font-black text-xs" style={{ color: "#fca5a5" }}>
+            <div className="font-black text-xs" style={{ color: "#b91c1c" }}>
               {barIsOpen ? `$${fmt(todayExpenses)}` : "—"}
             </div>
           </div>
           <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center"
             style={{ background: "oklch(0.18 0.02 60)" }}>
             <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.5)" }}>{t("total_expense", "Total")}{"\n"}{t("total_expense", "Expense")}</div>
-            <div className="font-black text-xs" style={{ color: totalAllTime > 0 ? "#fca5a5" : "rgba(255,255,255,0.3)" }}>
+            <div className="font-black text-xs" style={{ color: totalAllTime > 0 ? "#b91c1c" : "rgba(255,255,255,0.3)" }}>
               {totalAllTime > 0 ? `$${fmt(totalAllTime)}` : "$0.00"}
             </div>
           </div>
@@ -493,7 +595,7 @@ function ManagerExpenses({
                 ) : (
                   <div className="space-y-2">
                     <div className="rounded-xl px-3 py-2 text-xs text-center font-semibold"
-                      style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>
+                      style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#b91c1c" }}>
                       {t("deduct_confirm", "Deduct")} ${lineTotal.toFixed(2)} {t("deduct_from_wallet", "from owner wallet?")}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -543,7 +645,7 @@ function ManagerExpenses({
                     <p className="text-xs text-muted-foreground">{monthExpenses.length} {monthExpenses.length !== 1 ? t("expense_count_n", "expenses") : t("expense_count_1", "expense")}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="font-black text-sm text-red-400">${fmt(monthTotal)}</span>
+                    <span className="font-black text-sm text-red-700">${fmt(monthTotal)}</span>
                     <span className="text-muted-foreground transition-transform"
                       style={{ display: "inline-block", transform: isOpen ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
                   </div>
@@ -605,7 +707,7 @@ function ManagerExpenses({
                           ) : deleteConfirmId === e.id ? (
                             /* ── Delete confirm ── */
                             <div className="space-y-2">
-                              <p className="text-xs font-semibold text-center text-red-400">
+                              <p className="text-xs font-semibold text-center text-red-700">
                                 {t("deduct_confirm", "Delete")} ${fmt(Number(e.amount))} {t("deduct_from_wallet", "expense and refund to wallet?")}
                               </p>
                               <div className="grid grid-cols-2 gap-2">
@@ -625,7 +727,7 @@ function ManagerExpenses({
                             <div className="flex items-start gap-3">
                               <div className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 border"
                                 style={{ background: "rgba(239,68,68,0.10)", borderColor: "rgba(239,68,68,0.25)" }}>
-                                <TrendingDown className="h-3.5 w-3.5 text-red-400" />
+                                <TrendingDown className="h-3.5 w-3.5 text-red-700" />
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs text-muted-foreground">
@@ -639,7 +741,7 @@ function ManagerExpenses({
                                 ))}
                               </div>
                               <div className="flex flex-col items-end gap-1 shrink-0">
-                                <span className="font-black text-sm text-red-400">${fmt(Number(e.amount))}</span>
+                                <span className="font-black text-sm text-red-700">${fmt(Number(e.amount))}</span>
                                 {/* Edit/delete only for last entry, only when bar is open */}
                                 {canEdit && (
                                   <div className="flex gap-1 mt-0.5">
@@ -653,7 +755,7 @@ function ManagerExpenses({
                                       className="h-7 w-7 rounded-lg flex items-center justify-center transition active:scale-90"
                                       style={{ background: "rgba(239,68,68,0.12)" }}
                                       title="Delete">
-                                      <Trash2 className="h-3 w-3 text-red-400" />
+                                      <Trash2 className="h-3 w-3 text-red-700" />
                                     </button>
                                   </div>
                                 )}
@@ -673,6 +775,8 @@ function ManagerExpenses({
           })
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

@@ -75,7 +75,12 @@ function routeGuard(request: Request): Response | null {
   }
 
   // Allow static assets needed by the download page
-  if (path.startsWith("/assets/") || path === "/favicon.ico" || path === "/logo.svg") {
+  if (
+    path.startsWith("/assets/") ||
+    path === "/favicon.ico" ||
+    path === "/logo.svg" ||
+    path === "/logo.png"
+  ) {
     return null; // allow
   }
 

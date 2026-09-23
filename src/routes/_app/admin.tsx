@@ -25,7 +25,7 @@ import { confirm } from "@/components/ui/confirm-dialog";
 
 // ─── Shareholder Config ───────────────────────────────────────────────────────
 const SHAREHOLDERS = [
-  { name: "Renard Sankersingh", share: 0.7, color: "text-emerald-400", bg: "border-emerald-500/30", gradient: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.04))" },
+  { name: "Renard Sankersingh", share: 0.7, color: "text-emerald-700", bg: "border-emerald-500/30", gradient: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.04))" },
   { name: "Theron Murren",      share: 0.3, color: "text-blue-400",    bg: "border-blue-500/30",    gradient: "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(59,130,246,0.04))" },
 ] as const;
 
@@ -182,7 +182,7 @@ function SubscriptionBadge({ ownerId }: {
   return (
     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold ${
       isNearExpiry
-        ? "bg-red-500/15 border border-red-500/30 text-red-400"
+        ? "bg-red-500/15 border border-red-500/30 text-red-700"
         : "bg-muted border border-border text-muted-foreground"
     }`}>
       {isNearExpiry ? (
@@ -226,7 +226,7 @@ function BillingDueInline({ ownerId }: { ownerId: string }) {
   const isNear = daysUntil >= 0 && daysUntil <= 7;
 
   return (
-    <span className={`text-xs font-semibold ${isOverdue ? "text-red-400" : isNear ? "text-orange-400" : "text-muted-foreground"}`}>
+    <span className={`text-xs font-semibold ${isOverdue ? "text-red-700" : isNear ? "text-orange-700" : "text-muted-foreground"}`}>
       {formatDate(dueDate)}{isNear && ` (${daysUntil}d)`}{isOverdue && " (overdue)"}
     </span>
   );
@@ -513,21 +513,21 @@ export default function AdminPage() {
                 </div>
                 <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
                   <p className="text-[10px] text-muted-foreground font-medium">Approved Users</p>
-                  <p className="text-2xl font-black text-green-400">{buckets.approved.length}</p>
+                  <p className="text-2xl font-black text-green-700">{buckets.approved.length}</p>
                 </div>
                 <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
                   <p className="text-[10px] text-muted-foreground font-medium">Pending Payments</p>
-                  <p className="text-2xl font-black text-yellow-400">{pendingBillingCount}</p>
+                  <p className="text-2xl font-black text-amber-700">{pendingBillingCount}</p>
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
                   <p className="text-[10px] text-muted-foreground font-medium">Due Soon</p>
-                  <p className="text-2xl font-black text-orange-400">{nearExpiryCount}</p>
+                  <p className="text-2xl font-black text-orange-700">{nearExpiryCount}</p>
                 </div>
                 <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
                   <p className="text-[10px] text-muted-foreground font-medium">Suspended</p>
-                  <p className="text-2xl font-black text-red-400">{buckets.suspended.length}</p>
+                  <p className="text-2xl font-black text-red-700">{buckets.suspended.length}</p>
                 </div>
                 <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
                   <p className="text-[10px] text-muted-foreground font-medium">Total Registered</p>
@@ -732,7 +732,7 @@ export default function AdminPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-base">{r.username || <span className="text-muted-foreground italic">—</span>}</span>
                           {r.plan_type === "chain" && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-700 border border-orange-500/30">
                               <GitBranch className="h-2.5 w-2.5" />
                               {(r.chain_bar_count ?? 0) <= 1
                                 ? "1 Additional Store"

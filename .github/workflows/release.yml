@@ -1,197 +1,51 @@
-name: Build & Release APK
+name: Build & Deploy Web
 
+# Local `npm run cap:sync` builds the APK and EXE, publishes the GitHub
+# release, and deploys Cloudflare Pages. This workflow does not run on push.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
-  build:
+  deploy-web:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       # ── 1. Checkout ────────────────────────────────────────────────────────
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ── 2. Java setup ──────────────────────────────────────────────────────
-      - name: Setup Java 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      # ── 3. Node setup ──────────────────────────────────────────────────────
+      # ── 2. Node setup ──────────────────────────────────────────────────────
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      # ── 4. Install JS deps ─────────────────────────────────────────────────
+      # ── 3. Install JS deps ─────────────────────────────────────────────────
       - name: Install dependencies
         run: npm ci
 
-      # ── 5. Build web bundle for Capacitor ─────────────────────────────────
-      - name: Build Android web bundle
-        run: |
-          rm -rf dist/client
-          npx cross-env NODE_OPTIONS="--max-old-space-size=4096" vite build --config vite.capacitor.config.ts
-
-      # ── 6. Copy capacitor HTML as index.html ──────────────────────────────
-      - name: Fix index.html for Capacitor
-        run: cp dist/client/index.capacitor.html dist/client/index.html
-
-      # ── 7. Read version from .env ──────────────────────────────────────────
-      - name: Read app version
-        id: version
-        run: |
-          VERSION=$(grep 'VITE_APP_VERSION' .env | sed 's/VITE_APP_VERSION="\(.*\)"/\1/')
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "TAG=v$VERSION" >> $GITHUB_OUTPUT
-
-      # ── 8. Copy web assets directly into Android assets folder ────────────
-      - name: Copy web assets to Android
-        run: |
-          mkdir -p android/app/src/main/assets/public
-          rm -rf android/app/src/main/assets/public/*
-          cp -r dist/client/. android/app/src/main/assets/public/
-          node -e "
-            const fs = require('fs');
-            const cfg = {
-              appId: 'com.pospro.app',
-              appName: 'P.O.S. Pro',
-              webDir: 'dist/client',
-              plugins: {
-                SplashScreen: { launchShowDuration: 0, launchAutoHide: true, showSpinner: false, backgroundColor: '#000000' },
-                Camera: {}, Filesystem: {}, Share: {}, Browser: {}, FileOpener: {}
-              },
-              android: { backgroundColor: '#000000', captureInput: true, webContentsDebuggingEnabled: false }
-            };
-            fs.writeFileSync('android/app/src/main/assets/capacitor.config.json', JSON.stringify(cfg, null, 2));
-            console.log('capacitor.config.json written');
-          "
-
-      # ── 9. Fix gradle.properties for CI ───────────────────────────────────
-      - name: Fix gradle.properties for CI
-        run: sed -i '/org.gradle.java.home/d' android/gradle.properties
-
-      # ── 10. Decode keystore from secret ───────────────────────────────────
-      - name: Decode or generate keystore
-        run: |
-          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/pospro.jks
-            echo "✅ Keystore decoded from secret"
-          else
-            keytool -genkey -v \
-              -keystore android/app/pospro.jks \
-              -alias pospro \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
-              -keypass "${{ secrets.KEY_PASSWORD }}" \
-              -dname "CN=POS Pro, OU=Dev, O=POS Pro, L=Port of Spain, ST=Trinidad, C=TT"
-            echo "⚠️  Generated new keystore — copy this base64 and save as KEYSTORE_BASE64 secret:"
-            base64 -w 0 android/app/pospro.jks
-          fi
-
-      # ── 10b. Verify keystore ───────────────────────────────────────────────
-      - name: Verify keystore aliases
-        run: |
-          echo "=== Keystore aliases ==="
-          keytool -list -keystore android/app/pospro.jks -storepass "${{ secrets.KEYSTORE_PASSWORD }}" 2>&1 || true
-          echo "=== KEY_ALIAS env value length: ${#KEY_ALIAS} ==="
-          echo "=== KEY_ALIAS first char: ${KEY_ALIAS:0:1} ==="
-        env:
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-
-      # ── 11. Make gradlew executable ───────────────────────────────────────
-      - name: Make gradlew executable
-        run: chmod +x android/gradlew
-
-      # ── 11a. Install Android SDK 36 ───────────────────────────────────────
-      - name: Install Android SDK 36
-        run: |
-          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-36" \
-            "build-tools;35.0.0" 2>/dev/null || \
-          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-36" \
-            "build-tools;34.0.0"
-
-      # ── 12. Build release APK ─────────────────────────────────────────────
-      - name: Build release APK
-        run: ./gradlew assembleRelease --no-daemon
-        working-directory: android
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-
-      # ── 13. Find and rename APK ───────────────────────────────────────────
-      - name: Rename APK
-        run: |
-          APK=$(find android/app/build/outputs/apk/release/ -name "*.apk" | head -1)
-          echo "Found APK: $APK"
-          mv "$APK" android/app/build/outputs/apk/release/pos-pro.apk
-
-      # ── 14. Create / update GitHub Release ───────────────────────────────
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.TAG }}
-          name: ${{ steps.version.outputs.TAG }}
-          body: "P.O.S. Pro ${{ steps.version.outputs.TAG }}"
-          files: android/app/build/outputs/apk/release/pos-pro.apk
-          make_latest: true
-          prerelease: false
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # ── 15. Build web bundle for browser (iPhone / PWA support) ──────────
+      # ── 4. Build web bundle for Cloudflare Pages ───────────────────────────
       - name: Build web bundle
-        run: npx cross-env NODE_OPTIONS="--max-old-space-size=4096" vite build --config vite.web.config.ts
+        run: |
+          npx cross-env NODE_OPTIONS="--max-old-space-size=4096" \
+            vite build --config vite.web.config.ts
 
-      # Copy logo.png into web public folder so PDF exports work
-      - name: Copy logo to web public
-        run: cp public/logo.png public-web/logo.png
+      # ── 5. Copy logo into web dist (needed for PDF exports) ───────────────
+      - name: Copy logo to web dist
+        run: |
+          cp public/logo.png dist/web/logo.png 2>/dev/null || \
+          cp public-web/logo.png dist/web/logo.png 2>/dev/null || true
 
-      # Rename index.web.html → index.html so Cloudflare Pages serves it correctly
+      # ── 6. Rename index.web.html → index.html ─────────────────────────────
       - name: Fix web index filename
         run: mv dist/web/index.web.html dist/web/index.html
 
-      # ── 16. Deploy web build to Cloudflare Pages ──────────────────────────
-      - name: Deploy to Cloudflare Pages (pospro-web)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '3.90.0'
-          command: pages deploy dist/web --project-name=pospro-web --commit-dirty=true
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-      # ── 17. Deploy download page to Cloudflare Pages (pos-pro) ────────────
-      - name: Prepare and deploy download page
+      # Full release (APK + Cloudflare with /downloads) is `npm run cap:sync`.
+      # CI must not pages-deploy a web folder without the APK — that wipes the installer.
+      - name: Cloudflare deploy skipped
         run: |
-          mkdir -p dist/download
-          cp public/download.html dist/download/index.html
-          cp -r public/assets dist/download/assets 2>/dev/null || true
-          cp public/logo.svg dist/download/logo.svg 2>/dev/null || true
-          cp public/logo.png dist/download/logo.png 2>/dev/null || true
-      - name: Deploy to Cloudflare Pages (pos-pro download)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '3.90.0'
-          command: pages deploy dist/download --project-name=pos-pro --commit-dirty=true
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          echo "Skipping wrangler pages deploy."
+          echo "Run npm run cap:sync locally to build APK and deploy dist/web."

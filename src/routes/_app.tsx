@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useChain } from "@/lib/ChainContext";
 import { openCashDrawer, type CashDrawerResult } from "@/lib/cashDrawer";
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
+import { useNumpadKeyboard, applyIntKey } from "@/lib/useNumpadKeyboard";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
@@ -59,6 +60,13 @@ function AppLayout() {
     if (k === "⌫") { setOpenStoreFloat((v) => v.slice(0, -1)); return; }
     setOpenStoreFloat((v) => v === "0" || v === "" ? k : v + k);
   };
+
+  useNumpadKeyboard({
+    enabled: showOpenStoreModal,
+    allowDecimal: false,
+    onKey: handleStoreFloatNumpad,
+    onEnter: () => { if (!storeToggleBusy && openStoreFloat) void confirmOpenStore(); },
+  });
 
   useEffect(() => {
     if (!loading && !session) nav({ to: "/login" });
@@ -262,6 +270,7 @@ function AppLayout() {
     ? [
         { to: "/products",    label: "Items",       icon: Package       },
         { to: "/stock-check", label: "Stock Check", icon: ClipboardList },
+        { to: "/stock-count", label: "Stock Count", icon: ClipboardList },
         { to: "/manager",     label: "Manage",      icon: TrendingDown  },
       ]
     : [
@@ -269,6 +278,7 @@ function AppLayout() {
         { to: "/credit",      label: "Customers",   icon: User          },
         ...(isOwner ? [{ to: "/products",    label: "Items",       icon: Package       }] : []),
         ...(isOwner ? [{ to: "/stock-check", label: "Stock Check", icon: ClipboardList }] : []),
+        { to: "/stock-count", label: "Stock Count", icon: ClipboardList },
         ...(isOwner ? [{ to: "/cashiers",    label: "Staff",       icon: Users         }] : []),
         { to: "/wallet",      label: "Wallet",      icon: Wallet        },
       ];
@@ -320,8 +330,8 @@ function AppLayout() {
                 onClick={storeIsOpen ? () => setShowCloseStoreConfirm(true) : handleOpenStore}
                 className="h-7 px-2.5 rounded-lg font-black text-[11px] flex items-center gap-1 transition active:scale-95 disabled:opacity-50 shrink-0"
                 style={storeIsOpen
-                  ? { background: "rgba(134,239,172,0.12)", border: "1px solid #86efac", color: "#86efac" }
-                  : { background: "rgba(239,68,68,0.12)", border: "1px solid #f87171", color: "#f87171" }}
+                  ? { background: "rgba(134,239,172,0.12)", border: "1px solid #15803d", color: "#15803d" }
+                  : { background: "rgba(239,68,68,0.12)", border: "1px solid #b91c1c", color: "#b91c1c" }}
               >
                 {storeToggleBusy
                   ? <Loader2 className="h-3 w-3 animate-spin" />
@@ -383,7 +393,7 @@ function AppLayout() {
             style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-6 pb-2 text-center">
               <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3"
-                style={{ background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171" }}>
+                style={{ background: "rgba(239,68,68,0.12)", border: "1.5px solid #b91c1c" }}>
                 <span className="text-2xl">🔴</span>
               </div>
               <h2 className="font-black text-xl">Close Store?</h2>
@@ -398,7 +408,7 @@ function AppLayout() {
                 onClick={() => { setShowCloseStoreConfirm(false); handleCloseStore(); }}
                 disabled={storeToggleBusy}
                 className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50"
-                style={{ background: "rgba(239,68,68,0.15)", border: "1.5px solid #f87171", color: "#f87171" }}>
+                style={{ background: "rgba(239,68,68,0.15)", border: "1.5px solid #b91c1c", color: "#b91c1c" }}>
                 {storeToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Close Store"}
               </button>
             </div>
@@ -413,7 +423,7 @@ function AppLayout() {
             style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-6 pb-2 text-center">
               <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3"
-                style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac" }}>
+                style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #15803d" }}>
                 <span className="text-2xl">🟢</span>
               </div>
               <h2 className="font-black text-xl">Open Store</h2>
@@ -459,7 +469,7 @@ function AppLayout() {
                   onClick={confirmOpenStore}
                   disabled={storeToggleBusy || !openStoreFloat}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50"
-                  style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
+                  style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #15803d", color: "#15803d" }}>
                   {storeToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Open Store"}
                 </button>
               </div>
@@ -475,7 +485,7 @@ function AppLayout() {
              style={{ background: "var(--gradient-card)" }}>
              <div className="px-6 pt-6 pb-2 text-center">
                <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3"
-                 style={{ background: drawerResult?.opened ? "rgba(134,239,172,0.12)" : "rgba(239,68,68,0.12)", border: "1.5px solid " + (drawerResult?.opened ? "#86efac" : "#f87171") }}>
+                 style={{ background: drawerResult?.opened ? "rgba(134,239,172,0.12)" : "rgba(239,68,68,0.12)", border: "1.5px solid " + (drawerResult?.opened ? "#15803d" : "#b91c1c") }}>
                  <span className="text-2xl">{drawerResult?.opened ? "✅" : "❌"}</span>
                </div>
                <h2 className="font-black text-xl">{drawerResult?.opened ? "Drawer Opened" : "Could Not Open Drawer"}</h2>

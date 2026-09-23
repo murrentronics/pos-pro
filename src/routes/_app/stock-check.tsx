@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { productImageUrl } from "@/lib/imageUrl";
 import { categoryIcon } from "@/lib/categories";
 import { toast } from "sonner";
+import { useNumpadKeyboard } from "@/lib/useNumpadKeyboard";
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
 
@@ -77,6 +78,13 @@ function ActualNumpad({
     });
   };
 
+  useNumpadKeyboard({
+    enabled: true,
+    allowDecimal: false,
+    onKey: handleKey,
+    onEnter: () => { void handleSave(); },
+  });
+
   const handleSave = async () => {
     if (!isValid) return;
     setBusy(true);
@@ -116,7 +124,7 @@ function ActualNumpad({
             <div className="text-xs text-muted-foreground">System Qty</div>
             <div
               className={`text-xl font-black ${
-                qty === 0 ? "text-red-400" : qty <= 5 ? "text-yellow-400" : "text-green-400"
+                qty === 0 ? "text-red-700" : qty <= 5 ? "text-amber-700" : "text-green-700"
               }`}
             >
               {qty}
@@ -134,7 +142,7 @@ function ActualNumpad({
             }}
           >
             <div className="text-xs text-muted-foreground">{exceed > 0 ? "Exceed" : "Loss"}</div>
-            <div className={`text-base font-black leading-tight ${loss > 0 ? "text-red-400" : exceed > 0 ? "text-green-400" : "text-muted-foreground"}`}>
+            <div className={`text-base font-black leading-tight ${loss > 0 ? "text-red-700" : exceed > 0 ? "text-green-700" : "text-muted-foreground"}`}>
               {loss > 0 ? `-$${loss.toFixed(2)}` : exceed > 0 ? `+$${exceed.toFixed(2)}` : "$0.00"}
             </div>
           </div>
@@ -152,10 +160,10 @@ function ActualNumpad({
           Sale price:{" "}
           <span className="font-black text-foreground">${unitPrice.toFixed(2)}</span>
           {diff > 0 && isValid && (
-            <> · Missing: <span className="font-black text-red-400">{diff}</span></>
+            <> · Missing: <span className="font-black text-red-700">{diff}</span></>
           )}
           {diff < 0 && isValid && (
-            <> · Exceed: <span className="font-black text-green-400">+{Math.abs(diff)}</span></>
+            <> · Exceed: <span className="font-black text-green-700">+{Math.abs(diff)}</span></>
           )}
         </p>
 
@@ -175,7 +183,7 @@ function ActualNumpad({
                     background:
                       k === "⌫" ? "rgba(220,38,38,0.15)" : "rgba(255,255,255,0.06)",
                     border: "1px solid rgba(255,255,255,0.08)",
-                    color: k === "⌫" ? "#f87171" : "var(--foreground)",
+                    color: k === "⌫" ? "#b91c1c" : "var(--foreground)",
                   }}
                 >
                   {k}
@@ -413,7 +421,7 @@ function StockCheckPage() {
           owner_id: ownerIdForQuery,
           product_id: productId,
           actual_qty: newActual,
-          checked_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         },
         { onConflict: "owner_id,product_id" }
       );
@@ -654,19 +662,19 @@ function StockCheckPage() {
           <div className="flex items-center gap-2">
             {totalMissing > 0 && (
               <div className="px-3 py-1.5 rounded-xl text-xs font-black"
-                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.30)", color: "#f87171" }}>
+                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.30)", color: "#b91c1c" }}>
                 {totalMissing} missing
               </div>
             )}
             {totalLoss > 0 && (
               <div className="px-3 py-1.5 rounded-xl text-xs font-black"
-                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.30)", color: "#f87171" }}>
+                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.30)", color: "#b91c1c" }}>
                 −${totalLoss.toFixed(2)}
               </div>
             )}
             {totalExceed > 0 && (
               <div className="px-3 py-1.5 rounded-xl text-xs font-black"
-                style={{ background: "rgba(134,239,172,0.12)", border: "1px solid rgba(134,239,172,0.30)", color: "#86efac" }}>
+                style={{ background: "#166534", border: "1px solid #14532d", color: "#ffffff" }}>
                 +${totalExceed.toFixed(2)}
               </div>
             )}
@@ -785,7 +793,7 @@ function StockCheckPage() {
 
                         {/* Qty — sealed bottles in stock */}
                         <div className="w-[46px] flex justify-end">
-                          <span className={`font-black text-xs ${p.stock_qty === 0 ? "text-red-400" : p.stock_qty <= 5 ? "text-yellow-400" : "text-green-400"}`}>
+                          <span className={`font-black text-xs ${p.stock_qty === 0 ? "text-red-700" : p.stock_qty <= 5 ? "text-amber-700" : "text-green-700"}`}>
                             {p.stock_qty}
                           </span>
                         </div>
@@ -799,7 +807,7 @@ function StockCheckPage() {
                             style={{
                               background: isActive ? "rgba(251,146,60,0.15)" : "var(--gradient-card)",
                               borderColor: isActive ? "var(--primary)" : hasLoss ? "rgba(239,68,68,0.50)" : "var(--border)",
-                              color: isActive ? "var(--primary)" : hasLoss ? "#f87171" : "var(--foreground)",
+                              color: isActive ? "var(--primary)" : hasLoss ? "#b91c1c" : "var(--foreground)",
                               minWidth: "44px",
                             }}
                           >
@@ -816,11 +824,11 @@ function StockCheckPage() {
                         {/* Loss / Exceed */}
                         <div className="w-[56px] text-right">
                           {hasLoss
-                            ? <span className="font-black text-xs text-red-400 tabular-nums">−${loss.toFixed(2)}</span>
+                            ? <span className="font-black text-xs text-red-700 tabular-nums">−${loss.toFixed(2)}</span>
                             : (() => {
                                 const exceed = diff < 0 ? Math.abs(diff) * p.price : 0;
                                 return exceed > 0
-                                  ? <span className="font-black text-xs text-green-400 tabular-nums">+${exceed.toFixed(2)}</span>
+                                  ? <span className="font-black text-xs tabular-nums" style={{ color: "#14532d" }}>+${exceed.toFixed(2)}</span>
                                   : <span className="font-black text-xs text-muted-foreground/40">—</span>;
                               })()}
                         </div>
@@ -850,7 +858,7 @@ function StockCheckPage() {
 
                           {/* Qty = remaining drinks */}
                           <div className="w-[46px] flex justify-end">
-                            <span className={`font-black text-xs ${remaining === 0 ? "text-red-400" : remaining <= 3 ? "text-yellow-400" : "text-green-400"}`}>
+                            <span className={`font-black text-xs ${remaining === 0 ? "text-red-700" : remaining <= 3 ? "text-amber-700" : "text-green-700"}`}>
                               {remaining}
                             </span>
                           </div>
@@ -864,7 +872,7 @@ function StockCheckPage() {
                               style={{
                                 background: isOpenActive ? "rgba(251,146,60,0.15)" : "var(--gradient-card)",
                                 borderColor: isOpenActive ? "var(--primary)" : openLoss > 0 ? "rgba(239,68,68,0.50)" : "var(--border)",
-                                color: isOpenActive ? "var(--primary)" : openLoss > 0 ? "#f87171" : "var(--foreground)",
+                                color: isOpenActive ? "var(--primary)" : openLoss > 0 ? "#b91c1c" : "var(--foreground)",
                                 minWidth: "44px",
                               }}
                             >
@@ -881,11 +889,11 @@ function StockCheckPage() {
                           {/* Loss / Exceed */}
                           <div className="w-[56px] text-right">
                             {openLoss > 0
-                              ? <span className="font-black text-xs text-red-400 tabular-nums">−${openLoss.toFixed(2)}</span>
+                              ? <span className="font-black text-xs text-red-700 tabular-nums">−${openLoss.toFixed(2)}</span>
                               : (() => {
                                   const openExceed = openDiff < 0 ? Math.abs(openDiff) * openPrice : 0;
                                   return openExceed > 0
-                                    ? <span className="font-black text-xs text-green-400 tabular-nums">+${openExceed.toFixed(2)}</span>
+                                    ? <span className="font-black text-xs tabular-nums" style={{ color: "#14532d" }}>+${openExceed.toFixed(2)}</span>
                                     : <span className="font-black text-xs text-muted-foreground/40">—</span>;
                                 })()}
                           </div>
@@ -909,13 +917,13 @@ function StockCheckPage() {
                 {totalLoss > 0 && (
                   <div className="text-right">
                     <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wide">Loss</div>
-                    <div className="text-base font-black text-red-400">−${totalLoss.toFixed(2)}</div>
+                    <div className="text-base font-black text-red-700">−${totalLoss.toFixed(2)}</div>
                   </div>
                 )}
                 {totalExceed > 0 && (
                   <div className="text-right">
                     <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wide">Exceed</div>
-                    <div className="text-base font-black text-green-400">+${totalExceed.toFixed(2)}</div>
+                    <div className="text-base font-black" style={{ color: "#14532d" }}>+${totalExceed.toFixed(2)}</div>
                   </div>
                 )}
               </div>

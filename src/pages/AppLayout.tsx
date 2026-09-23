@@ -9,10 +9,12 @@ import { useTranslation } from "@/lib/i18n";
 import { useOffline } from "@/lib/OfflineProvider";
 import { OfflinePageGuard } from "@/components/OfflinePageGuard";
 import { toast } from "sonner";
-import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw, Volume2, VolumeX } from "lucide-react";
+import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw, Volume2, VolumeX, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { openCashDrawer, type CashDrawerResult } from "@/lib/cashDrawer";
-import { isPrinterConnected, getConnectionInfo } from "@/lib/printerConnection";
+import { isPrinterConnected } from "@/lib/printerConnection";
+import { openPrinterConnectDialog } from "@/lib/receiptPrinter";
+import { PrinterConnectDialog } from "@/components/PrinterConnectDialog";
 
 const DEMO_EMAILS = ["isabel@gmail.com", "renard.sankersingh@gmail.com"];
 
@@ -81,9 +83,8 @@ export default function AppLayout() {
     if (!loading && profile && profile.role !== "admin" && loc.pathname.startsWith("/admin")) {
       nav("/register", { replace: true });
     }
-    // Manager landing page — redirect away from bar/wallet to items
-    if (!loading && (profile?.role === "manager" || profile?.job_title === "manager") && (loc.pathname === "/register" || loc.pathname === "/" || loc.pathname === "/wallet")) {
-      nav("/products", { replace: true });
+    if (!loading && (profile?.role === "manager" || profile?.job_title === "manager") && loc.pathname === "/") {
+      nav("/register", { replace: true });
     }
     if (!loading && profile && profile.role === "owner" && profile.status === "pending" && loc.pathname !== "/billing" && !DEMO_EMAILS.includes(ownerEmail)) {
       nav("/billing", { replace: true });
@@ -232,17 +233,21 @@ export default function AppLayout() {
         { to: "/admin/banking",  label: "Banking", icon: Building2 },
       ]
     : isManager ? [
-        // Manager: Items, Stock Check, Customers, Manager dashboard
-        { to: "/products",    label: t("products_title", "Items"),      icon: Package      },
-        { to: "/stock-check", label: t("stock_check", "Stock Check"),   icon: ClipboardList },
-        { to: "/credit",      label: t("customers_title", "Customers"), icon: User         },
-        { to: "/manager",     label: t("manage", "Manage"),             icon: TrendingDown },
+        { to: "/register",    label: t("store", "Store"),                icon: ShoppingCart },
+        { to: "/credit",      label: t("customers_title", "Customers"),  icon: User         },
+        { to: "/wallet",      label: t("wallet", "Wallet"),              icon: Wallet      },
+        { to: "/manager",     label: t("manage", "Manage"),              icon: TrendingDown },
+        { to: "/products",    label: t("products_title", "Items"),       icon: Package      },
+        { to: "/stock-check", label: t("stock_check", "Stock Check"),    icon: ClipboardList },
+        { to: "/stock-count", label: "Stock Count",                      icon: ClipboardList },
+        { to: "/categories",  label: t("categories", "Categories"),      icon: LayoutGrid   },
       ]
     : [
         { to: "/register",  label: t("store", "Store"),                  icon: ShoppingCart },
         { to: "/credit",    label: t("customers_title", "Customers"),  icon: User         },
         ...(isOwner ? [{ to: "/products",    label: t("products_title", "Items"),    icon: Package      }] : []),
         ...(isOwner ? [{ to: "/stock-check", label: t("stock_check", "Stock Check"), icon: ClipboardList }] : []),
+        { to: "/stock-count", label: "Stock Count", icon: ClipboardList },
         ...(isOwner ? [{ to: "/categories",  label: t("categories", "Categories"),   icon: LayoutGrid   }] : []),
         ...(isOwner ? [{ to: "/cashiers",    label: t("cashiers", "Staff"),           icon: Users        }] : []),
         { to: "/wallet",    label: t("wallet", "Wallet"),               icon: Wallet     },
@@ -271,20 +276,33 @@ export default function AppLayout() {
             </div>
           </div>
 
-          {/* Center: Open Drawer only (Scan moved to left panel) */}
+          {/* Printer until a printer is connected, then the same button opens the drawer */}
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5">
-            {printerConnected && (
+            {printerConnected ? (
               <button
                 type="button"
                 onClick={handleOpenCashDrawer}
                 disabled={drawerBusy}
-                className="h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center justify-center gap-1.5 active:scale-95 transition disabled:opacity-50 whitespace-nowrap"
-                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+                className="h-10 px-3 sm:px-4 rounded-lg flex items-center justify-center font-black text-sm transition active:scale-95 text-primary-foreground disabled:opacity-60"
+                style={{ background: "var(--gradient-hero)" }}
+                title="Open Cash Drawer"
               >
                 {drawerBusy
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <Wallet className="h-3.5 w-3.5 shrink-0" />}
-                <span className="hidden sm:inline">Open Drawer</span>
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <>
+                      <Printer className="h-4 w-4 sm:mr-1.5" />
+                      <span className="hidden sm:inline">Drawer</span>
+                    </>}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { void openPrinterConnectDialog(); }}
+                className="h-10 px-3 sm:px-4 rounded-lg flex items-center justify-center font-black text-sm transition active:scale-95 border border-border"
+                title="Connect printer"
+              >
+                <Printer className="h-4 w-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">Printer</span>
               </button>
             )}
           </div>
@@ -472,7 +490,7 @@ export default function AppLayout() {
                       style={{ background: loc.pathname === "/factory-reset" ? "rgba(239,68,68,0.30)" : "rgba(239,68,68,0.10)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
                       <RotateCcw className="h-6 w-6 text-red-500" />
                     </div>
-                    <span className="text-xs font-black text-center leading-tight text-red-400">Reset</span>
+                    <span className="text-xs font-black text-center leading-tight text-red-700">Reset</span>
                   </button>
                 )}
                 <button onClick={async () => { try { await signOut(); } catch { /* ignore */ } nav("/login"); }}
@@ -497,7 +515,7 @@ export default function AppLayout() {
           {(() => {
             if (!loading && profile) {
               const isManagerUser = profile.role === "manager" || (profile as any)?.job_title === "manager";
-              if (isManagerUser && (loc.pathname === "/register" || loc.pathname === "/" || loc.pathname === "/wallet")) {
+              if (isManagerUser && loc.pathname === "/") {
                 return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
               }
             }
@@ -513,13 +531,13 @@ export default function AppLayout() {
             style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-6 pb-2 text-center">
               <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3"
-                style={{ background: drawerResult?.opened ? "rgba(134,239,172,0.12)" : "rgba(239,68,68,0.12)", border: "1.5px solid " + (drawerResult?.opened ? "#86efac" : "#f87171") }}>
+                style={{ background: drawerResult?.opened ? "rgba(134,239,172,0.12)" : "rgba(239,68,68,0.12)", border: "1.5px solid " + (drawerResult?.opened ? "#15803d" : "#b91c1c") }}>
                 <span className="text-2xl">{drawerResult?.opened ? "✅" : "❌"}</span>
               </div>
               <h2 className="font-black text-xl">{drawerResult?.opened ? "Drawer Opened" : "Could Not Open Drawer"}</h2>
               <p className="text-sm text-muted-foreground mt-2">
                 {drawerResult?.opened
-                  ? <>Sent via {drawerResult.method === "native" ? "USB" : drawerResult.method === "webserial" ? "Web Serial" : "simulated"} {drawerResult.device ? `· ${drawerResult.device}` : ""}</>
+                  ? <>Sent via {drawerResult.method === "electron" ? "printer" : drawerResult.method === "native" ? "USB" : drawerResult.method === "webserial" ? "Web Serial" : "simulated"} {drawerResult.device ? `· ${drawerResult.device}` : ""}</>
                   : drawerResult?.error ?? "Unknown error"}
               </p>
             </div>
@@ -532,6 +550,7 @@ export default function AppLayout() {
           </div>
         </div>
       )}
+      <PrinterConnectDialog />
     </div>
   );
 }

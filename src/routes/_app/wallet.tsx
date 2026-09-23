@@ -9,14 +9,16 @@ import {
   Wallet as WalletIcon, Receipt, ChevronLeft, ChevronRight,
   ArrowDownLeft, RotateCcw, Loader2, FileText, Download, X,
   TrendingUp, TrendingDown, DollarSign, ChevronDown,
-  BarChart3, List, Trash2, Pencil, Printer, Share2,
+  BarChart3, List, Trash2, Pencil, Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
-import { printReceipt, type ReceiptData } from "@/lib/receiptPrinter";
-import { Capacitor } from "@capacitor/core";
+import { printReceipt, isPrinterPaired, pairPrinter, clearPrinterPairing, openPrinterConnectDialog, type ReceiptData } from "@/lib/receiptPrinter";
+import { brandReceipt } from "@/lib/receiptSettings";
+import { aggregateItems, barPeriodSummary, fetchAllPaged, itemsCostTotal, todayDateTT, ttCalendarDayBounds, type SummaryOrder, type SummaryProductCost } from "@/lib/salesSummary";
+import { useNumpadKeyboard, applyMoneyKey } from "@/lib/useNumpadKeyboard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Order = {
@@ -27,9 +29,14 @@ type Order = {
   change_given: number;
   discount_amount?: number;
   original_total?: number;
-  items: { name: string; qty: number; price: number; discount?: number; original_price?: number }[];
+  order_number?: number | null;
+  items: { id?: string; name: string; qty: number; price: number; units_consumed?: number | null; discount?: number; original_price?: number }[];
   created_at: string;
 };
+
+function cashSaleTitle(order: { order_number?: number | null }) {
+  return order.order_number != null ? `ORDER #${order.order_number} · Cash: Sale` : "Cash: Sale";
+}
 
 type WalletTx = {
   id: string;
@@ -169,133 +176,241 @@ function ExpenseRow({ expense: e }: { expense: OwnerExpense }) {
   );
 }
 
-// ─── Shared print helper for order rows ──────────────────────────────────────
-// ─── Order Receipt Modal ──────────────────────────────────────────────────────
+function orderToReceipt(order: Order, ownerName: string, serverName: string): ReceiptData {
+  const items = (order.items || []).map((i) => ({
+    name: i.name,
+    qty: Number(i.qty),
+    price: Number(i.price),
+  }));
+  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+  return {
+    storeName: ownerName || "Store",
+    locationName: "",
+    orderNumber: order.order_number != null ? String(order.order_number) : "",
+    serverName,
+    items,
+    subtotal,
+    discount: order.discount_amount && Number(order.discount_amount) > 0 ? Number(order.discount_amount) : undefined,
+    originalTotal: order.original_total != null ? Number(order.original_total) : undefined,
+    total: Number(order.total),
+    paid: Number(order.paid),
+    change: Number(order.change_given),
+    payMode: "cash",
+    date: new Date(order.created_at).toLocaleString("en-US", {
+      month: "numeric", day: "numeric", year: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true,
+    }),
+  };
+}
+
 function OrderReceiptModal({ order, ownerName, onClose }: {
   order: Order;
   ownerName: string;
   onClose: () => void;
 }) {
-  const [busy, setBusy] = useState<"print" | "share" | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const [printerPaired, setPrinterPaired] = useState<boolean | null>(null);
+  const [pairing, setPairing] = useState(false);
+  const [shown, setShown] = useState<ReceiptData | null>(null);
 
-  const buildReceiptText = (): string => {
-    const lines: string[] = [];
-    lines.push(`*${ownerName || "Store"}*`);
-    lines.push(`Order #${order.id.slice(-6).toUpperCase()}`);
-    lines.push(new Date(order.created_at).toLocaleString("en-US", {
-      month: "numeric", day: "numeric", year: "numeric",
-      hour: "numeric", minute: "2-digit", hour12: true,
-    }));
-    lines.push("─────────────────");
-    (order.items || []).forEach((i: any) => {
-      lines.push(`${i.qty}x ${i.name}  $${(Number(i.qty) * Number(i.price)).toFixed(2)}`);
-    });
-    lines.push("─────────────────");
-    lines.push(`Total: $${Number(order.total).toFixed(2)}`);
-    lines.push(`Paid: $${Number(order.paid).toFixed(2)}`);
-    lines.push(`Change: $${Number(order.change_given).toFixed(2)}`);
-    return lines.join("\n");
-  };
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let serverName = "Staff";
+      if (order.cashier_id) {
+        const { data } = await supabase.from("profiles").select("username, first_name").eq("id", order.cashier_id).single();
+        const first = (data?.first_name ?? "").trim();
+        if (first) serverName = first;
+        else if (data?.username) serverName = data.username;
+      }
+      const branded = await brandReceipt(orderToReceipt(order, ownerName, serverName));
+      if (!cancelled) setShown(branded);
+    })();
+    return () => { cancelled = true; };
+  }, [order, ownerName]);
+
+  useEffect(() => {
+    const refresh = () => { isPrinterPaired().then(setPrinterPaired); };
+    refresh();
+    window.addEventListener("pospro-printer-changed", refresh);
+    return () => window.removeEventListener("pospro-printer-changed", refresh);
+  }, []);
+
+  const bill = shown;
 
   const handlePrint = async () => {
-    setBusy("print");
+    if (printerPaired === false) {
+      setPairing(true);
+      const paired = await pairPrinter();
+      setPairing(false);
+      if (!paired) return;
+      setPrinterPaired(true);
+    }
+    if (!bill) return;
+    setPrinting(true);
     try {
-      let cashierName = "Staff";
-      if (order.cashier_id) {
-        const { data } = await supabase.from("profiles").select("username").eq("id", order.cashier_id).single();
-        if (data?.username) cashierName = data.username;
-      }
-      const items = (order.items || []).map((i: any) => ({
-        name: i.name as string,
-        qty: Number(i.qty),
-        price: Number(i.price),
-      }));
-      const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
-      const receiptData: ReceiptData = {
-        storeName: ownerName || "Store",
-        locationName: "",
-        orderNumber: order.id.slice(-6).toUpperCase(),
-        serverName: cashierName,
-        items,
-        subtotal,
-        total: Number(order.total),
-        paid: Number(order.paid),
-        change: Number(order.change_given),
-        payMode: "cash",
-        date: new Date(order.created_at).toLocaleString("en-US", {
-          month: "numeric", day: "numeric", year: "numeric",
-          hour: "numeric", minute: "2-digit", hour12: true,
-        }),
-      };
-      const res = await printReceipt(receiptData);
-      if (res.printed) toast.success("Sent to printer");
+      const res = await printReceipt(bill);
+      if (res.printed) toast.success("Receipt sent to printer");
       else if (res.error) toast.error(res.error);
     } catch (e: any) {
       toast.error("Print failed: " + (e?.message ?? "unknown"));
     }
-    setBusy(null);
+    setPrinting(false);
   };
 
-  const handleShare = async () => {
-    setBusy("share");
+  const handlePdfShare = async () => {
+    if (!bill) return;
     try {
-      const text = buildReceiptText();
-      if (Capacitor.isNativePlatform()) {
-        const { Share } = await import("@capacitor/share");
-        await Share.share({
-          title: `Receipt #${order.id.slice(-6).toUpperCase()}`,
-          text,
-          dialogTitle: "Share Receipt",
-        });
-      } else {
-        const encoded = encodeURIComponent(text);
-        window.open(`https://wa.me/?text=${encoded}`, "_blank");
-      }
-    } catch (e: any) {
-      if (!String(e?.message ?? "").includes("cancel")) toast.error("Share failed: " + (e?.message ?? "unknown"));
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ unit: "mm", format: "a4" });
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.text(bill.storeName || "Store", LM, 20);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text(bill.date || "", LM, 26);
+      doc.text("ORDER #" + bill.orderNumber, LM, 32);
+      let cy = 40;
+      bill.items.forEach((it) => {
+        doc.text(`${it.qty}x ${it.name}   $${(it.qty * it.price).toFixed(2)}`, LM, cy);
+        cy += 6;
+      });
+      cy += 4;
+      doc.setFont("helvetica", "bold");
+      doc.text(`Total: $${bill.total.toFixed(2)}`, LM, cy); cy += 6;
+      doc.setFont("helvetica", "normal");
+      doc.text(`Paid: $${bill.paid.toFixed(2)}`, LM, cy); cy += 6;
+      doc.text(`Change: $${bill.change.toFixed(2)}`, LM, cy);
+      await downloadPdf(`receipt-${bill.orderNumber}.pdf`, doc.output("datauristring"));
+      const text = `Receipt: ${bill.storeName}\nORDER #${bill.orderNumber}\nDate: ${bill.date}\nTotal: $${bill.total.toFixed(2)}\nPaid: $${bill.paid.toFixed(2)}\nChange: $${bill.change.toFixed(2)}`;
+      window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank");
+      toast.success("Receipt PDF downloaded");
+    } catch {
+      toast.error("Failed to generate PDF");
     }
-    setBusy(null);
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="w-full max-w-md rounded-t-3xl p-6 space-y-4"
-        style={{ background: "var(--background)", paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground">Order #{order.id.slice(-6).toUpperCase()}</p>
-            <p className="text-lg font-black">${Number(order.total).toFixed(2)}</p>
-          </div>
-          <button onClick={onClose} className="h-9 w-9 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition active:scale-90">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="relative w-full max-w-sm rounded-3xl overflow-hidden border border-border shadow-2xl"
+        style={{ background: "var(--gradient-card)" }}>
+        <div className="px-5 pt-5 pb-2 flex justify-between items-center">
+          <h2 className="font-black text-lg">Bill</h2>
+          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted">
             <X className="h-4 w-4" />
           </button>
         </div>
+        <div className="px-5 py-2">
+          <div className="bg-white text-zinc-900 rounded-xl p-4 shadow-inner text-left font-mono text-xs leading-tight border border-zinc-300">
+            {bill?.logoUrl && <img src={bill.logoUrl} alt="" className="mx-auto mb-1 max-h-16 object-contain" />}
+            <div className="text-center font-black text-zinc-950 text-base font-sans tracking-tight uppercase mb-0.5">
+              {bill?.storeName || ownerName || "Store"}
+            </div>
+            <div className="text-center text-[10px] text-zinc-600">{bill?.date || ""}</div>
+            {bill?.serverName && (
+              <div className="text-center text-[10px] text-zinc-600">Served by {bill.serverName}</div>
+            )}
+            <div className="border-t border-dashed border-zinc-400 my-2" />
+            {bill?.orderNumber ? (
+              <div className="text-center text-[10px] text-zinc-600">ORDER #{bill.orderNumber}</div>
+            ) : null}
+            <div className="space-y-1 my-2">
+              {(bill?.items || order.items || []).map((it, idx) => (
+                <div key={idx} className="flex justify-between items-start">
+                  <span className="font-semibold text-zinc-900 pr-2 break-all">{it.qty}x {it.name}</span>
+                  <span className="font-bold text-zinc-950 whitespace-nowrap">${(Number(it.qty) * Number(it.price)).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-dashed border-zinc-400 my-2" />
+            <div className="space-y-1">
+              <div className="flex justify-between text-zinc-700"><span>Total</span><span>${Number(order.total).toFixed(2)}</span></div>
+              <div className="flex justify-between text-zinc-700"><span>Cash Tendered</span><span>${Number(order.paid).toFixed(2)}</span></div>
+              <div className="flex justify-between font-bold text-zinc-900"><span>Change</span><span>${Number(order.change_given).toFixed(2)}</span></div>
+            </div>
+            <div className="text-center text-[10px] text-zinc-500 mt-2">{bill?.footerTagline || "Thank you for your purchase!"}</div>
+          </div>
+        </div>
+        <div className="px-6 pb-5 pt-2 flex flex-col gap-2">
+          <div className="flex gap-2">
+            <button
+              onClick={handlePrint}
+              disabled={printing || pairing}
+              className="flex-1 h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
+              style={{ background: "var(--gradient-hero)" }}
+            >
+              {printing || pairing
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : printerPaired === false ? "Connect Printer" : "Print"}
+            </button>
+            <button
+              onClick={handlePdfShare}
+              className="flex-1 h-12 rounded-2xl font-black text-sm border border-border transition active:scale-95"
+            >
+              PDF / WhatsApp
+            </button>
+          </div>
+          {printerPaired && (
+            <button
+              onClick={async () => {
+                clearPrinterPairing();
+                setPrinterPaired(false);
+                const ok = await openPrinterConnectDialog();
+                setPrinterPaired(ok);
+              }}
+              className="text-[11px] text-muted-foreground underline text-center"
+            >
+              Change printer
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-        {/* Print */}
-        <button
-          onClick={handlePrint}
-          disabled={!!busy}
-          className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50"
-          style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.4)", color: "#60a5fa" }}
-        >
-          {busy === "print" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-          Print Receipt
-        </button>
-
-        {/* WhatsApp Share */}
-        <button
-          onClick={handleShare}
-          disabled={!!busy}
-          className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 border border-green-500/40"
-          style={{ background: "rgba(37,211,102,0.12)", color: "#25D366" }}
-        >
-          {busy === "share" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
-          Share via WhatsApp
-        </button>
+function EditSaleModal({ order, onClose, onConfirm }: {
+  order: Order;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-sm rounded-t-3xl border border-border shadow-2xl overflow-hidden"
+        style={{ background: "var(--gradient-card)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+          <span className="text-base font-black">Edit Sale</span>
+          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="px-5 pb-2 text-xs text-muted-foreground space-y-1">
+          <p className="font-bold text-foreground">
+            {new Date(order.created_at).toLocaleString("en-GB", {
+              hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short",
+            })}
+            {" · "}${fmt(Number(order.total))}
+          </p>
+          <p>{(order.items || []).map((i) => `${i.qty}× ${i.name}`).join(", ")}</p>
+          <p className="text-amber-700 font-semibold pt-1">
+            This will reload the sale on the register for editing. The original date and time will be preserved.
+          </p>
+        </div>
+        <div className="px-5 pb-6 pt-3 grid grid-cols-2 gap-3">
+          <button onClick={onClose} className="h-11 rounded-2xl font-black text-sm border border-border transition active:scale-95">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="h-11 rounded-2xl font-black text-sm text-primary-foreground flex items-center justify-center gap-2 transition active:scale-95"
+            style={{ background: "var(--gradient-hero)" }}
+          >
+            <Pencil className="h-4 w-4" /> Edit
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -315,6 +430,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [deletableOrderId, setDeletableOrderId] = useState<string | null>(null);
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
 
   // ── Float cards state ────────────────────────────────────────────────────────
   const [floatAmount, setFloatAmount] = useState<number | null>(null);
@@ -327,11 +443,13 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
   const handleEditOrder = (o: Order) => {
     const editPayload = {
       orderId: o.id,
+      createdAt: o.created_at,
       items: o.items,
       originalTotal: o.total,
       paid: o.paid,
       changeGiven: o.change_given,
       discountAmount: o.discount_amount ?? 0,
+      orderNumber: o.order_number ?? undefined,
       type: "cash" as const,
     };
     localStorage.setItem(`pospro-edit-order-${ownerId}`, JSON.stringify(editPayload));
@@ -343,12 +461,13 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
     if (!tx.order_id) { toast.error("This credit sale cannot be edited (no order reference)"); return; }
     const { data: order, error } = await supabase
       .from("orders")
-      .select("id, items, total, paid, change_given, discount_amount")
+      .select("id, items, total, paid, change_given, discount_amount, created_at")
       .eq("id", tx.order_id)
       .single();
     if (error || !order) { toast.error("Could not load order details"); return; }
     const editPayload = {
       orderId: order.id,
+      createdAt: order.created_at,
       items: order.items,
       originalTotal: Number(order.total),
       paid: Number(order.paid),
@@ -787,7 +906,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
           <div className="text-4xl sm:text-6xl font-black text-primary-foreground mt-2 tracking-tight">
             ${fmt(Number(profile.wallet_balance))}
           </div>
-          <div className="mt-3 text-primary-foreground/80 text-sm">Cashier — clears to owner</div>
+          <div className="mt-3 text-primary-foreground/80 text-sm">{profile.role === "manager" || (profile as any).job_title === "manager" ? "Manager — clears to owner" : "Cashier — clears to owner"}</div>
 
           {/* Float cards — only shown when owner has set a float */}
           {floatAmount !== null && (
@@ -795,7 +914,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
               <div className="rounded-xl px-2 py-2 flex flex-col gap-0.5 text-center"
                 style={{ background: "#ffffff" }}>
                 <div className="text-[9px] sm:text-[11px] font-semibold uppercase tracking-wider" style={{ color: "rgba(60,60,60,0.65)" }}>Float</div>
-                <div className="font-black text-xs" style={{ color: "#fbbf24" }}>${fmt(floatAmount)}</div>
+                <div className="font-black text-xs" style={{ color: "#a16207" }}>${fmt(floatAmount)}</div>
               </div>
               <div className="rounded-xl px-2 py-2 flex flex-col gap-0.5 text-center"
                 style={{ background: "#ffffff" }}>
@@ -881,13 +1000,13 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                     <div key={tx.id} className="rounded-xl p-4 border border-red-500/30 flex items-center gap-3"
                       style={{ background: "#ffffff" }}>
                       <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-red-500/20 border-red-500/30">
-                        <ArrowDownLeft className="h-4 w-4 text-red-400 rotate-180" />
+                        <ArrowDownLeft className="h-4 w-4 text-red-700 rotate-180" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                        <div className="text-sm font-semibold text-red-300 break-words whitespace-normal">{tx.note ?? "Cleared to owner"}</div>
+                        <div className="text-sm font-semibold text-red-700 break-words whitespace-normal">{tx.note ?? "Cleared to owner"}</div>
                       </div>
-                      <div className="font-black text-lg shrink-0 text-red-400">${fmt(Math.abs(Number(tx.amount)))}</div>
+                      <div className="font-black text-lg shrink-0 text-red-700">${fmt(Math.abs(Number(tx.amount)))}</div>
                     </div>
                   );
                 }
@@ -927,12 +1046,12 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                        <div className={`text-sm font-black mt-0.5 ${isPack ? "text-green-700" : "text-amber-300"}`}>{bpTitle}</div>
+                        <div className={`text-sm font-black mt-0.5 ${isPack ? "text-green-700" : "text-amber-700"}`}>{bpTitle}</div>
                         {bpSub1 && <div className="text-xs text-muted-foreground mt-0.5">{bpSub1}</div>}
                         {bpSub2 && <div className="text-xs text-muted-foreground mt-0.5">{bpSub2}</div>}
                         {bpSub3 && <div className={`text-xs font-semibold mt-0.5 ${isPack ? "text-green-700" : "text-amber-400"}`}>{bpSub3}</div>}
                         {bpHasNums && (
-                          <div className="text-xs font-black mt-1" style={{ color: bpDiff >= 0 ? "#15803d" : "#fca5a5" }}>
+                          <div className="text-xs font-black mt-1" style={{ color: bpDiff >= 0 ? "#15803d" : "#b91c1c" }}>
                             {bpDiff >= 0 ? `Gain: +$${bpDiff.toFixed(2)}` : `Loss: -$${Math.abs(bpDiff).toFixed(2)}`}
                           </div>
                         )}
@@ -990,7 +1109,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                               <span className="text-[9px] text-muted-foreground line-through">${fmt(ccDiscOrig)}</span>
                             )}
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black leading-tight"
-                              style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)" }}>
+                              style={{ background: "rgba(251,191,36,0.2)", color: "#a16207", border: "1px solid rgba(251,191,36,0.4)" }}>
                               -{fmt(ccDiscAmt)} off
                             </span>
                           </div>
@@ -1021,7 +1140,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                   <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/15 border-green-500/25 text-base">💵</div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                    <div className="text-sm font-black mt-0.5" style={{ color: "var(--primary)" }}>Cash: Sale</div>
+                    <div className="text-sm font-black mt-0.5" style={{ color: "var(--primary)" }}>{cashSaleTitle(o)}</div>
                     <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed break-words whitespace-normal">
                       {(o.items || []).map((i, idx) => (
                         <span key={idx} className="inline-flex items-center gap-1 mr-1.5 flex-wrap">
@@ -1032,7 +1151,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                                 <span className="text-[9px] text-muted-foreground line-through">${fmt(Number(i.original_price))}</span>
                               )}
                               <span className="inline-flex items-center px-1 py-0 rounded-full text-[9px] font-black leading-tight"
-                                style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)" }}>
+                                style={{ background: "rgba(251,191,36,0.2)", color: "#a16207", border: "1px solid rgba(251,191,36,0.4)" }}>
                                 -{fmt(Number(i.discount))} off
                               </span>
                             </>
@@ -1046,7 +1165,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                           <span className="text-[9px] text-muted-foreground line-through">${fmt(Number(o.original_total))}</span>
                         )}
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black leading-tight"
-                          style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)" }}>
+                          style={{ background: "rgba(251,191,36,0.2)", color: "#a16207", border: "1px solid rgba(251,191,36,0.4)" }}>
                           -{fmt(Number(o.discount_amount))} off
                         </span>
                       </div>
@@ -1067,7 +1186,7 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
                         <Printer className="h-3.5 w-3.5 text-blue-400" />
                       </button>
                       <button
-                        onClick={() => handleEditOrder(o)}
+                        onClick={() => setEditingOrder(o)}
                         className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition"
                         style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
                         title="Edit this sale"
@@ -1268,6 +1387,13 @@ function CashierWallet({ profile }: { profile: { id: string; wallet_balance: num
           </div>
         )}
       </section>
+      )}
+      {editingOrder && (
+        <EditSaleModal
+          order={editingOrder}
+          onClose={() => setEditingOrder(null)}
+          onConfirm={() => { const o = editingOrder; setEditingOrder(null); handleEditOrder(o); }}
+        />
       )}
       {receiptOrder && (
         <OrderReceiptModal
@@ -1476,6 +1602,7 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
       paid: o.paid,
       changeGiven: o.change_given,
       discountAmount: o.discount_amount ?? 0,
+      orderNumber: o.order_number ?? undefined,
       type: "cash" as const,
     };
     localStorage.setItem(`pospro-edit-order-${profile.id}`, JSON.stringify(editPayload));
@@ -1553,7 +1680,14 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
                                 <div key={tx.id} className="px-4 py-3 bg-blue-500/5 flex items-start gap-3">
                                   <div className="h-3.5 w-3.5 mt-0.5 shrink-0 text-blue-400">🧾</div>
                                   <div className="flex-1 min-w-0">
-                                    <div className="text-xs text-blue-400 font-bold">{cashierLabel}{totalStr ? " — " + totalStr : ""}</div>
+                                    <div className="text-xs text-blue-400 font-bold">{(() => {
+                                      const linked = tx.order_id
+                                        ? monthRecords.find((r) => r.kind === "order" && r.data.id === tx.order_id)
+                                        : undefined;
+                                      const num = linked && linked.kind === "order" ? linked.data.order_number : null;
+                                      const title = num != null ? `ORDER #${num} · ${cashierLabel}` : cashierLabel;
+                                      return title + (totalStr ? " — " + totalStr : "");
+                                    })()}</div>
                                     {itemsStr && <div className="text-xs text-muted-foreground mt-0.5 break-words whitespace-normal">{itemsStr}</div>}
                                     <div className="text-xs text-muted-foreground mt-0.5">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
                                   </div>
@@ -1621,7 +1755,7 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
                                           <span className="text-[9px] text-muted-foreground line-through">${fmt(discOrig)}</span>
                                         )}
                                         <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black leading-tight"
-                                          style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)" }}>
+                                          style={{ background: "rgba(251,191,36,0.2)", color: "#a16207", border: "1px solid rgba(251,191,36,0.4)" }}>
                                           -{fmt(discAmt)} off
                                         </span>
                                       </div>
@@ -1687,7 +1821,7 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
                                           <span className="text-[9px] text-muted-foreground line-through">${fmt(Number(i.original_price))}</span>
                                         )}
                                         <span className="inline-flex items-center px-1 py-0 rounded-full text-[9px] font-black leading-tight"
-                                          style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)" }}>
+                                          style={{ background: "rgba(251,191,36,0.2)", color: "#a16207", border: "1px solid rgba(251,191,36,0.4)" }}>
                                           -{fmt(Number(i.discount))} off
                                         </span>
                                       </>
@@ -1701,7 +1835,7 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
                                     <span className="text-[9px] text-muted-foreground line-through">${fmt(Number(o.original_total))}</span>
                                   )}
                                   <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black leading-tight"
-                                    style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)" }}>
+                                    style={{ background: "rgba(251,191,36,0.2)", color: "#a16207", border: "1px solid rgba(251,191,36,0.4)" }}>
                                     -{fmt(Number(o.discount_amount))} off
                                   </span>
                                 </div>
@@ -1757,6 +1891,12 @@ function NumPad({
       onChange(value + key);
     }
   };
+
+  useNumpadKeyboard({
+    enabled: true,
+    onKey: press,
+    onEnter: onDone,
+  });
 
   const display = value === "" ? "0" : value;
 
@@ -2312,7 +2452,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <div className="text-xs text-red-400 font-bold">${fmt(mTotal)}</div>
+                      <div className="text-xs text-red-700 font-bold">${fmt(mTotal)}</div>
                     </div>
                     <Button
                       size="sm" variant="outline"
@@ -2360,7 +2500,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                                   return (
                                     <div key={i} className="flex items-center justify-between gap-2">
                                       <span className="text-xs text-muted-foreground flex-1">{cleanLeft}</span>
-                                      {right && <span className="text-xs font-black shrink-0" style={{ color: isRefund ? "#15803d" : "#f87171" }}>{right}</span>}
+                                      {right && <span className="text-xs font-black shrink-0" style={{ color: isRefund ? "#15803d" : "#b91c1c" }}>{right}</span>}
                                     </div>
                                   );
                                 })}
@@ -2372,7 +2512,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                                 })}
                               </div>
                             </div>
-                            <span className="font-black text-sm shrink-0" style={{ color: isRefund ? "#15803d" : "#f87171" }}>
+                            <span className="font-black text-sm shrink-0" style={{ color: isRefund ? "#15803d" : "#b91c1c" }}>
                               {isRefund ? `+$${fmt(Math.abs(amt))}` : `-$${fmt(amt)}`}
                             </span>
                           </div>
@@ -2405,7 +2545,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                               })}
                             </div>
                           </div>
-                          <span className="font-black text-sm shrink-0" style={{ color: isRefund ? "#15803d" : "#f87171" }}>
+                          <span className="font-black text-sm shrink-0" style={{ color: isRefund ? "#15803d" : "#b91c1c" }}>
                             {isRefund ? `+$${fmt(Math.abs(amt))}` : `-$${fmt(amt)}`}
                           </span>
                         </div>
@@ -2457,6 +2597,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   // The id of the owner-direct order that qualifies for the delete button
   const [deletableOrderId, setDeletableOrderId] = useState<string | null>(null);
+  const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
 
   // Resolve which owner-direct order (if any) shows the delete button.
   // Same rules as cashier: newest, within 10 seconds, after last delete timestamp.
@@ -2642,7 +2783,10 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-blue-500/15 border-blue-500/25 text-base">🧾</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                      <div className="text-sm font-black text-blue-300 mt-0.5">{cashierLabel}</div>
+                      <div className="text-sm font-black text-blue-700 mt-0.5">{(() => {
+                        const linked = tx.order_id ? allOrders.find((o) => o.id === tx.order_id) : undefined;
+                        return linked?.order_number != null ? `ORDER #${linked.order_number} · ${cashierLabel}` : cashierLabel;
+                      })()}</div>
                       {saleTotal && <div className="text-sm font-black text-green-700 mt-0.5">{saleTotal}</div>}
                       {itemsStr && <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{itemsStr}</div>}
                       {(paidStr || changeStr) && (
@@ -2711,7 +2855,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                             <span className="text-[9px] text-muted-foreground line-through">${fmt(discOrig)}</span>
                           )}
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black leading-tight"
-                            style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)" }}>
+                            style={{ background: "rgba(251,191,36,0.2)", color: "#a16207", border: "1px solid rgba(251,191,36,0.4)" }}>
                             -{fmt(discAmt)} off
                           </span>
                         </div>
@@ -2766,7 +2910,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                       <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/15 border-green-500/25 text-base">💵</div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                        <div className="text-sm font-black mt-0.5" style={{ color: "var(--primary)" }}>Cash: Sale</div>
+                        <div className="text-sm font-black mt-0.5" style={{ color: "var(--primary)" }}>{cashSaleTitle(o)}</div>
                         <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed break-words whitespace-normal">
                           {(o.items || []).map((i: any, idx: number) => (
                             <span key={idx} className="inline-flex items-center gap-1 mr-1.5 flex-wrap">
@@ -2777,7 +2921,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                                     <span className="text-[9px] text-muted-foreground line-through">${fmt(Number(i.original_price))}</span>
                                   )}
                                   <span className="inline-flex items-center px-1 py-0 rounded-full text-[9px] font-black leading-tight"
-                                    style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)" }}>
+                                    style={{ background: "rgba(251,191,36,0.2)", color: "#a16207", border: "1px solid rgba(251,191,36,0.4)" }}>
                                     -{fmt(Number(i.discount))} off
                                   </span>
                                 </>
@@ -2791,7 +2935,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                               <span className="text-[9px] text-muted-foreground line-through">${fmt(Number(o.original_total))}</span>
                             )}
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black leading-tight"
-                              style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)" }}>
+                              style={{ background: "rgba(251,191,36,0.2)", color: "#a16207", border: "1px solid rgba(251,191,36,0.4)" }}>
                               -{fmt(Number(o.discount_amount))} off
                             </span>
                           </div>
@@ -2873,11 +3017,11 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-amber-500/20 border-amber-500/30 text-lg">🍾</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                      <div className="text-sm font-black text-amber-300 mt-0.5">{title}</div>
+                      <div className="text-sm font-black text-amber-700 mt-0.5">{title}</div>
                       {sub1 && <div className="text-xs text-muted-foreground mt-0.5">{sub1}</div>}
                       {sub2 && <div className="text-xs text-amber-400 font-semibold mt-0.5">{sub2Display}</div>}
                       {hasNumbers && (
-                        <div className="text-xs font-black mt-1" style={{ color: diff >= 0 ? "#15803d" : "#fca5a5" }}>
+                        <div className="text-xs font-black mt-1" style={{ color: diff >= 0 ? "#15803d" : "#b91c1c" }}>
                           {diff >= 0 ? `Gain: +$${fmt(diff)}` : `Loss: -$${Math.abs(diff).toFixed(2)}`}
                         </div>
                       )}
@@ -2914,7 +3058,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                       {sub2 && <div className="text-xs text-muted-foreground mt-0.5">{sub2}</div>}
                       {sub3 && <div className="text-xs text-green-700 font-semibold mt-0.5">{sub3}</div>}
                       {hasNumbers && (
-                        <div className="text-xs font-black mt-1" style={{ color: diff >= 0 ? "#15803d" : "#fca5a5" }}>
+                        <div className="text-xs font-black mt-1" style={{ color: diff >= 0 ? "#15803d" : "#b91c1c" }}>
                           {diff >= 0 ? `Gain: +$${fmt(diff)}` : `Loss: -$${Math.abs(diff).toFixed(2)}`}
                         </div>
                       )}
@@ -2933,15 +3077,15 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                   className={`rounded-xl p-4 border flex items-center gap-3 ${isReset ? "border-orange-500/30" : "border-green-500/30"}`}
                   style={{ background: isReset ? "#e0f2fe" : "#e0f2fe" }}>
                   <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 border ${isReset ? "bg-orange-500/20 border-orange-500/30" : "bg-green-500/20 border-green-500/30"}`}>
-                    {isReset ? <RotateCcw className="h-4 w-4 text-orange-400" /> : <ArrowDownLeft className="h-4 w-4 text-green-700" />}
+                    {isReset ? <RotateCcw className="h-4 w-4 text-orange-700" /> : <ArrowDownLeft className="h-4 w-4 text-green-700" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-muted-foreground">{new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                    <div className={`text-sm font-semibold ${isReset ? "text-orange-300" : "text-green-700"}`}>
+                    <div className={`text-sm font-semibold ${isReset ? "text-orange-700" : "text-green-700"}`}>
                       {tx.note ?? (isReset ? "Wallet reset" : "Cleared from cashier")}
                     </div>
                   </div>
-                  <div className={`font-black text-lg shrink-0 ${isReset ? "text-orange-400" : "text-green-700"}`}>
+                  <div className={`font-black text-lg shrink-0 ${isReset ? "text-orange-700" : "text-green-700"}`}>
                     {isReset ? `-$${Math.abs(Number(tx.amount)).toFixed(2)}` : `+$${fmt(Number(tx.amount))}`}
                   </div>
                 </div>
@@ -2957,7 +3101,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                 <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border bg-green-500/15 border-green-500/25 text-base">💵</div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" })}</div>
-                  <div className="text-sm font-black mt-0.5" style={{ color: "var(--primary)" }}>Cash: Sale</div>
+                        <div className="text-sm font-black mt-0.5" style={{ color: "var(--primary)" }}>{cashSaleTitle(o)}</div>
                   <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
                     {(o.items || []).map((i, idx) => (
                       <span key={idx} className="inline-flex items-center gap-1 mr-1.5 flex-wrap">
@@ -2968,7 +3112,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                               <span className="text-[9px] text-muted-foreground line-through">${fmt(Number(i.original_price))}</span>
                             )}
                             <span className="inline-flex items-center px-1 py-0 rounded-full text-[9px] font-black leading-tight"
-                              style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)" }}>
+                              style={{ background: "rgba(251,191,36,0.2)", color: "#a16207", border: "1px solid rgba(251,191,36,0.4)" }}>
                               -{fmt(Number(i.discount))} off
                             </span>
                           </>
@@ -2982,7 +3126,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                         <span className="text-[9px] text-muted-foreground line-through">${fmt(Number(o.original_total))}</span>
                       )}
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black leading-tight"
-                        style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)" }}>
+                        style={{ background: "rgba(251,191,36,0.2)", color: "#a16207", border: "1px solid rgba(251,191,36,0.4)" }}>
                         -{fmt(Number(o.discount_amount))} off
                       </span>
                     </div>
@@ -3031,6 +3175,13 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
       )}
 
       <PaginationBar page={safePage} totalPages={totalPages} total={total} pageCount={pageRecordCount} onPrev={handlePrev} onNext={handleNext} />
+      {receiptOrder && (
+        <OrderReceiptModal
+          order={receiptOrder}
+          ownerName={ownerName}
+          onClose={() => setReceiptOrder(null)}
+        />
+      )}
     </div>
   );
 }
@@ -3178,68 +3329,42 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
   const loadSummary = useCallback(async () => {
     setLoadingSummary(true);
 
-    // Bar session start — used for BOTH today's and session income/expense
-    // "Today" = from current store_session_start → now (resets only when bar closes & reopens)
     const barSessionStart: string | null = (profile as any).store_session_start ?? null;
-
-    // Session cards anchor = cashier_float_set_at (resets when owner clicks New Session on float)
-    // This is independent of store_session_start so machines/register/cashiers are unaffected.
     const floatSessionStart: string | null = (profile as any).cashier_float_set_at ?? null;
+    const { fromUTC: todayFromUTC, toUTC: todayToUTC } = ttCalendarDayBounds(todayDateTT());
 
-    // "Today's" anchor = store_session_start when open, or store_closed_at's session start when closed.
-    // We look at bar_sessions to find the most recent closed session so Today still shows
-    // the right numbers after the bar has been closed.
-    const barClosedAtVal: string | null = (profile as any).store_closed_at ?? null;
-    let todayAnchor: string | null = barSessionStart; // bar is open — use current session start
-    if (!barSessionStart && barClosedAtVal) {
-      // Bar was closed — find the most recent closed session's start time
-      const lastSessionRes = await supabase.from("store_sessions")
-        .select("opened_at")
-        .eq("owner_id", profile.id)
-        .order("opened_at", { ascending: false })
-        .limit(1);
-      todayAnchor = (lastSessionRes.data && lastSessionRes.data.length > 0)
-        ? lastSessionRes.data[0].opened_at
-        : null;
-    }
-
-    const [finRes, expRes, transfersRes, ownerOrdersRes, cashierOrdersRes, creditPaymentsRes, productsRes, openBottlesRes, todayOrdersRes, todayItemOrdersRes, todayNonStockExpRes, sessionOrdersRes, sessionExpenseRes, sessionItemOrdersRes, allItemOrdersRes] = await Promise.all([
+    const [finRes, expRes, transfersRes, ownerOrdersRes, cashierOrdersRes, creditPaymentsRes, productsRes, openBottlesRes, todayOrdersRes, todayNonStockExpRes, sessionOrdersRes, sessionExpenseRes, allItemOrdersRes] = await Promise.all([
       supabase.from("owner_financials").select("initial_expense").eq("owner_id", profile.id).maybeSingle(),
       supabase.from("owner_expenses").select("amount, description").eq("owner_id", profile.id),
       supabase.from("wallet_transactions").select("amount").eq("profile_id", profile.id).eq("type", "transfer_in"),
       supabase.from("orders").select("total").eq("owner_id", profile.id).eq("cashier_id", profile.id),
-      supabase.from("orders").select("total").eq("owner_id", profile.id).neq("cashier_id", profile.id),
+      Promise.resolve({ data: [] as { total: number }[] }),
       supabase.from("wallet_transactions").select("amount").eq("profile_id", profile.id).eq("type", "credit_payment").gt("amount", 0),
-      supabase.from("products").select("id, name, price, cost_price, units_per_item, stock_qty").eq("owner_id", profile.id),
+      supabase.from("products").select("id, name, price, cost_price, units_per_item, stock_qty, category").eq("owner_id", profile.id),
       supabase.from("opened_bottles").select("revenue, product_id, products(price)").eq("owner_id", profile.id).eq("status", "open"),
-      // Today's orders: from store_session_start → now (resets only on bar close+reopen, not midnight)
-      todayAnchor
-        ? supabase.from("orders").select("total").eq("owner_id", profile.id).gte("created_at", todayAnchor)
-        : Promise.resolve({ data: [] }),
-      // Today's orders with items for cost calculation (same window)
-      todayAnchor
-        ? supabase.from("orders").select("items").eq("owner_id", profile.id).gte("created_at", todayAnchor)
-        : Promise.resolve({ data: [] }),
-      // Today's non-stock expenses (same window — from bar open anchor)
-      todayAnchor
-        ? supabase.from("owner_expenses").select("amount, description").eq("owner_id", profile.id)
-            .gt("amount", 0).gte("created_at", todayAnchor)
-        : Promise.resolve({ data: [] }),
-      // Session income: orders only since cashier_float_set_at (resets on New Session float)
+      fetchAllPaged<{ total: number; items: unknown; discount_amount?: number }>((from, to) =>
+        supabase.from("orders").select("total, items, discount_amount").eq("owner_id", profile.id)
+          .gte("created_at", todayFromUTC).lte("created_at", todayToUTC).range(from, to),
+      ),
+      fetchAllPaged<{ amount: number; description: string | null }>((from, to) =>
+        supabase.from("owner_expenses").select("amount, description").eq("owner_id", profile.id)
+          .gt("amount", 0).gte("created_at", todayFromUTC).lte("created_at", todayToUTC).range(from, to),
+      ),
       floatSessionStart
-        ? supabase.from("orders").select("total").eq("owner_id", profile.id).gte("created_at", floatSessionStart)
-        : Promise.resolve({ data: [] }),
-      // Session expense: manual (non-stock) expenses since cashier_float_set_at
+        ? fetchAllPaged<{ total: number; items: unknown; discount_amount?: number }>((from, to) =>
+            supabase.from("orders").select("total, items, discount_amount").eq("owner_id", profile.id)
+              .gte("created_at", floatSessionStart).range(from, to),
+          )
+        : Promise.resolve([] as { total: number; items: unknown; discount_amount?: number }[]),
       floatSessionStart
-        ? supabase.from("owner_expenses").select("amount, description").eq("owner_id", profile.id)
-            .gt("amount", 0).gte("created_at", floatSessionStart)
-        : Promise.resolve({ data: [] }),
-      // Session orders with items for stock cost calculation (same window as session income)
-      floatSessionStart
-        ? supabase.from("orders").select("items").eq("owner_id", profile.id).gte("created_at", floatSessionStart)
-        : Promise.resolve({ data: [] }),
-      // All-time orders with items — for Est. Total Out calculation
-      supabase.from("orders").select("items").eq("owner_id", profile.id),
+        ? fetchAllPaged<{ amount: number; description: string | null }>((from, to) =>
+            supabase.from("owner_expenses").select("amount, description").eq("owner_id", profile.id)
+              .gt("amount", 0).gte("created_at", floatSessionStart).range(from, to),
+          )
+        : Promise.resolve([] as { amount: number; description: string | null }[]),
+      fetchAllPaged<{ items: unknown }>((from, to) =>
+        supabase.from("orders").select("items").eq("owner_id", profile.id).range(from, to),
+      ),
     ]);
 
     const initialExpense = finRes.data ? Number(finRes.data.initial_expense) : 0;
@@ -3267,92 +3392,20 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
     const stockResaleValue = closedStockValue + openedBottlesNetValue;
     const stockExpectedProfit = stockResaleValue - closedStockCost;
 
-    const todayIncome = (todayOrdersRes.data ?? []).reduce((s: number, o: { total: number }) => s + Number(o.total), 0);
+    const productsForCost = (productsRes.data ?? []) as SummaryProductCost[];
+    const todayPeriod = barPeriodSummary(todayOrdersRes as SummaryOrder[], todayNonStockExpRes, productsForCost);
+    const todayIncome = todayPeriod.sales;
+    const todayCostFromItems = todayPeriod.stockCost;
+    const todayNonStock = todayPeriod.expenses;
+    const todayProfit = todayPeriod.net;
 
-    // Build product cost map: id → effective cost per unit (cost_price ÷ units_per_item if set)
-    const prodCostById = new Map<string, number>(
-      ((productsRes.data ?? []) as any[])
-        .map((p) => [p.id, Number(p.units_per_item) > 0 ? Number(p.cost_price) / Number(p.units_per_item) : Number(p.cost_price)])
-    );
-    // Name-based fallback for shots with synthetic IDs (e.g. "shot-<bottleId>-<variationKey>-...")
-    const prodCostByName = new Map<string, number>(
-      ((productsRes.data ?? []) as any[])
-        .map((p) => [p.name, Number(p.units_per_item) > 0 ? Number(p.cost_price) / Number(p.units_per_item) : Number(p.cost_price)])
-    );
-
-    // Resolve cost for an order item — handles exact ID, name fallback, and shot synthetic IDs
-    const SHOT_SYNTHETIC_PREFIXES = ["Shot", "2oz", "1oz", "Retail", "Pack"];
-    const resolveItemCost = (it: { id?: string; name: string }): number => {
-      // Variation cart keys are "uuid__pv__xxx" or "uuid__gid__oid" — strip the suffix to get the real product UUID
-      const baseId = it.id && it.id.includes("__") ? it.id.split("__")[0] : it.id;
-      if (baseId && prodCostById.has(baseId)) return prodCostById.get(baseId)!;
-      if (it.id && prodCostById.has(it.id)) return prodCostById.get(it.id)!;
-      if (prodCostByName.has(it.name)) return prodCostByName.get(it.name)!;
-      // Shot items: "<variation.label>: <product_name>" with id starting "shot-"
-      const colonIdx = it.name.indexOf(": ");
-      const isShotId = (it.id ?? "").startsWith("shot-");
-      if (colonIdx !== -1) {
-        const prefix = it.name.slice(0, colonIdx).trim();
-        const isSyntheticPrefix = SHOT_SYNTHETIC_PREFIXES.some(p => prefix.toLowerCase().startsWith(p.toLowerCase()));
-        if (isSyntheticPrefix || isShotId) {
-          const productName = it.name.slice(colonIdx + 2);
-          if (prodCostByName.has(productName)) return prodCostByName.get(productName)!;
-        }
-      }
-      return 0;
-    };
-
-    // Today's cost = sum of (qty × cost_price) across all today's order items
-    type OrderItemRaw = { id?: string; name: string; qty: number; price: number; units_consumed?: number | null };
-    const todayCostFromItems = ((todayItemOrdersRes.data ?? []) as any[]).reduce((s: number, o: { items: any }) => {
-      const items: OrderItemRaw[] = Array.isArray(o.items) ? o.items : [];
-      return s + items.reduce((cs, it) => {
-        const costUnits = (it.units_consumed != null && it.units_consumed > 0) ? it.units_consumed : it.qty;
-        return cs + resolveItemCost(it) * costUnits;
-      }, 0);
-    }, 0);
-
-    // Today's non-stock expenses (positive only, same filter as Summary page)
-    const todayNonStock = (todayNonStockExpRes.data ?? [])
-      .filter((e: { description: string | null }) => (e.description ?? "").startsWith("Non-Stock Expense"))
-      .reduce((s: number, e: { amount: number }) => s + Number(e.amount), 0);
-
-    // todayProfit matches Summary page Day filter: income - item costs - non-stock expenses
-    const todayProfit = todayIncome - todayCostFromItems - todayNonStock;
-
-    // Session income: orders only since current store_session_start (resets on New Session, never exceeds Today)
-    const sessionIncome = barSessionStart
-      ? (sessionOrdersRes.data ?? []).reduce((s: number, o: { total: number }) => s + Number(o.total), 0)
-      : 0;
-
-    // Session expense: manual (non-stock) expenses only since current store_session_start
-    const sessionExpense = barSessionStart
-      ? (sessionExpenseRes.data ?? [])
-          .filter((e: { description: string | null }) => (e.description ?? "").startsWith("Non-Stock Expense"))
-          .reduce((s: number, e: { amount: number }) => s + Number(e.amount), 0)
-      : 0;
-
-    // Session stock cost: cost of items sold since current store_session_start
-    type SessionOrderItem = { id?: string; name: string; qty: number; price: number; units_consumed?: number | null };
-    const sessionStockCost = barSessionStart
-      ? ((sessionItemOrdersRes.data ?? []) as any[]).reduce((s: number, o: { items: any }) => {
-          const items: SessionOrderItem[] = Array.isArray(o.items) ? o.items : [];
-          return s + items.reduce((cs, it) => {
-            const costUnits = (it.units_consumed != null && it.units_consumed > 0) ? it.units_consumed : it.qty;
-            return cs + resolveItemCost(it) * costUnits;
-          }, 0);
-        }, 0)
-      : 0;
-
-    // All-time stock sold cost = sum of (qty × cost_price) across ALL order items ever
-    type AllOrderItemRaw = { id?: string; name: string; qty: number; price: number; units_consumed?: number | null };
-    const totalStockSoldCost = ((allItemOrdersRes.data ?? []) as any[]).reduce((s: number, o: { items: any }) => {
-      const items: AllOrderItemRaw[] = Array.isArray(o.items) ? o.items : [];
-      return s + items.reduce((cs, it) => {
-        const costUnits = (it.units_consumed != null && it.units_consumed > 0) ? it.units_consumed : it.qty;
-        return cs + resolveItemCost(it) * costUnits;
-      }, 0);
-    }, 0);
+    const sessionPeriod = barSessionStart
+      ? barPeriodSummary(sessionOrdersRes as SummaryOrder[], sessionExpenseRes, productsForCost)
+      : { sales: 0, expenses: 0, stockCost: 0, net: 0, gross: 0, items: [] };
+    const sessionIncome = sessionPeriod.sales;
+    const sessionExpense = sessionPeriod.expenses;
+    const sessionStockCost = sessionPeriod.stockCost;
+    const totalStockSoldCost = itemsCostTotal(aggregateItems((allItemOrdersRes ?? []) as SummaryOrder[], productsForCost));
 
     setFinancialSummary({ initialExpense, monthlyExpenses, totalIncome, totalStockSoldCost, sessionIncome, sessionExpense, sessionStockCost, stockResaleValue, stockExpectedProfit, stockCost: closedStockCost, todayIncome, todayProfit, todayStockCost: todayCostFromItems, todayExpenses: todayNonStock });
     setLoadingSummary(false);
@@ -3422,14 +3475,18 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
   const hasFinancials = financialSummary !== null && financialSummary.monthlyExpenses > 0;
 
   // ── Edit order handler — stores order in localStorage then navigates to register ──
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+
   const handleOwnerEditOrder = (o: Order) => {
     const editPayload = {
       orderId: o.id,
+      createdAt: o.created_at,
       items: o.items,
       originalTotal: o.total,
       paid: o.paid,
       changeGiven: o.change_given,
       discountAmount: o.discount_amount ?? 0,
+      orderNumber: o.order_number ?? undefined,
       type: "cash" as const,
     };
     localStorage.setItem(`pospro-edit-order-${profile.id}`, JSON.stringify(editPayload));
@@ -3441,12 +3498,13 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
     if (!tx.order_id) { toast.error("This credit sale cannot be edited (no order reference)"); return; }
     const { data: order, error } = await supabase
       .from("orders")
-      .select("id, items, total, paid, change_given, discount_amount")
+      .select("id, items, total, paid, change_given, discount_amount, created_at")
       .eq("id", tx.order_id)
       .single();
     if (error || !order) { toast.error("Could not load order details"); return; }
     const editPayload = {
       orderId: order.id,
+      createdAt: order.created_at,
       items: order.items,
       originalTotal: Number(order.total),
       paid: Number(order.paid),
@@ -3481,11 +3539,11 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                 <>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] sm:text-xs font-semibold" style={{ color: "rgba(60,60,60,0.65)" }}>{t("established", "Set")}</span>
-                    <span className="font-black text-sm sm:text-base" style={{ color: "#fbbf24" }}>${fmt(cashierFloat)}</span>
+                    <span className="font-black text-sm sm:text-base" style={{ color: "#a16207" }}>${fmt(cashierFloat)}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] sm:text-xs font-semibold" style={{ color: "rgba(60,60,60,0.65)" }}>{t("remain", "Remain")}</span>
-                    <span className="font-black text-sm sm:text-base" style={{ color: floatRemaining > 0 ? "#15803d" : "#fca5a5" }}>${fmt(floatRemaining)}</span>
+                    <span className="font-black text-sm sm:text-base" style={{ color: floatRemaining > 0 ? "#15803d" : "#b91c1c" }}>${fmt(floatRemaining)}</span>
                   </div>
                 </>
               ) : (
@@ -3591,7 +3649,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                   {(() => {
                     const tgp = todayIncome - todayStockCost;
                     return (
-                      <div className="font-black text-xs" style={{ color: tgp >= 0 ? "#15803d" : "#fca5a5" }}>
+                      <div className="font-black text-xs" style={{ color: tgp >= 0 ? "#15803d" : "#b91c1c" }}>
                         {tgp >= 0 ? "+" : ""}${fmt(tgp)}
                       </div>
                     );
@@ -3612,7 +3670,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                     const tgp = todayIncome - todayStockCost;
                     const tnp = tgp - todayExpenses;
                     return (
-                      <div className="font-black text-xs" style={{ color: tnp >= 0 ? "#15803d" : "#fca5a5" }}>
+                      <div className="font-black text-xs" style={{ color: tnp >= 0 ? "#15803d" : "#b91c1c" }}>
                         {tnp >= 0 ? "+" : ""}${fmt(tnp)}
                       </div>
                     );
@@ -3660,7 +3718,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                   {(() => {
                     const gsp = totalIncome - totalStockSoldCost;
                     return (
-                      <div className="font-black text-xs" style={{ color: gsp >= 0 ? "#15803d" : "#fca5a5" }}>
+                      <div className="font-black text-xs" style={{ color: gsp >= 0 ? "#15803d" : "#b91c1c" }}>
                         {gsp >= 0 ? "+" : ""}${fmt(gsp)}
                       </div>
                     );
@@ -3680,7 +3738,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                   {(() => {
                     const tnp = totalIncome - totalStockSoldCost - totalExpenses;
                     return (
-                      <div className="font-black text-xs" style={{ color: tnp >= 0 ? "#15803d" : "#fca5a5" }}>
+                      <div className="font-black text-xs" style={{ color: tnp >= 0 ? "#15803d" : "#b91c1c" }}>
                         {tnp >= 0 ? "+" : ""}${fmt(tnp)}
                       </div>
                     );
@@ -3703,7 +3761,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("stock_profit", "Current\nStock Profit")}</div>
-                  <div className="font-black text-xs" style={{ color: stockExpectedProfit >= 0 ? "#15803d" : "#fca5a5" }}>
+                  <div className="font-black text-xs" style={{ color: stockExpectedProfit >= 0 ? "#15803d" : "#b91c1c" }}>
                     {stockExpectedProfit >= 0 ? "+" : ""}${fmt(Math.abs(stockExpectedProfit))}
                   </div>
                 </div>
@@ -3737,7 +3795,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
 
       {/* ── Tab content ──────────────────────────────────────────────────── */}
       {activeTab === "transactions" ? (
-        <TransactionsTab profile={profile} ownerName={profile.username ?? "Store"} onDeleted={loadSummary} onEditOrder={handleOwnerEditOrder} onEditCreditCharge={handleOwnerEditCreditCharge} />
+        <TransactionsTab profile={profile} ownerName={profile.username ?? "Store"} onDeleted={loadSummary} onEditOrder={(o) => setEditingOrder(o)} onEditCreditCharge={handleOwnerEditCreditCharge} />
       ) : (
         <FinancialsTab
           ownerId={profile.id}
@@ -3764,6 +3822,13 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
           confirmLabel={savingFloat ? "Saving…" : cashierFloat > 0 ? "Update Float" : "Set Float"}
           sessionType={cashierFloat > 0 ? floatSessionMode : undefined}
           onSessionChange={cashierFloat > 0 ? setFloatSessionMode : undefined}
+        />
+      )}
+      {editingOrder && (
+        <EditSaleModal
+          order={editingOrder}
+          onClose={() => setEditingOrder(null)}
+          onConfirm={() => { const o = editingOrder; setEditingOrder(null); handleOwnerEditOrder(o); }}
         />
       )}
       {receiptOrder && (

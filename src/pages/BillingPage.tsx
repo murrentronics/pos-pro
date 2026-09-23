@@ -236,9 +236,9 @@ export default function BillingPage() {
       </div>
       <div className="rounded-2xl border border-emerald-500/30 p-6 text-center space-y-3" style={{ background: "linear-gradient(135deg,rgba(16,185,129,0.12),rgba(16,185,129,0.04))" }}>
         <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20 border border-emerald-500/40 mx-auto">
-          <CheckCircle className="h-8 w-8 text-emerald-400" />
+          <CheckCircle className="h-8 w-8 text-emerald-700" />
         </div>
-        <h2 className="text-xl font-black text-emerald-400">Free Demo Account</h2>
+        <h2 className="text-xl font-black text-emerald-700">Free Demo Account</h2>
         <p className="text-sm text-muted-foreground">Permanent demo — no billing required.</p>
       </div>
     </div>
@@ -350,7 +350,7 @@ export default function BillingPage() {
                     )}
                   </div>
                 </div>
-                <span className={`text-xs font-black px-2.5 py-1 rounded-full ${isOverdue ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"}`}>
+                <span className={`text-xs font-black px-2.5 py-1 rounded-full ${isOverdue ? "bg-red-100 text-red-600" : "bg-green-100 text-green-900"}`}>
                   {isOverdue ? "OVERDUE" : "ACTIVE"}
                 </span>
               </div>
@@ -460,7 +460,7 @@ export default function BillingPage() {
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-black text-foreground">${p.amount.toFixed(0)} TT</p>
-                        <span className={`text-xs font-bold ${p.status === "paid" ? "text-green-500" : p.status === "pending" ? "text-yellow-500" : "text-red-500"}`}>
+                        <span className={`text-xs font-bold ${p.status === "paid" ? "text-green-900" : p.status === "pending" ? "text-yellow-500" : "text-red-500"}`}>
                           {p.status.toUpperCase()}
                         </span>
                       </div>

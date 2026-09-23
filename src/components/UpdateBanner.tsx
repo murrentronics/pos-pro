@@ -1,22 +1,16 @@
 /**
  * UpdateBanner
  *
- * Shows a full-screen modal when a new APK version is available on GitHub.
- *
- * On native Android:
- *   1. Opens the direct APK URL via Capacitor Browser — Android intercepts
- *      the .apk MIME type and hands it to the system DownloadManager, which
- *      shows a progress notification and an "Open" tap when done.
- *   2. After a short delay, opens download.html in a second Browser tab so
- *      the install instructions are visible while the download runs.
- *
- * On web: opens the download page in a new tab as before.
+ * Android: opens the APK URL via Capacitor Browser.
+ * Electron: downloads and runs the Windows installer via installUpdate.
+ * Web: should not show (useAppUpdate skips web).
  */
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, X, Sparkles } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
+import { toast } from "sonner";
 import type { UpdateInfo } from "@/lib/useAppUpdate";
 
 interface Props {
@@ -26,44 +20,30 @@ interface Props {
 
 export function UpdateBanner({ update, onDismiss }: Props) {
   const [downloading, setDownloading] = useState(false);
-  const [started, setStarted] = useState(false);
 
-  const DOWNLOAD_PAGE = "https://pos-pro.pages.dev/download.html";
+  const isElectron = window.electronAPI?.isElectron === true || import.meta.env.VITE_IS_ELECTRON === "true";
+  const DOWNLOAD_PAGE = "https://pospro-web.pages.dev/#/download";
 
   const handleUpdate = async () => {
-    if (downloading) return;
     setDownloading(true);
-
     try {
+      if (window.electronAPI?.installUpdate) {
+        const result = await window.electronAPI.installUpdate(update.apkUrl);
+        if (!result.success) throw new Error(result.error || "Update failed");
+        return;
+      }
       if (Capacitor.isNativePlatform()) {
         const { Browser } = await import("@capacitor/browser");
-
-        // Step 1: Open the direct APK URL.
-        // Android intercepts .apk downloads and routes them through the
-        // system DownloadManager — shows a status-bar progress notification
-        // and an "Open / Install" action when the download finishes.
         await Browser.open({
           url: update.apkUrl,
           presentationStyle: "fullscreen",
           toolbarColor: "#000d1a",
         });
-
-        setStarted(true);
-
-        // Step 2: After a brief moment open the download/install guide page
-        // so the user can read the install steps while the APK downloads.
-        await new Promise((r) => setTimeout(r, 1800));
-        await Browser.open({
-          url: DOWNLOAD_PAGE,
-          presentationStyle: "fullscreen",
-          toolbarColor: "#000d1a",
-        });
       } else {
-        // Web fallback — direct APK link triggers a browser download
         window.open(update.apkUrl, "_blank");
+        toast.success("Check your Downloads folder for the installer.");
       }
     } catch {
-      // If anything fails fall back to the download page
       try {
         const { Browser } = await import("@capacitor/browser");
         await Browser.open({ url: DOWNLOAD_PAGE, presentationStyle: "fullscreen", toolbarColor: "#000d1a" });
@@ -75,7 +55,6 @@ export function UpdateBanner({ update, onDismiss }: Props) {
     }
   };
 
-  // Trim release notes to a reasonable length
   const notes = update.releaseNotes
     ? update.releaseNotes.slice(0, 300) + (update.releaseNotes.length > 300 ? "…" : "")
     : null;
@@ -86,7 +65,6 @@ export function UpdateBanner({ update, onDismiss }: Props) {
         className="w-full max-w-md rounded-3xl border border-border shadow-2xl overflow-hidden"
         style={{ background: "var(--gradient-card)" }}
       >
-        {/* Header */}
         <div
           className="px-6 pt-6 pb-4 relative"
           style={{ background: "var(--gradient-hero)" }}
@@ -108,7 +86,6 @@ export function UpdateBanner({ update, onDismiss }: Props) {
           </div>
         </div>
 
-        {/* Body */}
         <div className="px-6 py-5 space-y-4">
           {notes && (
             <div>
@@ -121,13 +98,10 @@ export function UpdateBanner({ update, onDismiss }: Props) {
             </div>
           )}
 
-          {/* Status hint shown after download has kicked off */}
-          {started && (
-            <div className="rounded-xl px-4 py-3 text-sm text-green-300 font-semibold flex items-center gap-2"
-              style={{ background: "oklch(0.18 0.08 145 / 0.7)", border: "1px solid oklch(0.4 0.12 145 / 0.5)" }}>
-              <Download className="h-4 w-4 shrink-0" />
-              Download started — check your notifications bar
-            </div>
+          {isElectron && (
+            <p className="text-sm text-muted-foreground">
+              Update Now downloads the installer, closes this app, then runs Setup. Close any other P.O.S. Pro windows first.
+            </p>
           )}
 
           <div className="space-y-2 pt-1">
@@ -138,7 +112,9 @@ export function UpdateBanner({ update, onDismiss }: Props) {
               disabled={downloading}
             >
               <Download className="h-5 w-5" />
-              {downloading ? "Starting download…" : started ? "Open again" : "Update Now"}
+              {downloading
+                ? (isElectron ? "Downloading — app will close…" : "Downloading…")
+                : "Update Now"}
             </Button>
             <Button
               variant="ghost"

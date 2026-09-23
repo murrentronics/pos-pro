@@ -149,7 +149,7 @@ export default function FactoryResetPage() {
               Clears all orders, wallet transactions, expenses, sessions, and credit history.
               Resets every product's stock quantity to 0.
             </p>
-            <p className="text-xs font-bold mt-2" style={{ color: "#86efac" }}>
+            <p className="text-sm font-black mt-2" style={{ color: "#14532d" }}>
               ✓ Keeps all products (with prices), categories, staff, and customers.
             </p>
           </button>
@@ -168,7 +168,7 @@ export default function FactoryResetPage() {
               Deletes absolutely everything — products, categories, staff, customers, all orders,
               all financial records, all sessions. Your account and subscription are preserved.
             </p>
-            <p className="text-xs font-bold mt-2 text-red-400">
+            <p className="text-xs font-bold mt-2 text-red-700">
               ✗ This deletes all products, staff accounts, and customer data. Start from scratch.
             </p>
           </button>
@@ -204,7 +204,7 @@ export default function FactoryResetPage() {
 
       {/* Confirmation box */}
       <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-5 space-y-4">
-        <p className="text-sm font-bold text-red-400">
+        <p className="text-sm font-bold text-red-700">
           {mode === "full"
             ? `You are about to wipe everything for "${targetName}". This is permanent.`
             : `You are about to clear all records and zero out stock for "${targetName}". This is permanent.`}

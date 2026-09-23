@@ -386,7 +386,7 @@ export default function AdminBillingManagementPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "paid": return "text-green-500";
+      case "paid": return "text-green-900";
       case "pending": return "text-yellow-500";
       case "rejected": return "text-red-500";
       default: return "text-muted-foreground";
@@ -395,7 +395,7 @@ export default function AdminBillingManagementPage() {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "paid": return <CheckCircle className="h-5 w-5 text-green-500" />;
+      case "paid": return <CheckCircle className="h-5 w-5 text-green-900" />;
       case "pending": return <Clock className="h-5 w-5 text-yellow-500" />;
       case "rejected": return <XCircle className="h-5 w-5 text-red-500" />;
       default: return null;
@@ -439,13 +439,13 @@ export default function AdminBillingManagementPage() {
                   }
                 >
                   {f === "pending"  && <Clock       className="h-4 w-4 text-yellow-500 shrink-0" />}
-                  {f === "due"      && <AlertCircle className="h-4 w-4 text-orange-400 shrink-0" />}
-                  {f === "paid"     && <CheckCircle className="h-4 w-4 text-green-500  shrink-0" />}
+                  {f === "due"      && <AlertCircle className="h-4 w-4 text-orange-700 shrink-0" />}
+                  {f === "paid"     && <CheckCircle className="h-4 w-4 text-green-900  shrink-0" />}
                   {f === "rejected" && <XCircle     className="h-4 w-4 text-red-500    shrink-0" />}
                   <span className="text-[10px] font-black leading-none capitalize">{f}</span>
                   {f === "pending"  && stats.pending  > 0 && <span className="text-[10px] font-black text-yellow-500">{stats.pending}</span>}
-                  {f === "due"      && stats.dueSoonCount > 0 && <span className="text-[10px] font-black text-orange-400">{stats.dueSoonCount}</span>}
-                  {f === "paid"     && stats.paid     > 0 && <span className="text-[10px] font-black text-green-500">{stats.paid}</span>}
+                  {f === "due"      && stats.dueSoonCount > 0 && <span className="text-[10px] font-black text-orange-700">{stats.dueSoonCount}</span>}
+                  {f === "paid"     && stats.paid     > 0 && <span className="text-[10px] font-black text-green-900">{stats.paid}</span>}
                 </Button>
               ))}
           </div>
@@ -462,19 +462,19 @@ export default function AdminBillingManagementPage() {
                   <div key={i} className="flex items-center justify-between p-4 rounded-lg border border-orange-500/30 bg-orange-500/5">
                     <div>
                       <p className="font-black text-base">{item.username}</p>
-                      <p className="text-xs text-orange-400 font-bold mt-0.5">
+                      <p className="text-xs text-orange-700 font-bold mt-0.5">
                         Due {item.dueDate} · {item.daysLeft === 0 ? "Today" : `${item.daysLeft}d`}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-black text-orange-400">${item.amount.toFixed(0)}</p>
+                      <p className="text-xl font-black text-orange-700">${item.amount.toFixed(0)}</p>
                       <p className="text-xs text-muted-foreground">TT / yr</p>
                     </div>
                   </div>
                 ))}
                 <div className="flex items-center justify-between pt-3 border-t border-border mt-3">
                   <p className="text-sm font-black text-muted-foreground">Total Due</p>
-                  <p className="text-2xl font-black text-orange-400">${stats.dueSoonTotal.toFixed(0)} TT</p>
+                  <p className="text-2xl font-black text-orange-700">${stats.dueSoonTotal.toFixed(0)} TT</p>
                 </div>
               </div>
             )

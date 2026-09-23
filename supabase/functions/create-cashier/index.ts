@@ -31,6 +31,8 @@ serve(async (req) => {
     const {
       username,
       password,
+      first_name,
+      last_name,
       role = "cashier",       // "cashier" | "manager" | "custom"
       job_title,
       bar_owner_id,           // for chain owners: which sub-store to attach to
@@ -94,6 +96,8 @@ serve(async (req) => {
       has_login:  !isCustom,
       ...(isManager ? { job_title: "manager" } : {}),
       ...(isCustom  ? { job_title: job_title ?? null } : {}),
+      ...(first_name ? { first_name: String(first_name).trim() } : {}),
+      ...(last_name ? { last_name: String(last_name).trim() } : {}),
     }).eq("id", uid);
 
     if (profileErr) {

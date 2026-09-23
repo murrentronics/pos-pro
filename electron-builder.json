@@ -1,0 +1,85 @@
+{
+  "appId": "com.pospro.app",
+  "productName": "P.O.S. Pro",
+  "copyright": "Copyright © P.O.S. Pro",
+  "directories": {
+    "output": "dist/electron-installer",
+    "buildResources": "build"
+  },
+  "extraMetadata": {
+    "main": "electron.cjs",
+    "type": "commonjs"
+  },
+  "asarUnpack": [
+    "**/node_modules/serialport/**",
+    "**/node_modules/@serialport/**"
+  ],
+  "files": [
+    "dist/electron/**/*",
+    "electron.cjs",
+    "electron-preload.cjs",
+    "package.json",
+    "build/icon.png",
+    "build/icon.ico",
+    "!node_modules/@cloudflare/**",
+    "!node_modules/workerd/**",
+    "!node_modules/miniflare/**",
+    "!node_modules/wrangler/**",
+    "!node_modules/esbuild/**",
+    "!node_modules/@esbuild/**",
+    "!node_modules/vite/**",
+    "!node_modules/@vitejs/**",
+    "!node_modules/@capacitor/**",
+    "!node_modules/@imgly/**",
+    "!node_modules/@huggingface/**"
+  ],
+  "extraResources": [
+    {
+      "from": "build/icon.png",
+      "to": "icon.png"
+    },
+    {
+      "from": "build/icon.ico",
+      "to": "icon.ico"
+    }
+  ],
+  "compression": "store",
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "icon.ico",
+    "artifactName": "POS-Pro-Setup-${version}.exe",
+    "signExecutable": false
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "perMachine": true,
+    "allowElevation": true,
+    "packElevateHelper": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "runAfterFinish": true,
+    "deleteAppDataOnUninstall": false,
+    "installerIcon": "icon.ico",
+    "uninstallerIcon": "icon.ico",
+    "installerHeaderIcon": "icon.ico",
+    "include": "installer.nsh",
+    "uninstallDisplayName": "P.O.S. Pro",
+    "shortcutName": "P.O.S. Pro"
+  },
+  "mac": {
+    "target": ["dmg"],
+    "icon": "icon.png",
+    "category": "public.app-category.business"
+  },
+  "linux": {
+    "target": ["AppImage"],
+    "icon": "icon.png",
+    "category": "Office"
+  }
+}

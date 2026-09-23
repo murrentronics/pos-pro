@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth, usernameToEmail } from "@/lib/auth";
+import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ export default function LoginPage() {
   // Track if forgot-password flow is open so we don't auto-redirect
   // when the OTP verification temporarily signs the user in
   const [forgotOpen, setForgotOpen] = useState(false);
+  const isWeb = !Capacitor.isNativePlatform() && !(typeof window !== "undefined" && window.electronAPI?.isElectron);
 
   useEffect(() => {
     // Don't redirect while the forgot-password flow is active —
@@ -37,9 +39,24 @@ export default function LoginPage() {
 
   return (
     <div
-      className="h-screen flex flex-col items-center px-3 pt-10 pb-24 overflow-y-auto"
+      className="relative h-screen flex flex-col items-center px-3 pt-10 pb-24 overflow-y-auto"
       style={{ background: "radial-gradient(circle at 20% 0%, oklch(0.22 0.08 240) 0%, oklch(0.08 0.04 240) 60%)" }}
     >
+      {isWeb && (
+        <Link
+          to="/download"
+          className="absolute top-4 right-4 flex items-center gap-2 px-3 py-2 rounded-xl font-black text-xs text-primary-foreground transition active:scale-95 shadow-lg z-10"
+          style={{ background: "linear-gradient(135deg, #00b4ff 0%, #0047ab 100%)" }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span>Download</span>
+        </Link>
+      )}
+
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex mb-4">

@@ -156,24 +156,21 @@ export type Database = {
           owner_id: string
           product_id: string
           actual_qty: number
-          checked_at: string
-          created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
           owner_id: string
           product_id: string
           actual_qty: number
-          checked_at?: string
-          created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
           owner_id?: string
           product_id?: string
           actual_qty?: number
-          checked_at?: string
-          created_at?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -877,6 +874,7 @@ export type Database = {
           amount: number
           note: string | null
           items: Json | null
+          tab_status: string | null
           created_at: string
         }
         Insert: {
@@ -888,6 +886,7 @@ export type Database = {
           amount: number
           note?: string | null
           items?: Json | null
+          tab_status?: string | null
           created_at?: string
         }
         Update: {
@@ -899,6 +898,7 @@ export type Database = {
           amount?: number
           note?: string | null
           items?: Json | null
+          tab_status?: string | null
           created_at?: string
         }
         Relationships: [
@@ -937,6 +937,7 @@ export type Database = {
           owner_id: string
           paid: number
           total: number
+          order_number: number | null
         }
         Insert: {
           cashier_id: string
@@ -949,6 +950,7 @@ export type Database = {
           owner_id: string
           paid: number
           total: number
+          order_number?: number | null
         }
         Update: {
           cashier_id?: string
@@ -961,6 +963,7 @@ export type Database = {
           owner_id?: string
           paid?: number
           total?: number
+          order_number?: number | null
         }
         Relationships: [
           {
@@ -1287,6 +1290,8 @@ export type Database = {
           role: Database["public"]["Enums"]["app_role"]
           status: Database["public"]["Enums"]["user_status"]
           username: string
+          first_name: string | null
+          last_name: string | null
           wallet_balance: number
           email: string | null
           phone: string | null
@@ -1322,6 +1327,8 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"]
           status?: Database["public"]["Enums"]["user_status"]
           username: string
+          first_name?: string | null
+          last_name?: string | null
           wallet_balance?: number
           email?: string | null
           phone?: string | null
@@ -1357,6 +1364,8 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"]
           status?: Database["public"]["Enums"]["user_status"]
           username?: string
+          first_name?: string | null
+          last_name?: string | null
           wallet_balance?: number
           email?: string | null
           phone?: string | null
@@ -1579,6 +1588,28 @@ export type Database = {
         }
         Returns: undefined
       }
+      open_credit_tab: {
+        Args: { p_credit_account_id: string; p_cashier_id: string }
+        Returns: string
+      }
+      append_to_tab: {
+        Args: {
+          p_tab_tx_id: string
+          p_cashier_id: string
+          p_amount: number
+          p_items: Json
+          p_note?: string
+        }
+        Returns: undefined
+      }
+      close_credit_tab: {
+        Args: { p_tab_tx_id: string }
+        Returns: undefined
+      }
+      delete_credit_payment: {
+        Args: { p_credit_tx_id: string; p_cashier_id: string }
+        Returns: undefined
+      }
       reduce_credit_balance: {
         Args: {
           p_credit_account_id: string
@@ -1610,6 +1641,10 @@ export type Database = {
       }
       transfer_cashier_to_owner: {
         Args: { _cashier_id: string }
+        Returns: undefined
+      }
+      transfer_manager_to_owner: {
+        Args: { _manager_id: string }
         Returns: undefined
       }
       open_bottle: {

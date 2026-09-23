@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>P.O.S. Pro — Download</title>
+  <meta name="description" content="Download P.O.S. Pro for Windows and Android." />
+  <link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --blue: #00b4ff;
+      --blue-dark: #0047ab;
+      --bg: #020810;
+      --card: #0c1828;
+      --text: #f4f7fb;
+      --muted: #b7c3d4;
+    }
+    body {
+      background: radial-gradient(circle at 20% 0%, #16324f 0%, var(--bg) 58%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 48px 20px 72px; }
+    .hero { text-align: center; margin-bottom: 28px; }
+    .hero img { width: 96px; height: 96px; margin-bottom: 16px; filter: drop-shadow(0 0 18px rgba(0,180,255,0.45)); }
+    h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -0.5px; margin-bottom: 8px; }
+    .tagline { color: var(--muted); font-size: 1.05rem; margin-bottom: 28px; }
+    .cta-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      min-width: min(100%, 360px);
+      padding: 18px 28px;
+      border-radius: 16px;
+      font-size: 1.05rem;
+      font-weight: 800;
+      text-decoration: none;
+      color: #fff;
+      background: linear-gradient(135deg, #00b4ff 0%, #0047ab 100%);
+      box-shadow: 0 8px 32px rgba(0,180,255,0.28);
+    }
+    .btn-download.outline {
+      color: #7dd3fc;
+      background: transparent;
+      border: 2px solid rgba(0,180,255,0.55);
+      box-shadow: none;
+    }
+    .dl-note { font-size: 0.85rem; color: var(--muted); max-width: 520px; line-height: 1.45; }
+    .cards { display: grid; gap: 16px; margin-top: 36px; }
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(0,180,255,0.18);
+      border-radius: 20px;
+      padding: 22px 20px 20px;
+      text-align: center;
+    }
+    .card h2 { font-size: 1.45rem; margin: 8px 0; }
+    .card p.desc { color: var(--muted); margin-bottom: 14px; }
+    .checks {
+      background: rgba(255,255,255,0.04);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 14px;
+      color: #e8eef6;
+      font-size: 0.92rem;
+      line-height: 1.7;
+    }
+    .warn {
+      border: 1px solid #92400e;
+      background: #fef3c7;
+      color: #451a03;
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+    .warn strong { color: #451a03; display: block; margin-bottom: 4px; }
+    .fine { margin-top: 12px; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+    .help { margin-top: 28px; text-align: center; color: var(--muted); font-size: 0.9rem; }
+    .help a, .back { color: #7dd3fc; }
+    .back { display: block; margin-top: 18px; text-align: center; text-decoration: none; font-weight: 700; }
+    #dl-toast {
+      display: none;
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      max-width: 92vw;
+      padding: 14px 18px;
+      border-radius: 14px;
+      font-weight: 700;
+      color: #fff;
+      background: linear-gradient(135deg, #00b4ff 0%, #0047ab 100%);
+      text-align: center;
+    }
+    #dl-toast.show { display: block; }
+  </style>
+</head>
+<body>
+  <div id="dl-toast">Check your Downloads folder for POS-Pro-Setup.exe</div>
+  <div class="wrap">
+    <header class="hero">
+      <img src="/logo.png" width="96" height="96" alt="P.O.S. Pro" />
+      <h1>Download P.O.S. Pro</h1>
+      <p class="tagline">The complete point-of-sale app for store owners and cashiers</p>
+      <div class="cta-wrap">
+        <a id="btn-download-hero" class="btn-download" href="https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk">
+          Download for Android
+        </a>
+        <a id="btn-download-win" class="btn-download outline" href="https://github.com/murrentronics/pos-pro/releases/latest/download/POS-Pro-Setup.exe">
+          Download for Windows
+        </a>
+        <p id="dl-note-hero" class="dl-note">Windows: uninstall the old P.O.S. Pro from Settings → Apps (or Control Panel) before running Setup.</p>
+      </div>
+    </header>
+
+    <div class="cards">
+      <section class="card">
+        <h2>Download for Windows</h2>
+        <p class="desc">Native desktop app with full hardware support for USB printers and cash drawers.</p>
+        <div class="checks">
+          ✓ Full USB printer support (EPSON TM-T20II, Star, etc.)<br />
+          ✓ Cash drawer control via printer DK port<br />
+          ✓ Works offline — no internet required after setup<br />
+          ✓ Faster performance than the browser version
+        </div>
+        <div class="warn">
+          <strong>Already have P.O.S. Pro installed?</strong>
+          Uninstall it first: Settings → Apps → P.O.S. Pro → Uninstall (or Control Panel → Programs and Features). Then run the new Setup.
+        </div>
+        <a id="btn-download-win-card" class="btn-download" href="https://github.com/murrentronics/pos-pro/releases/latest/download/POS-Pro-Setup.exe">
+          Download for Windows
+        </a>
+        <p class="fine">Windows 10 or later • 64-bit<br />After download, open it from your Downloads folder. Close P.O.S. Pro before installing.</p>
+      </section>
+
+      <section class="card">
+        <h2>Download for Android</h2>
+        <p class="desc">Android app with support for Bluetooth printers and USB-C OTG devices.</p>
+        <div class="checks">
+          ✓ Bluetooth printer support<br />
+          ✓ USB-C OTG printer support<br />
+          ✓ Cash drawer control via printer connection<br />
+          ✓ Works on tablets and phones
+        </div>
+        <a id="btn-download-apk-card" class="btn-download" href="https://github.com/murrentronics/pos-pro/releases/latest/download/pos-pro.apk">
+          Download Android APK
+        </a>
+        <p class="fine">Android 8.0+<br />Enable "Unknown sources" in settings</p>
+      </section>
+    </div>
+
+    <p class="help">
+      Need help?
+      <a href="https://wa.me/18687865811">WhatsApp</a>
+      or
+      <a href="mailto:support@pospro.app">support@pospro.app</a>
+    </p>
+    <a class="back" href="/#/login">← Back to login</a>
+  </div>
+
+  <script>
+    function showDownloadToast(message) {
+      const toast = document.getElementById("dl-toast");
+      if (!toast) return;
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(window.__dlToastTimer);
+      window.__dlToastTimer = setTimeout(() => toast.classList.remove("show"), 8000);
+    }
+
+    document.querySelectorAll("[id^='btn-download-win']").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        showDownloadToast("Uninstall the old P.O.S. Pro first: Settings → Apps → Uninstall, then run the new Setup from Downloads.");
+      });
+    });
+
+    (async function () {
+      const label = (el, text) => { if (el) el.textContent = text; };
+      try {
+        const res = await fetch("https://api.github.com/repos/murrentronics/pos-pro/releases/latest", {
+          headers: { Accept: "application/vnd.github+json" }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const version = (data.tag_name || "").replace(/^v/, "");
+          const assets = data.assets || [];
+          const apk = assets.find((a) => a.name && a.name.toLowerCase().endsWith(".apk"));
+          const exes = assets.filter((a) => a.name && a.name.toLowerCase().endsWith(".exe"));
+          const versioned = version ? exes.find((a) => a.name.includes(version)) : null;
+          const exe = versioned || exes.find((a) => a.name === "POS-Pro-Setup.exe") || exes[0];
+          if (apk) {
+            document.getElementById("btn-download-hero").href = apk.browser_download_url;
+            document.getElementById("btn-download-apk-card").href = apk.browser_download_url;
+          }
+          if (exe) {
+            document.getElementById("btn-download-win").href = exe.browser_download_url;
+            document.getElementById("btn-download-win-card").href = exe.browser_download_url;
+          }
+          if (version) {
+            label(document.getElementById("btn-download-hero"), "Download for Android (v" + version + ")");
+            label(document.getElementById("btn-download-apk-card"), "Download Android APK (v" + version + ")");
+            label(document.getElementById("btn-download-win"), "Download for Windows (v" + version + ")");
+            label(document.getElementById("btn-download-win-card"), "Download for Windows (v" + version + ")");
+          }
+        }
+      } catch (e) { /* keep fallbacks */ }
+
+      try {
+        const v = await fetch("/downloads/version.json");
+        if (!v.ok) return;
+        const json = await v.json();
+        if (json.exe && document.getElementById("btn-download-win").textContent.indexOf("(v") === -1) {
+          label(document.getElementById("btn-download-win"), "Download for Windows (v" + json.exe + ")");
+          label(document.getElementById("btn-download-win-card"), "Download for Windows (v" + json.exe + ")");
+        }
+        if (!document.getElementById("btn-download-win").href.includes("/releases/download/") && (json.exeUrl || json.exeLatestUrl)) {
+          const url = json.exeUrl || json.exeLatestUrl;
+          document.getElementById("btn-download-win").href = url;
+          document.getElementById("btn-download-win-card").href = url;
+        }
+      } catch (e) { /* version label optional */ }
+    })();
+  </script>
+</body>
+</html>

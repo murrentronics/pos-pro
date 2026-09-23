@@ -16,6 +16,7 @@ import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
 import { printReceipt, type ReceiptData } from "@/lib/receiptPrinter";
 import { Capacitor } from "@capacitor/core";
+import { useNumpadKeyboard } from "@/lib/useNumpadKeyboard";
 
 export const Route = createFileRoute("/_app/credit")({
   component: CreditPage,
@@ -449,8 +450,8 @@ function BillModal({ account, ownerName, onClose }: {
                     ) : (
                       /* Payment row */
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-green-400">Payment received</span>
-                        <span className="text-xs font-black text-green-400">
+                        <span className="text-xs font-bold text-green-700">Payment received</span>
+                        <span className="text-xs font-black text-green-700">
                           −${Number(tx.amount).toFixed(2)}
                         </span>
                       </div>
@@ -464,8 +465,8 @@ function BillModal({ account, ownerName, onClose }: {
 
         {/* Balance owed — pinned above buttons */}
         <div className="shrink-0 mx-4 mb-3 rounded-xl px-4 py-3 flex items-center justify-between border" style={{ background: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.3)" }}>
-          <span className="text-sm font-black text-red-400 uppercase tracking-wide">Balance Owed</span>
-          <span className="text-2xl font-black text-red-400">${Number(account.balance_owed).toFixed(2)}</span>
+          <span className="text-sm font-black text-red-700 uppercase tracking-wide">Balance Owed</span>
+          <span className="text-2xl font-black text-red-700">${Number(account.balance_owed).toFixed(2)}</span>
         </div>
 
         {/* Action buttons */}
@@ -486,7 +487,7 @@ function BillModal({ account, ownerName, onClose }: {
               className="h-14 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1 transition active:scale-95 disabled:opacity-50 text-foreground border border-border/80"
               style={{ background: "rgba(255,255,255,0.06)" }}
             >
-              {busy === "download" ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : downloaded ? <CheckCircle2 className="h-5 w-5 text-green-400" /> : <FileDown className="h-5 w-5 text-primary" />}
+              {busy === "download" ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : downloaded ? <CheckCircle2 className="h-5 w-5 text-green-700" /> : <FileDown className="h-5 w-5 text-primary" />}
               <span className="text-[11px] font-black">{downloaded ? "Downloaded!" : "Download PDF"}</span>
             </button>
           </div>
@@ -688,7 +689,7 @@ function OpenedTab({
           {/* Footer row — balance on left, Bill + Edit stacked on right */}
           <div className="flex items-center justify-between px-4 py-2.5">
             <button className="flex items-center gap-1.5 active:scale-95 transition" onClick={() => onSelect(a)}>
-              <span className="text-lg font-black text-red-400">${Number(a.balance_owed).toFixed(2)}</span>
+              <span className="text-lg font-black text-red-700">${Number(a.balance_owed).toFixed(2)}</span>
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             </button>
             <div className="flex items-center gap-2">
@@ -779,7 +780,7 @@ function ClosedTab({ accounts, loading, ownerName, onEdit, onBill, ownerId }: { 
 
           {/* Footer row — cleared badge + conditional Bill + Edit */}
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-xs font-bold text-green-500 px-2 py-1 rounded-lg bg-green-500/10">Pagado</span>
+            <span className="text-xs font-bold text-green-900 px-2 py-1 rounded-lg bg-green-500/10">Pagado</span>
             <div className="flex items-center gap-2">
               {hasCashPurchase && (
                 <button
@@ -1021,7 +1022,7 @@ function CreateTab({
       </div>
 
       {done && (
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-green-500/10 border border-green-500/30 text-sm text-green-400 font-semibold">
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-green-500/10 border border-green-500/30 text-sm text-green-700 font-semibold">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           Customer created. View in Closed tab.
         </div>
@@ -1273,7 +1274,7 @@ function PaymentOverlay({
                           {hasCostData && (
                             <>
                               <span className="text-xs text-muted-foreground">cost ${chargeCost.toFixed(2)}</span>
-                              <span className="text-xs font-bold" style={{ color: chargeProfit >= 0 ? "#86efac" : "#f87171" }}>
+                              <span className="text-xs font-bold" style={{ color: chargeProfit >= 0 ? "#15803d" : "#b91c1c" }}>
                                 profit ${chargeProfit.toFixed(2)}
                               </span>
                             </>
@@ -1318,7 +1319,7 @@ function PaymentOverlay({
                               <span className="text-xs text-right text-muted-foreground">
                                 {hasCP ? `$${cp.toFixed(2)}` : "—"}
                               </span>
-                              <span className="text-xs font-bold text-right" style={{ color: hasCP ? (profit >= 0 ? "#86efac" : "#f87171") : "var(--muted-foreground)" }}>
+                              <span className="text-xs font-bold text-right" style={{ color: hasCP ? (profit >= 0 ? "#15803d" : "#b91c1c") : "var(--muted-foreground)" }}>
                                 {hasCP ? `$${profit.toFixed(2)}` : "—"}
                               </span>
                             </div>
@@ -1359,7 +1360,7 @@ function PaymentOverlay({
               </p>
             )}
             {valid && amountNum >= owed && (
-              <p className="text-green-500 text-sm font-semibold mt-1.5 flex items-center gap-1">
+              <p className="text-green-900 text-sm font-semibold mt-1.5 flex items-center gap-1">
                 <CheckCircle2 className="h-4 w-4" /> Fully settles this account
               </p>
             )}
@@ -1398,6 +1399,16 @@ function Spinner() {
 function CreditNumPad({ value, onChange, maxLen = 20, onDone }: {
   value: string; onChange: (v: string) => void; maxLen?: number; onDone: () => void;
 }) {
+  useNumpadKeyboard({
+    enabled: true,
+    allowDecimal: false,
+    onKey: (k) => {
+      if (k === "⌫") onChange(value.slice(0, -1));
+      else if (value.length < maxLen) onChange(value + k);
+    },
+    onEnter: onDone,
+  });
+
   return (
     <div className="mt-2">
       <div className="grid grid-cols-3 gap-1.5">
@@ -1433,6 +1444,13 @@ function CreditContactPad({ value, onChange, onDone }: {
       onChange(d.length > 3 ? d.slice(0, 3) + "-" + d.slice(3) : d);
     }
   };
+
+  useNumpadKeyboard({
+    enabled: true,
+    allowDecimal: false,
+    onKey: handle,
+    onEnter: () => { if (complete) onDone(); },
+  });
   return (
     <div className="mt-2">
       {!complete && (

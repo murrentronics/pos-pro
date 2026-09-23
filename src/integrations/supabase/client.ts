@@ -20,13 +20,43 @@ function createSupabaseClient() {
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth: {
-      storage: typeof window !== 'undefined' ? localStorage : undefined,
+      storage: desktopAuthStorage(),
       persistSession: true,
       autoRefreshToken: true,
       storageKey: 'pospro-auth',
       detectSessionInUrl: false,
     }
   });
+}
+
+function desktopAuthStorage(): Storage | undefined {
+  if (typeof window === "undefined") return undefined;
+  const persistSet = window.electronAPI?.persistSet;
+  const persistRemove = window.electronAPI?.persistRemove;
+  if (!persistSet || !persistRemove) return localStorage;
+  return {
+    get length() {
+      return localStorage.length;
+    },
+    clear() {
+      localStorage.clear();
+      persistRemove("*");
+    },
+    key(i: number) {
+      return localStorage.key(i);
+    },
+    getItem(key: string) {
+      return localStorage.getItem(key);
+    },
+    setItem(key: string, value: string) {
+      localStorage.setItem(key, value);
+      persistSet(key, value);
+    },
+    removeItem(key: string) {
+      localStorage.removeItem(key);
+      persistRemove(key);
+    },
+  };
 }
 
 let _supabase: ReturnType<typeof createSupabaseClient> | undefined;

@@ -1,0 +1,68 @@
+/**
+ * Electron build config — for Windows .exe desktop app
+ * Native serialport access for USB printers and cash drawers.
+ */
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import tsconfigPaths from "vite-tsconfig-paths";
+import path from "path";
+import fs from "fs";
+
+const externalSupabaseUrl = "https://wpuqdwrndjswjzieoinx.supabase.co";
+const externalSupabasePublishableKey =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwdXFkd3JuZGpzd2p6aWVvaW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5MzgzMzYsImV4cCI6MjEwMTUxNDMzNn0.d-uguw1p2gUgqjxf_WhZSvXwQD6AbB-A2pIIZah7nFc";
+
+const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf8"));
+
+export default defineConfig({
+  plugins: [react(), tailwindcss(), tsconfigPaths()],
+  root: ".",
+  publicDir: false,
+  base: "./",
+  build: {
+    chunkSizeWarningLimit: 3000,
+    rollupOptions: {
+      input: path.resolve(__dirname, "index.electron.html"),
+      output: {
+        manualChunks(id) {
+          if (id.includes("lucide-react")) return "vendor-icons";
+          if (id.includes("node_modules/react-dom") ||
+              id.includes("node_modules/react/") ||
+              id.includes("node_modules/react-router-dom")) return "vendor-react";
+          if (id.includes("node_modules/@supabase")) return "vendor-supabase";
+          if (id.includes("node_modules/jspdf")) return "vendor-pdf";
+          if (id.includes("node_modules/@radix-ui")) return "vendor-radix";
+          if (id.includes("node_modules/@tanstack")) return "vendor-tanstack";
+        },
+      },
+      treeshake: {
+        moduleSideEffects: false,
+        propertyReadSideEffects: false,
+      },
+    },
+    outDir: "dist/electron",
+    emptyOutDir: true,
+  },
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+      "@capacitor/core": path.resolve(__dirname, "src/stubs/capacitor.ts"),
+      "@capacitor/push-notifications": path.resolve(__dirname, "src/stubs/capacitor.ts"),
+      "@capacitor/local-notifications": path.resolve(__dirname, "src/stubs/capacitor.ts"),
+      "@capacitor/filesystem": path.resolve(__dirname, "src/stubs/capacitor.ts"),
+      "@capacitor/clipboard": path.resolve(__dirname, "src/stubs/capacitor.ts"),
+      "@capacitor/share": path.resolve(__dirname, "src/stubs/capacitor.ts"),
+      "@capacitor/camera": path.resolve(__dirname, "src/stubs/capacitor.ts"),
+      "@capacitor/browser": path.resolve(__dirname, "src/stubs/capacitor.ts"),
+      "@capacitor-community/file-opener": path.resolve(__dirname, "src/stubs/capacitor.ts"),
+    },
+  },
+  define: {
+    "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(externalSupabaseUrl),
+    "import.meta.env.VITE_SUPABASE_PROJECT_ID": JSON.stringify("wpuqdwrndjswjzieoinx"),
+    "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": JSON.stringify(externalSupabasePublishableKey),
+    "import.meta.env.VITE_APP_VERSION": JSON.stringify(pkg.version),
+    "import.meta.env.VITE_IS_ELECTRON": JSON.stringify("true"),
+  },
+});

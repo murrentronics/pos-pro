@@ -169,7 +169,7 @@ export function BarcodeScannerModal({ open, onClose, onDone }: BarcodeScannerMod
             {externalDetected ? "Scanner Ready" : "Waiting for Scanner..."}
           </span>
           {externalDetected && (
-            <span className="flex items-center gap-1 text-[10px] text-green-400 font-bold">
+            <span className="flex items-center gap-1 text-[10px] text-green-300 font-bold">
               <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
               Connected
             </span>
@@ -199,7 +199,7 @@ export function BarcodeScannerModal({ open, onClose, onDone }: BarcodeScannerMod
           {externalDetected ? (
             <>
               <div className="h-16 w-16 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center">
-                <CheckCircle2 className="h-8 w-8 text-green-400" />
+                <CheckCircle2 className="h-8 w-8 text-green-300" />
               </div>
               <p className="text-white font-black text-lg">External Scanner Ready</p>
               <p className="text-white/60 text-sm">Scan barcodes now — items will appear below</p>

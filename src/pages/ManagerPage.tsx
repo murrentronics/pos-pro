@@ -3,6 +3,7 @@ import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useNumpadKeyboard, applyIntKey, applyMoneyKey } from "@/lib/useNumpadKeyboard";
 import {
   Loader2, TrendingDown, X, Settings2, Pencil, Trash2,
   AlertTriangle, Clock, LogIn, LogOut, ChevronDown, LayoutGrid,
@@ -85,6 +86,13 @@ function ManagerMain({
   const [showCloseBarConfirm, setShowCloseBarConfirm] = useState(false);
   const [activeOpenBarField, setActiveOpenBarField] = useState<"bar" | null>(null);
   const barIsOpen = !!barSessionStart && !barClosedAt;
+
+  useNumpadKeyboard({
+    enabled: showOpenBarModal,
+    allowDecimal: false,
+    onKey: (k) => setOpenBarFloat((v) => applyIntKey(v, k)),
+    onEnter: () => { if (!barToggleBusy) void confirmOpenBar(); },
+  });
 
   useEffect(() => {
     if (!ownerId) return;
@@ -176,8 +184,8 @@ function ManagerMain({
             onClick={barIsOpen ? () => setShowCloseBarConfirm(true) : handleOpenBar}
             className="h-9 px-3 rounded-xl font-black text-xs flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 shrink-0"
             style={barIsOpen
-              ? { background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac", color: "#86efac" }
-              : { background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171", color: "#f87171" }}>
+              ? { background: "#166534", border: "1.5px solid #14532d", color: "#ffffff" }
+              : { background: "rgba(239,68,68,0.12)", border: "1.5px solid #b91c1c", color: "#b91c1c" }}>
             {barToggleBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="text-[11px]">{barIsOpen ? "🟢" : "🔴"}</span>}
             {barIsOpen ? "Open" : "Closed"}
           </button>
@@ -208,7 +216,7 @@ function ManagerMain({
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden" style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-6 pb-2 text-center">
-              <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171" }}>
+              <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: "rgba(239,68,68,0.12)", border: "1.5px solid #b91c1c" }}>
                 <span className="text-2xl">🔴</span>
               </div>
               <h2 className="font-black text-xl">Close Store?</h2>
@@ -218,7 +226,7 @@ function ManagerMain({
               <button onClick={() => setShowCloseBarConfirm(false)} className="flex-1 h-12 rounded-2xl font-black text-sm border border-border transition active:scale-95">Cancel</button>
               <button onClick={() => { setShowCloseBarConfirm(false); handleCloseBar(); }} disabled={barToggleBusy}
                 className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50"
-                style={{ background: "rgba(239,68,68,0.15)", border: "1.5px solid #f87171", color: "#f87171" }}>
+                style={{ background: "rgba(239,68,68,0.15)", border: "1.5px solid #b91c1c", color: "#b91c1c" }}>
                 {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Close Store"}
               </button>
             </div>
@@ -231,7 +239,7 @@ function ManagerMain({
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden" style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-6 pb-2 text-center">
-              <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac" }}>
+              <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #15803d" }}>
                 <span className="text-2xl">🟢</span>
               </div>
               <h2 className="font-black text-xl">Open Store</h2>
@@ -268,7 +276,7 @@ function ManagerMain({
                 <button onClick={() => setShowOpenBarModal(false)} className="flex-1 h-12 rounded-2xl font-black text-sm border border-border transition active:scale-95">Cancel</button>
                 <button onClick={confirmOpenBar} disabled={barToggleBusy}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50"
-                  style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
+                  style={{ background: "#166534", border: "1.5px solid #14532d", color: "#ffffff" }}>
                   {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin inline" /> : "Open Store"}
                 </button>
               </div>
@@ -373,6 +381,12 @@ function DashboardTab({
     setSetFloatBusy(false); setShowSetBarFloat(false); setSetFloatInput(""); setBarFloatMode("new");
     loadDashboard();
   };
+
+  useNumpadKeyboard({
+    enabled: showSetBarFloat,
+    onKey: (k) => setSetFloatInput((v) => applyMoneyKey(v, k)),
+    onEnter: () => { if (!setFloatBusy && setFloatInput) void handleSetBarFloat(); },
+  });
 
   // -- Expenses state --------------------------------------------------------
   const [expenses,  setExpenses]  = useState<Expense[]>([]);
@@ -496,8 +510,8 @@ function DashboardTab({
       {!barStateLoading && !barIsOpen && (
         <div className="rounded-2xl px-4 py-3 flex items-center gap-3"
           style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}>
-          <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-          <span className="text-sm font-semibold text-red-400">Store is closed — expenses cannot be added, edited, or deleted.</span>
+          <AlertTriangle className="h-4 w-4 text-red-700 shrink-0" />
+          <span className="text-sm font-semibold text-red-700">Store is closed — expenses cannot be added, edited, or deleted.</span>
         </div>
       )}
 
@@ -517,11 +531,11 @@ function DashboardTab({
             </button>
             <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "oklch(0.18 0.02 60)" }}>
               <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>Amount Set</div>
-              <div className="font-black text-sm" style={{ color: "#86efac" }}>{barIsOpen ? `$${fmt(barFloatSet)}` : "$0"}</div>
+              <div className="font-black text-sm" style={{ color: "#15803d" }}>{barIsOpen ? `$${fmt(barFloatSet)}` : "$0"}</div>
             </div>
             <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "oklch(0.18 0.02 60)" }}>
               <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>Remaining</div>
-              <div className="font-black text-sm" style={{ color: barIsOpen && floatBalance < 10 ? "#fde68a" : "#86efac" }}>{barIsOpen ? `$${fmt(floatBalance)}` : "$0"}</div>
+              <div className="font-black text-sm" style={{ color: barIsOpen && floatBalance < 10 ? "#a16207" : "#15803d" }}>{barIsOpen ? `$${fmt(floatBalance)}` : "$0"}</div>
             </div>
           </div>
         </div>
@@ -536,11 +550,11 @@ function DashboardTab({
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
               <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Cash Sales</div>
-              <div className="font-black text-sm" style={{ color: "#86efac" }}>{barIsOpen ? `$${fmt(sessionBarSales)}` : "—"}</div>
+              <div className="font-black text-sm" style={{ color: "#15803d" }}>{barIsOpen ? `$${fmt(sessionBarSales)}` : "—"}</div>
             </div>
             <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
               <div className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Store Expenses</div>
-              <div className="font-black text-sm" style={{ color: "#fca5a5" }}>{barIsOpen ? `$${fmt(sessionExpenses)}` : "—"}</div>
+              <div className="font-black text-sm" style={{ color: "#b91c1c" }}>{barIsOpen ? `$${fmt(sessionExpenses)}` : "—"}</div>
             </div>
           </div>
         </div>
@@ -594,7 +608,7 @@ function DashboardTab({
                 ) : (
                   <div className="space-y-2">
                     <div className="rounded-xl px-3 py-2 text-xs text-center font-semibold"
-                      style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>
+                      style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#b91c1c" }}>
                       Deduct ${lineTotal.toFixed(2)} from store float? (Balance: ${fmt(floatBalance)})
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -673,7 +687,7 @@ function DashboardTab({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">Session Expenses</p>
-          {expenses.length > 0 && <span className="text-xs font-black text-red-400">${fmt(sessionTotal)}</span>}
+          {expenses.length > 0 && <span className="text-xs font-black text-red-700">${fmt(sessionTotal)}</span>}
         </div>
         {loading ? (
           <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="rounded-xl h-14 bg-muted/30 animate-pulse" />)}</div>
@@ -726,7 +740,7 @@ function DashboardTab({
                     </div>
                   ) : deleteConfirmId === e.id ? (
                     <div className="space-y-2">
-                      <p className="text-xs font-semibold text-center text-red-400">Delete ${fmt(Number(e.amount))} expense and refund to float?</p>
+                      <p className="text-xs font-semibold text-center text-red-700">Delete ${fmt(Number(e.amount))} expense and refund to float?</p>
                       <div className="grid grid-cols-2 gap-2">
                         <button onClick={() => setDeleteConfirmId(null)} className="h-9 rounded-xl font-black text-xs border border-border transition active:scale-95">Cancel</button>
                         <button onClick={() => handleDelete(e)} disabled={deleting}
@@ -740,7 +754,7 @@ function DashboardTab({
                     <div className="flex items-start gap-3">
                       <div className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 border"
                         style={{ background: "rgba(239,68,68,0.10)", borderColor: "rgba(239,68,68,0.25)" }}>
-                        <TrendingDown className="h-3.5 w-3.5 text-red-400" />
+                        <TrendingDown className="h-3.5 w-3.5 text-red-700" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-muted-foreground">
@@ -749,7 +763,7 @@ function DashboardTab({
                         {descLines.map((l, i) => <p key={i} className="text-sm font-semibold leading-snug mt-0.5 break-words">{l}</p>)}
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
-                        <span className="font-black text-sm text-red-400">${fmt(Number(e.amount))}</span>
+                        <span className="font-black text-sm text-red-700">${fmt(Number(e.amount))}</span>
                         {canEdit && (
                           <div className="flex gap-1 mt-0.5">
                             <button onClick={() => startEdit(e)}
@@ -760,7 +774,7 @@ function DashboardTab({
                             <button onClick={() => setDeleteConfirmId(e.id)}
                               className="h-7 w-7 rounded-lg flex items-center justify-center transition active:scale-90"
                               style={{ background: "rgba(239,68,68,0.12)" }}>
-                              <Trash2 className="h-3 w-3 text-red-400" />
+                              <Trash2 className="h-3 w-3 text-red-700" />
                             </button>
                           </div>
                         )}
@@ -1046,30 +1060,30 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                     <button onClick={() => setSelectedEmp(isSel ? null : emp)}
                       className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition active:scale-[0.98] text-left"
                       style={{ background: isSel ? (isCIn ? "rgba(134,239,172,0.08)" : "rgba(239,68,68,0.06)") : "var(--gradient-card)",
-                        borderColor: empOpen ? "#86efac" : isSel ? "rgba(239,68,68,0.4)" : "var(--border)" }}>
+                        borderColor: empOpen ? "#15803d" : isSel ? "rgba(239,68,68,0.4)" : "var(--border)" }}>
                       <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0 font-black text-sm"
-                        style={{ background: empOpen ? "rgba(134,239,172,0.15)" : "rgba(255,255,255,0.06)", color: empOpen ? "#86efac" : "var(--primary)" }}>
+                        style={{ background: empOpen ? "rgba(20,83,45,0.12)" : "rgba(255,255,255,0.06)", color: empOpen ? "#14532d" : "var(--primary)" }}>
                         {emp.username.charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-black text-sm truncate">{emp.username}</p>
                         <p className="text-xs text-muted-foreground">{roleLabel(emp)}</p>
-                        {isSel && empOpen && <p className="text-[10px] mt-0.5" style={{ color: "rgba(134,239,172,0.8)" }}>Since {fmtTime(empOpen.clocked_in_at)} · {fmtDuration(empOpen.clocked_in_at, null)} on shift</p>}
+                        {isSel && empOpen && <p className="text-[10px] mt-0.5 font-bold" style={{ color: "#14532d" }}>Since {fmtTime(empOpen.clocked_in_at)} · {fmtDuration(empOpen.clocked_in_at, null)} on shift</p>}
                       </div>
                       {empOpen
-                        ? <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.4)" }}>Clocked In</span>
+                        ? <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "#166534", color: "#ffffff" }}>Clocked In</span>
                         : <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(255,255,255,0.06)", color: "var(--muted-foreground)", border: "1px solid var(--border)" }}>Out</span>}
                     </button>
                     {isSel && (
                       <div className="grid grid-cols-2 gap-3 pt-2 pb-4">
                         <button onClick={handleClockIn} disabled={isCIn || clockBusy || !barIsOpen}
                           className="h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                          style={!isCIn && barIsOpen ? { background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
+                          style={!isCIn && barIsOpen ? { background: "#166534", border: "1.5px solid #14532d", color: "#ffffff" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
                           {clockBusy && !isCIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />} Clock In
                         </button>
                         <button onClick={handleClockOut} disabled={!isCIn || clockBusy}
                           className="h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                          style={isCIn ? { background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171", color: "#f87171" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
+                          style={isCIn ? { background: "rgba(239,68,68,0.12)", border: "1.5px solid #b91c1c", color: "#b91c1c" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
                           {clockBusy && isCIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />} Clock Out
                         </button>
                       </div>
@@ -1088,17 +1102,17 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                   <div key={tc.id} className="flex items-center gap-3 px-4 py-3 rounded-2xl"
                     style={{ background: "rgba(134,239,172,0.06)", border: "1.5px solid rgba(134,239,172,0.25)" }}>
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 font-black text-sm"
-                      style={{ background: "rgba(134,239,172,0.15)", color: "#86efac" }}>
+                      style={{ background: "rgba(134,239,172,0.15)", color: "#15803d" }}>
                       {tc.employee_name.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-black text-sm truncate">{tc.employee_name}</p>
-                      <p className="text-xs mt-0.5" style={{ color: "rgba(134,239,172,0.8)" }}>
+                      <p className="text-xs mt-0.5 font-bold" style={{ color: "#14532d" }}>
                         Since {fmtTime(tc.clocked_in_at)} · {fmtDuration(tc.clocked_in_at, null)} on shift
                       </p>
                     </div>
                     <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0"
-                      style={{ background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.4)" }}>Active</span>
+                      style={{ background: "#166534", color: "#ffffff" }}>Active</span>
                   </div>
                 ))}
               </div>
@@ -1203,7 +1217,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                 </span>
               )}
               {tsStaffEmp && (
-                <span className="text-[11px] font-black px-2.5 py-1 rounded-full" style={{ background: "rgba(134,239,172,0.1)", color: "#86efac", border: "1px solid rgba(134,239,172,0.3)" }}>
+                <span className="text-[11px] font-black px-2.5 py-1 rounded-full" style={{ background: "#166534", color: "#ffffff" }}>
                   {tsStaffEmp.username}
                 </span>
               )}
@@ -1242,7 +1256,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                           <p className="font-black text-sm">{mLabel}</p>
                           <p className="text-xs text-muted-foreground">
                             {mDays.length} day{mDays.length !== 1 ? "s" : ""}
-                            {mActive && <span className="text-green-400 ml-1">· active</span>}
+                            {mActive && <span className="text-green-700 ml-1">· active</span>}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1270,7 +1284,7 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                                     <p className="font-black text-xs">{dl}</p>
                                     <p className="text-[10px] text-muted-foreground">
                                       {cards.length} record{cards.length !== 1 ? "s" : ""}
-                                      {dActive > 0 && <span className="text-green-400 ml-1">· {dActive} active</span>}
+                                      {dActive > 0 && <span className="text-green-700 ml-1">· {dActive} active</span>}
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-2">
@@ -1288,14 +1302,14 @@ export function TimeCardsTab({ profile, ownerId, managerName, barIsOpen }: {
                                         <div className="flex-1 min-w-0">
                                           <p className="font-black text-sm truncate">{tc.employee_name}</p>
                                           <div className="flex items-center gap-1.5 text-xs mt-0.5 flex-wrap">
-                                            <LogIn className="h-3 w-3 text-green-400 shrink-0" />
-                                            <span className="text-green-400 font-bold">{fmtTime(tc.clocked_in_at)}</span>
+                                            <LogIn className="h-3 w-3 text-green-700 shrink-0" />
+                                            <span className="text-green-700 font-bold">{fmtTime(tc.clocked_in_at)}</span>
                                             {tc.clocked_out_at
-                                              ? <><span className="text-muted-foreground/40">→</span><LogOut className="h-3 w-3 text-red-400 shrink-0" /><span className="text-red-400 font-bold">{fmtTime(tc.clocked_out_at)}</span><span className="text-muted-foreground ml-1">· {fmtDuration(tc.clocked_in_at, tc.clocked_out_at)}</span></>
-                                              : <span className="text-green-400 font-semibold">· Still on shift</span>}
+                                              ? <><span className="text-muted-foreground/40">→</span><LogOut className="h-3 w-3 text-red-700 shrink-0" /><span className="text-red-700 font-bold">{fmtTime(tc.clocked_out_at)}</span><span className="text-muted-foreground ml-1">· {fmtDuration(tc.clocked_in_at, tc.clocked_out_at)}</span></>
+                                              : <span className="text-green-700 font-semibold">· Still on shift</span>}
                                           </div>
                                         </div>
-                                        {!tc.clocked_out_at && <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.35)" }}>Active</span>}
+                                        {!tc.clocked_out_at && <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "#166534", color: "#ffffff" }}>Active</span>}
                                       </div>
                                     ))}
                                   </div>

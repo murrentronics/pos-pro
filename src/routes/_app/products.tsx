@@ -13,7 +13,16 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { categoryIcon } from "@/lib/categories";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+
+/** Money to the cent. Unit cost stays at 6 decimals so qty × cost rounds back to the amount paid. */
+function money(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+function unitCost(n: number): number {
+  return Math.round((n + Number.EPSILON) * 1e6) / 1e6;
+}
 import { playBeep } from "@/lib/playBeep";
+import { useNumpadKeyboard } from "@/lib/useNumpadKeyboard";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -67,6 +76,35 @@ function RevertStockModal({
 }) {
   const [inputVal, setInputVal] = useState("");
   const [busy, setBusy] = useState(false);
+  const [batchPaid, setBatchPaid] = useState<{ added: number; total: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: prod } = await supabase
+        .from("products")
+        .select("stock_qty_undo, stock_last_expense_id")
+        .eq("id", productId)
+        .maybeSingle();
+      const beforeQty = Number((prod as { stock_qty_undo?: number | null } | null)?.stock_qty_undo ?? NaN);
+      const lastExpenseId = (prod as { stock_last_expense_id?: string | null } | null)?.stock_last_expense_id;
+      if (!lastExpenseId) return;
+      const { data: exp } = await supabase
+        .from("owner_expenses")
+        .select("description")
+        .eq("id", lastExpenseId)
+        .maybeSingle();
+      const line = String((exp as { description?: string | null } | null)?.description ?? "")
+        .split("\n")
+        .find((l) => l.startsWith(`${productName} ×`) || l.startsWith(`${productName}×`));
+      const match = line?.match(/×(\d+).*?total\s*\$([0-9]+(?:\.[0-9]+)?)/);
+      const added = match ? Number(match[1]) : 0;
+      const total = match ? Number(match[2]) : 0;
+      const fromThatBatch = beforeQty === 0 || (!Number.isFinite(beforeQty) && currentQty <= added) || currentQty === added;
+      if (!cancelled && added > 0 && total > 0 && fromThatBatch) setBatchPaid({ added, total });
+    })();
+    return () => { cancelled = true; };
+  }, [productId, productName, currentQty]);
 
   const parsed   = parseInt(inputVal, 10);
   const removeQty = isNaN(parsed) ? 0 : Math.min(Math.max(parsed, 0), currentQty);
@@ -83,12 +121,23 @@ function RevertStockModal({
     setInputVal(next);
   };
 
+  useNumpadKeyboard({
+    enabled: true,
+    allowDecimal: false,
+    onKey: handleKey,
+    onEnter: () => { void handleConfirm(); },
+  });
+
   const handleConfirm = async () => {
     if (!isValid) return;
     setBusy(true);
 
     const today = new Date().toISOString().split("T")[0];
-    const refundAmount = costPrice * removeQty;
+    // Prefer the exact dollars paid on the last batch. A 2-decimal unit cost
+    // ($20 / 48 stored as $0.42) refunds $20.16 and leaves the totals a few cents off.
+    const refundAmount = batchPaid
+      ? money((batchPaid.total * removeQty) / batchPaid.added)
+      : money(costPrice * removeQty);
 
     // Insert a negative (refund) expense record if cost price is set
     if (costPrice > 0) {
@@ -148,18 +197,18 @@ function RevertStockModal({
           </div>
           <div className="px-3 py-2 rounded-xl bg-muted/30 text-center border border-red-500/30">
             <div className="text-xs text-muted-foreground">Remove</div>
-            <div className="text-xl font-black text-red-400">−{removeQty}</div>
+            <div className="text-xl font-black text-red-700">−{removeQty}</div>
           </div>
           <div className="px-3 py-2 rounded-xl bg-muted/30 text-center">
             <div className="text-xs text-muted-foreground">New Total</div>
-            <div className="text-xl font-black text-green-400">{newQty}</div>
+            <div className="text-xl font-black text-green-700">{newQty}</div>
           </div>
         </div>
 
         {/* Display */}
         <div className="mx-5 mb-3 h-14 rounded-2xl flex items-center justify-center border border-border bg-background/60">
           {inputVal
-            ? <span className="text-3xl font-black text-red-400">−{inputVal}</span>
+            ? <span className="text-3xl font-black text-red-700">−{inputVal}</span>
             : <span className="text-base text-muted-foreground font-semibold">Enter qty to remove</span>
           }
         </div>
@@ -168,7 +217,7 @@ function RevertStockModal({
         <p className="text-center text-xs text-muted-foreground mb-3 px-5">
           Max removable: <span className="font-black text-foreground">{currentQty}</span>
           {costPrice > 0 && removeQty > 0 && (
-            <> · Refund: <span className="font-black" style={{ color: "#86efac" }}>+${(costPrice * removeQty).toFixed(2)}</span></>
+            <> · Refund: <span className="font-black" style={{ color: "#15803d" }}>+${(batchPaid ? money((batchPaid.total * removeQty) / batchPaid.added) : money(costPrice * removeQty)).toFixed(2)}</span></>
           )}
         </p>
 
@@ -187,7 +236,7 @@ function RevertStockModal({
                   style={{
                     background: k === "⌫" ? "rgba(220,38,38,0.15)" : "rgba(255,255,255,0.06)",
                     border: "1px solid rgba(255,255,255,0.08)",
-                    color: k === "⌫" ? "#f87171" : "var(--foreground)",
+                    color: k === "⌫" ? "#b91c1c" : "var(--foreground)",
                   }}
                 >
                   {k === "⌫" ? "⌫" : k}
@@ -261,17 +310,11 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
     setTotalCost((v) => (v === "0" ? k : v + k));
   };
 
-  // Keyboard support for the cost numpad
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key >= "0" && e.key <= "9") { e.preventDefault(); handleCostNumpad(e.key); }
-      else if (e.key === ".") { e.preventDefault(); handleCostNumpad("."); }
-      else if (e.key === "Backspace") { e.preventDefault(); handleCostNumpad("⌫"); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalCost]);
+  useNumpadKeyboard({
+    enabled: !revertOpen,
+    onKey: handleCostNumpad,
+    onEnter: () => { if (addAmount > 0) void save(); },
+  });
 
   const tap   = (i: number) => setCounts((c) => c.map((v, j) => j === i ? v + 1 : v));
   const untap = (i: number) => setCounts((c) => c.map((v, j) => j === i ? Math.max(0, v - 1) : v));
@@ -291,7 +334,7 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
     const newValue   = addAmount * newCpPerItem;
     const totalValue = oldValue + newValue;
     const totalQty   = currentQty + addAmount;
-    const finalCp    = totalQty > 0 ? totalValue / totalQty : newCpPerItem;
+    const finalCp    = unitCost(totalQty > 0 ? totalValue / totalQty : newCpPerItem);
 
     let newExpenseId: string | null = null;
     if (batchTotal > 0) {
@@ -380,7 +423,7 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
             </div>
             <div className="px-3 py-2 rounded-xl bg-muted/30 text-center relative">
               <div className="text-xs text-muted-foreground">Total</div>
-              <div className="text-xl font-black text-green-400">{newTotal}</div>
+              <div className="text-xl font-black text-green-700">{newTotal}</div>
               <button
                 type="button"
                 disabled={addAmount !== 0 || currentQty === 0}
@@ -500,7 +543,7 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
                 style={{
                   background: canUndo ? "rgba(220,38,38,0.15)" : "rgba(255,255,255,0.05)",
                   border: `2px solid ${canUndo ? "#dc2626" : "rgba(255,255,255,0.08)"}`,
-                  color: canUndo ? "#f87171" : "var(--muted-foreground)",
+                  color: canUndo ? "#b91c1c" : "var(--muted-foreground)",
                 }}
               >
                 <span className="text-base leading-none">↩</span> Undo Last Edit
@@ -551,7 +594,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
   ownerId: string;
   storeCategories: { id: string; name: string }[];
   onClose: () => void;
-  onSaved: (patches: { id: string; stock_qty: number; stock_last_expense_id: string | null; cost_price?: number; price?: number }[]) => void;
+  onSaved: (patches: { id: string; stock_qty: number; stock_last_expense_id: string | null; cost_price?: number; price?: number; barcode?: string | null }[]) => void;
 }) {
   const { t } = useTranslation();
   // newQty keyed by product id — only items with a value > 0 will be processed
@@ -588,6 +631,49 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
   );
   // Draft variations added inline in the table (keyed by product id)
   const [localVars, setLocalVars] = useState<Record<string, BottleVariation[]>>({});
+  const [barcodes, setBarcodes] = useState<Record<string, string>>(() =>
+    Object.fromEntries(items.map((p) => [p.id, p.barcode ?? ""])),
+  );
+  const [scannedIds, setScannedIds] = useState<string[]>([]);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const barcodesRef = useRef(barcodes);
+  barcodesRef.current = barcodes;
+
+  useEffect(() => {
+    let buf = "";
+    let last = 0;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      const now = Date.now();
+      if (now - last > 60) buf = "";
+      last = now;
+      if (e.key === "Enter") {
+        const code = buf.trim();
+        buf = "";
+        if (code.length < 3) return;
+        e.preventDefault();
+        const match = itemsRef.current.find(
+          (p) => (barcodesRef.current[p.id] ?? p.barcode ?? "").trim() === code,
+        );
+        if (!match) {
+          toast.error(`No item with barcode ${code}`);
+          return;
+        }
+        setScannedIds((prev) => (prev.includes(match.id) ? prev : [match.id, ...prev]));
+        playBeep();
+        toast.success(`${match.name} added to the list`);
+        requestAnimationFrame(() => {
+          document.getElementById(`bulk-row-${match.id}`)?.scrollIntoView({ block: "center" });
+        });
+        return;
+      }
+      if (e.key.length === 1) buf += e.key;
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const handleNumpad = (k: string) => {
     if (!activeNumpad) return;
     const { id, field } = activeNumpad;
@@ -630,12 +716,31 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
     setter(current === "0" ? k : current + k);
   };
 
-  // Sort all items alphabetically, group by category
+  useNumpadKeyboard({
+    enabled: !!activeNumpad,
+    allowDecimal: activeNumpad?.field !== "qty" && activeNumpad?.field !== "vu" && activeNumpad?.field !== "units",
+    onKey: handleNumpad,
+    onEnter: () => setActiveNumpad(null),
+  });
+
+  // Sort all items alphabetically, group by category.
+  // Scanned items are pulled to a section at the top.
   const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name));
-  const grouped = storeCategories.map((cat) => ({
-    cat: { value: cat.id, label: cat.name },
-    products: sorted.filter((p) => p.category === cat.id),
-  })).filter((g) => g.products.length > 0);
+  const scannedSet = new Set(scannedIds);
+  const scannedProducts = scannedIds
+    .map((id) => sorted.find((p) => p.id === id))
+    .filter((p): p is Product => !!p);
+  const grouped = [
+    ...(scannedProducts.length
+      ? [{ cat: { value: "__scanned__", label: "Scanned" }, products: scannedProducts }]
+      : []),
+    ...storeCategories
+      .map((cat) => ({
+        cat: { value: cat.id, label: cat.name },
+        products: sorted.filter((p) => p.category === cat.id && !scannedSet.has(p.id)),
+      }))
+      .filter((g) => g.products.length > 0),
+  ];
 
   // Items with a new qty entered
   const updates = items.filter((p) => {
@@ -660,7 +765,8 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       const price = parseFloat(varPrices[`${p.id}__localVar__${idx}`] ?? "") || lv.price;
       return lv.units_consumed > 0 && price > 0;
     });
-    return spChanged || unitsChanged || varChanged || hasNewLocalVars;
+    const barcodeChanged = (barcodes[p.id] ?? "").trim() !== (p.barcode ?? "");
+    return spChanged || unitsChanged || varChanged || hasNewLocalVars || barcodeChanged;
   });
 
   // All items with any change — shown in preview
@@ -706,7 +812,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
     }
 
     // Update each product — stock qty + WAC cost_price + any edited sell/units prices
-    const patches: { id: string; stock_qty: number; stock_last_expense_id: string | null; cost_price?: number; price?: number; units_per_item?: number }[] = [];
+    const patches: { id: string; stock_qty: number; stock_last_expense_id: string | null; cost_price?: number; price?: number; units_per_item?: number; barcode?: string | null }[] = [];
     for (const p of updates) {
       const addQty = parseInt(newQtys[p.id], 10);
       const newStockTotal = (p.stock_qty ?? 0) + addQty;
@@ -715,6 +821,8 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       const newUnits = parseInt(unitsPerItems[p.id] ?? "", 10);
       const spChanged = !isNaN(newSp) && newSp !== Number(p.price ?? 0);
       const unitsChanged = !isNaN(newUnits) && newUnits !== Number(p.units_per_item ?? 0);
+      const nextBarcode = (barcodes[p.id] ?? "").trim();
+      const barcodeChanged = nextBarcode !== (p.barcode ?? "");
 
       // Derive per-item cost from the batch total the user entered
       const newCpPerItem = addQty > 0 && batchTotalCost > 0 ? batchTotalCost / addQty : Number(p.cost_price ?? 0);
@@ -724,7 +832,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       const oldValue = oldQty * Number(p.cost_price ?? 0);
       const newValue = addQty * newCpPerItem;
       const totalQty = oldQty + addQty;
-      const finalCp  = totalQty > 0 ? (oldValue + newValue) / totalQty : 0;
+      const finalCp  = unitCost(totalQty > 0 ? (oldValue + newValue) / totalQty : 0);
 
       const { error } = await supabase
         .from("products")
@@ -736,7 +844,8 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
           cost_price: finalCp,
           ...(spChanged ? { price: newSp } : {}),
           ...(unitsChanged ? { units_per_item: newUnits } : {}),
-        })
+          ...(barcodeChanged ? { barcode: nextBarcode || null } : {}),
+        } as never)
         .eq("id", p.id);
       if (error) { toast.error(`Failed to update ${p.name}: ${error.message}`); }
       else {
@@ -747,6 +856,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
           cost_price: finalCp,
           ...(spChanged ? { price: newSp } : {}),
           ...(unitsChanged ? { units_per_item: newUnits } : {}),
+          ...(barcodeChanged ? { barcode: nextBarcode || null } : {}),
         });
       }
     }
@@ -758,6 +868,8 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       const newUnits = parseInt(unitsPerItems[p.id] ?? "", 10);
       const spChanged = !isNaN(newSp) && newSp !== Number(p.price ?? 0);
       const unitsChanged = !isNaN(newUnits) && newUnits !== Number(p.units_per_item ?? 0);
+      const nextBarcode = (barcodes[p.id] ?? "").trim();
+      const barcodeChanged = nextBarcode !== (p.barcode ?? "");
       // Check variation price changes
       const varUpdates = (p.bottle_variations ?? []).map((bv) => {
         const nv = parseFloat(varPrices[`${p.id}__${bv.key}`] ?? "");
@@ -778,7 +890,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
         }))
         .filter((lv) => lv.units_consumed > 0 && lv.price > 0);
       const hasNewLocalVars = newLocalVars.length > 0;
-      if (!spChanged && !unitsChanged && !anyVarChanged && !hasNewLocalVars) continue;
+      if (!spChanged && !unitsChanged && !anyVarChanged && !hasNewLocalVars && !barcodeChanged) continue;
       const mergedVars = (anyVarChanged || hasNewLocalVars)
         ? [...varUpdates.map(({ changed: _c, ...rest }) => rest), ...newLocalVars]
         : undefined;
@@ -786,6 +898,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       if (spChanged) updatePayload.price = newSp;
       if (unitsChanged) updatePayload.units_per_item = newUnits;
       if (mergedVars) updatePayload.bottle_variations = mergedVars;
+      if (barcodeChanged) updatePayload.barcode = nextBarcode || null;
       const { error } = await supabase.from("products").update(updatePayload as any).eq("id", p.id);
       if (!error) {
         patches.push({
@@ -794,6 +907,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
           stock_last_expense_id: p.stock_last_expense_id,
           ...(spChanged ? { price: newSp } : {}),
           ...(unitsChanged ? { units_per_item: newUnits } : {}),
+          ...(barcodeChanged ? { barcode: nextBarcode || null } : {}),
         });
       }
     }
@@ -831,12 +945,13 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
         {allChanged.length > 0 ? (
           <span style={{ color: "var(--primary)" }}>
             {allChanged.length} item{allChanged.length !== 1 ? "s" : ""}
-            {updates.length > 0 && <span className="text-green-400"> · ${totalCost.toFixed(2)}</span>}
+            {updates.length > 0 && <span className="text-green-700"> · ${totalCost.toFixed(2)}</span>}
           </span>
         ) : (
-          <span className="text-muted-foreground">Edit prices or enter qty to add stock</span>
+          <span className="text-amber-700">Scan a barcode to add that item to the top</span>
         )}
       </div>
+      <div className="flex items-center gap-2">
       <button
         onClick={() => {
           // Block if any item has qty > 0 but sell price is $0
@@ -856,6 +971,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       >
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Bulk"}
       </button>
+      </div>
     </div>
   );
 
@@ -865,7 +981,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
   return (
     <>
     <div className="fixed inset-0 z-[70] flex flex-col bg-background" onClick={onClose}>
-      <div className="flex flex-col h-full max-w-4xl mx-auto w-full" onClick={(e) => e.stopPropagation()}>
+      <div className="flex flex-col h-full max-w-6xl mx-auto w-full" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 pb-3 border-b border-border shrink-0"
           style={{ paddingTop: "calc(44px + env(safe-area-inset-top, 0px) + 0.75rem)" }}>
@@ -894,6 +1010,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                 <th className="text-right px-2 py-2 font-black text-xs text-muted-foreground w-[46px] sm:w-[60px]">Qty</th>
                 <th className="text-right pr-2 pl-2 py-2 font-black text-xs w-[76px] sm:w-[96px]" style={{ color: "var(--primary)" }}>+ Add</th>
                 <th className="text-right pr-4 pl-2 py-2 font-black text-xs text-muted-foreground w-[76px] sm:w-[96px]">Total Cost</th>
+                <th className="text-left px-2 py-2 font-black text-xs text-muted-foreground w-[130px]">Barcode</th>
               </tr>
             </thead>
             <tbody>
@@ -901,7 +1018,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                 <>
                   {/* Category section header */}
                   <tr key={`hdr-${cat.value}`}>
-                    <td colSpan={8} className="pl-3 pt-4 pb-1">
+                    <td colSpan={9} className="pl-3 pt-4 pb-1">
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-black uppercase tracking-widest" style={{ color: "var(--primary)" }}>{cat.label}</span>
                       </div>
@@ -918,8 +1035,9 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                     return (
                       <React.Fragment key={p.id}>
                       <tr
+                        id={`bulk-row-${p.id}`}
                         className="border-t border-border/40 transition"
-                        style={hasAdd ? { background: "rgba(251,146,60,0.07)" } : {}}
+                        style={hasAdd ? { background: "rgba(251,146,60,0.07)" } : scannedSet.has(p.id) ? { background: "rgba(251,146,60,0.12)" } : {}}
                       >
                         {/* Thumbnail */}
                         <td className="pl-3 pr-2 py-1.5 w-10 sm:w-14">
@@ -995,7 +1113,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                         {/* Current qty — read only, with revert pencil */}
                         <td className="px-2 py-1.5 text-right w-[46px] sm:w-[60px]">
                           <div className="flex items-center justify-end gap-1">
-                            <span className={`font-black text-xs sm:text-sm ${(liveQtys[p.id] ?? 0) === 0 ? "text-red-400" : (liveQtys[p.id] ?? 0) <= 5 ? "text-yellow-400" : "text-green-400"}`}>
+                            <span className={`font-black text-xs sm:text-sm ${(liveQtys[p.id] ?? 0) === 0 ? "text-red-700" : (liveQtys[p.id] ?? 0) <= 5 ? "text-amber-700" : "text-green-700"}`}>
                               {liveQtys[p.id] ?? 0}
                             </span>
                             {/* Pencil — revert existing qty (reduce only) */}
@@ -1004,10 +1122,10 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                               disabled={(liveQtys[p.id] ?? 0) === 0}
                               onClick={() => setRevertItem({ ...p, stock_qty: liveQtys[p.id] ?? p.stock_qty })}
                               className="h-5 w-5 rounded-full flex items-center justify-center flex-shrink-0 transition active:scale-90 disabled:opacity-25"
-                              style={{ background: (liveQtys[p.id] ?? 0) > 0 ? "var(--gradient-hero)" : "rgba(255,255,255,0.06)" }}
+                              style={{ background: (liveQtys[p.id] ?? 0) > 0 ? "#2563eb" : "rgba(255,255,255,0.06)" }}
                               title="Edit (reduce) existing qty"
                             >
-                              <Pencil className="h-2.5 w-2.5 text-black" />
+                              <Pencil className="h-2.5 w-2.5 text-white" />
                             </button>
                           </div>
                         </td>
@@ -1034,6 +1152,15 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                             {cpVal || <span className="text-[10px] font-normal opacity-50">total $</span>}
                           </div>
                         </td>
+                        <td className="px-2 py-1.5 w-[130px]">
+                          <input
+                            value={barcodes[p.id] ?? ""}
+                            onChange={(e) => setBarcodes((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                            placeholder="tap + scan"
+                            className="w-full h-8 sm:h-11 rounded-lg border px-2 text-[11px] sm:text-xs font-mono bg-muted/50 outline-none focus:ring-1 focus:ring-primary"
+                            style={{ borderColor: "var(--border)" }}
+                          />
+                        </td>
                       </tr>
                       {/* Existing variation rows — price editable */}
                       {(p.bottle_variations ?? []).map((bv) => {
@@ -1056,7 +1183,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                                 {vPrice || "0.00"}
                               </div>
                             </td>
-                            <td colSpan={4} />
+                            <td colSpan={5} />
                           </tr>
                         );
                       })}
@@ -1079,7 +1206,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                                   return { ...prev, [p.id]: arr };
                                 })}
                                 className="h-5 w-5 rounded-full flex items-center justify-center"
-                                style={{ background: "rgba(220,38,38,0.25)", color: "#f87171" }}
+                                style={{ background: "rgba(220,38,38,0.25)", color: "#b91c1c" }}
                               >
                                 <X className="h-2.5 w-2.5" />
                               </button>
@@ -1120,7 +1247,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                                 {vpVal || "0.00"}
                               </div>
                             </td>
-                            <td colSpan={4} />
+                            <td colSpan={5} />
                           </tr>
                         );
                       })}
@@ -1128,7 +1255,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                       {/* Add Variation row — liquor only */}
                       {p.category === "liquor" && (
                         <tr className="border-t border-border/10">
-                          <td colSpan={8} className="pl-8 py-1.5">
+                          <td colSpan={9} className="pl-8 py-1.5">
                             <button
                               type="button"
                               onClick={() => setLocalVars((prev) => {
@@ -1238,7 +1365,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                   <div className="font-black text-sm truncate">{p.name}</div>
                   {hasQty && (
                     <div className="text-xs font-bold" style={{ color: "var(--primary)" }}>
-                      Stock: {p.stock_qty ?? 0} → <span className="text-green-400">{(p.stock_qty ?? 0) + addQty}</span>
+                      Stock: {p.stock_qty ?? 0} → <span className="text-green-700">{(p.stock_qty ?? 0) + addQty}</span>
                       {batchTotalCost > 0 && (
                         <span className="text-muted-foreground ml-2">
                           (total ${batchTotalCost.toFixed(2)})
@@ -1249,14 +1376,19 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
                   {hasQty && (
                     <div className="text-xs text-muted-foreground">
                       Avg CP: <span className="line-through">${Number(p.cost_price ?? 0).toFixed(2)}</span>
-                      <span className="text-yellow-400 font-black ml-1"> → ${finalCp.toFixed(2)}</span>
+                      <span className="text-amber-700 font-black ml-1"> → ${finalCp.toFixed(2)}</span>
                       {batchTotalCost > 0 && <span className="text-muted-foreground ml-1">(avg of {p.stock_qty ?? 0} @ ${Number(p.cost_price ?? 0).toFixed(2)} + {addQty} total ${batchTotalCost.toFixed(2)})</span>}
                     </div>
                   )}
                   {spChanged && (
                     <div className="text-xs text-muted-foreground">
                       Sell: <span className="line-through">${Number(p.price ?? 0).toFixed(2)}</span>
-                      <span className="text-yellow-400 font-black ml-1"> → ${newSp.toFixed(2)}</span>
+                      <span className="text-amber-700 font-black ml-1"> → ${newSp.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {(barcodes[p.id] ?? "").trim() !== (p.barcode ?? "") && (
+                    <div className="text-xs text-muted-foreground">
+                      Barcode: <span className="font-mono text-amber-700">{(barcodes[p.id] ?? "").trim() || "cleared"}</span>
                     </div>
                   )}
                 </div>
@@ -1269,7 +1401,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
             <div className="rounded-2xl border border-green-500/30 px-4 py-3 flex items-center justify-between mt-2"
               style={{ background: "rgba(34,197,94,0.06)" }}>
               <span className="text-sm font-black text-muted-foreground">Stock expense total</span>
-              <span className="text-lg font-black text-green-400">${totalCost.toFixed(2)}</span>
+              <span className="text-lg font-black text-green-700">${totalCost.toFixed(2)}</span>
             </div>
           )}
         </div>
@@ -1324,7 +1456,8 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editItem, setEditItem] = useState<Product | null>(null);
-  const [category, setCategory] = useState<string>("__all__");
+  const [category, setCategory] = useState("");
+  const [categoriesReady, setCategoriesReady] = useState(false);
   // DB categories loaded from store_categories
   const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
   const [stockNumpadId, setStockNumpadId] = useState<string | null>(null);
@@ -1464,8 +1597,8 @@ export default function ProductsPage() {
       .then(({ data }) => {
         const cats = data ?? [];
         setStoreCategories(cats);
-        // Auto-select first real category (no "All" tab anymore)
-        if (cats.length > 0) setCategory(cats[0].id);
+        setCategory((prev) => (prev && cats.some((c) => c.id === prev) ? prev : (cats[0]?.id ?? "")));
+        setCategoriesReady(true);
       });
   }, [profile?.id, effectiveOwnerId]);
 
@@ -1478,7 +1611,8 @@ export default function ProductsPage() {
       ? (profile.parent_id ?? profile.id)
       : profile.id
   );
-  const filtered = items.filter((p) => category === "__all__" || p.category === category);
+  const filtered = category ? items.filter((p) => p.category === category) : [];
+  const gridReady = !loading && categoriesReady;
 
   const updateStock = async (id: string, delta: number) => {
     const item = items.find((p) => p.id === id);
@@ -1509,9 +1643,9 @@ export default function ProductsPage() {
             {scannerExternalDetected ? (
               <div className="text-center space-y-2">
                 <div className="h-12 w-12 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center mx-auto">
-                  <CheckCircle2 className="h-6 w-6 text-green-400" />
+                  <CheckCircle2 className="h-6 w-6 text-green-700" />
                 </div>
-                <p className="text-xs font-black text-green-400">Scanner Connected</p>
+                <p className="text-xs font-black text-green-700">Scanner Connected</p>
                 <p className="text-[10px] text-muted-foreground">Scan barcodes to auto-fill item forms</p>
               </div>
             ) : (
@@ -1624,7 +1758,7 @@ export default function ProductsPage() {
       </div>
 
       <div className="pt-3">
-        {loading ? (
+        {!gridReady ? (
           <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 text-muted-foreground">No {storeCategories.find(c => c.id === category)?.name ?? "items"} yet — tap Add Item.</div>
@@ -1729,10 +1863,10 @@ export default function ProductsPage() {
                   return (
                     <div className="px-1.5 py-1.5 pointer-events-none select-none" style={{ background: "rgba(var(--primary-rgb, 251 146 60) / 0.10)", borderTop: "1px solid rgba(var(--primary-rgb, 251 146 60) / 0.35)" }}>
                       <div className="font-bold text-[11px] truncate leading-tight" style={{ color: "var(--primary)" }}>{p.name}</div>
-                      <div className="font-black text-[10px] leading-tight mt-0.5" style={{ color: cpMissing ? "#f87171" : "var(--primary)" }}>
+                      <div className="font-black text-[10px] leading-tight mt-0.5" style={{ color: cpMissing ? "#b91c1c" : "var(--primary)" }}>
                         CP: ${cp.toFixed(2)}
                       </div>
-                      <div className="font-black text-[10px] leading-tight" style={{ color: spMissing ? "#f87171" : "var(--primary)" }}>
+                      <div className="font-black text-[10px] leading-tight" style={{ color: spMissing ? "#b91c1c" : "var(--primary)" }}>
                         SP: ${sp.toFixed(2)}
                       </div>
                     </div>
@@ -1743,24 +1877,7 @@ export default function ProductsPage() {
             ))}
           </div>
         )}
-
-        {/* ── Bulk Edit button — full-width, shown below grid ── */}
-        {!loading && (
-          <div className="pt-3 pb-2">
-            <button
-              onClick={() => setShowBulkEdit(true)}
-              className="w-full h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 border-2 transition active:scale-[0.98]"
-              style={{
-                background: "rgba(251,146,60,0.08)",
-                borderColor: "var(--primary)",
-                color: "var(--primary)",
-              }}
-            >
-              <Pencil className="h-4 w-4" />
-              Bulk Edit
-            </button>
-          </div>
-        )}      </div>
+      </div>
 
       {stockNumpadId && stockNumpadProduct && (
         <StockNumpad
@@ -1844,6 +1961,7 @@ export default function ProductsPage() {
                 stock_last_expense_id: patch.stock_last_expense_id,
                 ...(patch.cost_price !== undefined ? { cost_price: patch.cost_price } : {}),
                 ...(patch.price !== undefined ? { price: patch.price } : {}),
+                ...(patch.barcode !== undefined ? { barcode: patch.barcode } : {}),
               } : p;
             }));
           }}
@@ -1862,11 +1980,43 @@ function ProdVarsBlock({ prodVars, setProdVars, activeNumpad, setActiveNumpad, n
   setProdVars: React.Dispatch<React.SetStateAction<ProdVar[]>>;
   activeNumpad: string | null;
   setActiveNumpad: (v: string | null) => void;
-  numpadRef: React.RefObject<HTMLDivElement>;
+  numpadRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const pvNumpad    = (i: number) => `pv_${i}`;
   const pvQtyNumpad = (i: number) => `pvq_${i}`;
   const NUMPAD_KEYS = ["1","2","3","4","5","6","7","8","9",".","0","⌫"];
+
+  useNumpadKeyboard({
+    enabled: !!activeNumpad,
+    onKey: (k) => {
+      if (!activeNumpad) return;
+      if (activeNumpad.startsWith("pvq_")) {
+        const i = parseInt(activeNumpad.slice(4), 10);
+        setProdVars((pv) => pv.map((x, j) => {
+          if (j !== i) return x;
+          const cur = x.qty ?? "";
+          if (k === "⌫") return { ...x, qty: cur.slice(0, -1) };
+          if (k === ".") return cur.includes(".") ? x : { ...x, qty: cur + "." };
+          const dotIdx = cur.indexOf(".");
+          if (dotIdx !== -1 && cur.length - dotIdx > 2) return x;
+          return { ...x, qty: cur === "0" ? k : cur + k };
+        }));
+        return;
+      }
+      if (activeNumpad.startsWith("pv_")) {
+        const i = parseInt(activeNumpad.slice(3), 10);
+        setProdVars((pv) => pv.map((x, j) => {
+          if (j !== i) return x;
+          if (k === "⌫") return { ...x, price: x.price.slice(0, -1) };
+          if (k === ".") return x.price.includes(".") ? x : { ...x, price: x.price + "." };
+          const dotIdx = x.price.indexOf(".");
+          if (dotIdx !== -1 && x.price.length - dotIdx > 2) return x;
+          return { ...x, price: x.price === "0" ? k : x.price + k };
+        }));
+      }
+    },
+    onEnter: () => setActiveNumpad(null),
+  });
 
   return (
     <div className="space-y-2">
@@ -1926,7 +2076,7 @@ function ProdVarsBlock({ prodVars, setProdVars, activeNumpad, setActiveNumpad, n
                   <span className="text-[10px] text-transparent mb-1">·</span>
                   <button type="button"
                     onClick={() => setProdVars(pv => pv.filter((_, j) => j !== i))}
-                    className="h-9 w-9 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/10 transition">
+                    className="h-9 w-9 rounded-lg flex items-center justify-center text-red-700 hover:bg-red-500/10 transition">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
@@ -1992,7 +2142,12 @@ function ProdVarsBlock({ prodVars, setProdVars, activeNumpad, setActiveNumpad, n
 }
 
 // ─── Add Item Dialog ──────────────────────────────────────────────────────────
-function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () => void; onSaved: (product: Product) => void; ownerId: string; editProduct?: Product | null }) {
+function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: {
+  onDone: () => void;
+  onSaved: (product: Product) => void;
+  ownerId: string;
+  editProduct?: Product | null;
+}) {
   const { profile } = useAuth();
   const { t } = useTranslation();
   const isEdit = !!editProduct;
@@ -2075,6 +2230,7 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () =
       });
   }, [editProduct?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [barcode, setBarcode] = useState(editProduct?.barcode ?? "");
+  const [barcodeReady, setBarcodeReady] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
   useEffect(() => {
@@ -2086,7 +2242,6 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () =
     return () => window.removeEventListener("pospro-raw-barcode", handler);
   }, []);
   const [preview, setPreview] = useState<string | null>(editProduct?.image_url ?? null);
-  const [templateUrl, setTemplateUrl] = useState<string | null>(editProduct?.image_url ?? null);
   const [busy, setBusy] = useState(false);
   // which field the numpad is for: "selling" | "cost" | "units" | "shotprice" | "var_{i}_shots" | "var_{i}_price" | null
   const [activeNumpad, setActiveNumpad] = useState<string | null>(null);
@@ -2117,6 +2272,12 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () =
     setter(current === "0" ? k : current + k);
   };
 
+  useNumpadKeyboard({
+    enabled: !!activeNumpad,
+    onKey: handleNumpad,
+    onEnter: () => setActiveNumpad(null),
+  });
+
   const InlineNumpad = ({ forField }: { forField: string }) => {
     if (activeNumpad !== forField) return null;
     return (
@@ -2136,23 +2297,19 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () =
     );
   };
 
-            {/* Cost Price + Base Selling Price */}
-
   // ── image helpers ─────────────────────────────────────────────────────────
   const onPick = (f: File | undefined | null) => {
-    if (!f) return; setFile(f); setTemplateUrl(null); setPreview(URL.createObjectURL(f));
+    if (!f) return; setFile(f); setPreview(URL.createObjectURL(f));
   };
 
-  const clearImage = () => { setFile(null); setTemplateUrl(null); setPreview(null); };
+  const clearImage = () => { setFile(null); setPreview(null); };
 
   // ── submit ────────────────────────────────────────────────────────────────
   const submit = async () => {
     if (!profile || !name || !price) return;
     setBusy(true);
     let image_url: string | null = null;
-    if (templateUrl) {
-      image_url = templateUrl;
-    } else if (file) {
+    if (file) {
       const ext = file.name.split(".").pop() || "jpg";
       const path = `${profile.id}/${crypto.randomUUID()}.${ext}`;
       const { error: upErr } = await supabase.storage.from("product-images").upload(path, file, { upsert: false });
@@ -2201,7 +2358,7 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () =
       ];
       await supabase.from("product_variations").insert(varRows);
       toast.success("Item added");
-      setName(""); setPrice(""); setCostPrice(""); setCategory(""); setFile(null); setPreview(null); setTemplateUrl(null); setProdVars([]); setBaseUnitQty("1"); setBaseUnit("each");
+      setName(""); setPrice(""); setCostPrice(""); setCategory(""); setFile(null); setPreview(null); setProdVars([]); setBaseUnitQty("1"); setBaseUnit("each");
       onDone();
       if (!skipStockRef.current)
         onSaved({ ...inserted, units_per_item: inserted.units_per_item ?? 0, bottle_variations: null });
@@ -2215,11 +2372,9 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () =
       onEscapeKeyDown={(e) => e.preventDefault()}
     >
       <DialogHeader className="shrink-0 pb-3">
-        <div className="flex items-center gap-3">
-          <DialogTitle>
-            {isEdit ? t("edit_item", "Edit Item") : t("add_item", "Add Item")}
-          </DialogTitle>
-        </div>
+        <DialogTitle>
+          {isEdit ? t("edit_item", "Edit Item") : t("add_item", "Add Item")}
+        </DialogTitle>
       </DialogHeader>
 
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(251,146,60,0.4) transparent" }}>
@@ -2246,7 +2401,11 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () =
                   <ImagePlus className="h-5 w-5 mr-2" /> Upload
                 </Button>
                 <div className="h-2" />
-                <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => window.dispatchEvent(new Event("pospro-toggle-scanner-panel"))}>
+                <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => {
+                  setBarcodeReady(true);
+                  window.dispatchEvent(new Event("pospro-toggle-scanner-panel"));
+                  requestAnimationFrame(() => document.getElementById("barcode-input")?.focus());
+                }}>
                   <span className="mr-2">🏷️</span> Add Barcode
                 </Button>
               </div>
@@ -2258,7 +2417,7 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () =
             {/* Barcode */}
             <div>
               <Label className="text-xs">Barcode</Label>
-              <Input id="barcode-input" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="e.g. 9780201379624" className="h-9 mt-1 font-mono" />
+              <Input id="barcode-input" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder={barcodeReady ? "scan item or type number" : "e.g. 9780201379624"} className={`h-9 mt-1 font-mono ${barcodeReady ? "barcode-scan-ready" : ""}`} />
             </div>
 
             {/* Name */}
@@ -2329,7 +2488,7 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () =
                 </div>
                 <InlineNumpad forField="baseunitqty" />
                 {baseUnitQty && parseFloat(baseUnitQty) > 1 && price && parseFloat(price) > 0 && (
-                  <p className="text-[10px]" style={{ color: "#86efac" }}>
+                  <p className="text-[10px]" style={{ color: "#15803d" }}>
                     ${(parseFloat(price) / parseFloat(baseUnitQty)).toFixed(2)} per single {baseUnit}
                   </p>
                 )}
@@ -2433,7 +2592,7 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () =
                     </div>
                   </div>
                   {cigSpecialQty && cigSpecialPrice && parseInt(cigSpecialQty) > 0 && parseFloat(cigSpecialPrice) > 0 && (
-                    <p className="text-xs" style={{ color: "#86efac" }}>
+                    <p className="text-xs" style={{ color: "#15803d" }}>
                       {cigSpecialQty} for ${parseFloat(cigSpecialPrice).toFixed(2)} · ${(parseFloat(cigSpecialPrice) / parseInt(cigSpecialQty)).toFixed(2)} each
                     </p>
                   )}
@@ -2468,7 +2627,7 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: { onDone: () =
                         placeholder="e.g. Half Bottle" />
                       <button type="button"
                         onClick={() => setBottleVariations(bv => bv.filter((_, j) => j !== i))}
-                        className="h-8 w-8 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/10 transition">
+                        className="h-8 w-8 rounded-lg flex items-center justify-center text-red-700 hover:bg-red-500/10 transition">
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>

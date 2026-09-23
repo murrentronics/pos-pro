@@ -36,8 +36,16 @@ keystore-base64.txt
 
 # Android signing keystores — never commit
 *.jks
+*.jks.bak
+*.keystore
+*.keystore.bak
 *.b64
+
+# Built installers copied into the web download folder (too large for git)
+public-web/downloads/*.apk
+public-web/downloads/*.exe
 
 pospro.jks
 android/app/pospro.jks
+android/local.properties
 pospro_base64.txt

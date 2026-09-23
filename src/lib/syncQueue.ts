@@ -58,6 +58,11 @@ async function replayOp(op: OfflineOp): Promise<boolean> {
         if (error) throw new Error(error.message);
         break;
       }
+      case "rpc_append_to_tab": {
+        const { error } = await supabase.rpc("append_to_tab", op.payload);
+        if (error) throw new Error(error.message);
+        break;
+      }
       case "credit_transactions_insert": {
         const { error } = await supabase
           .from("credit_transactions")

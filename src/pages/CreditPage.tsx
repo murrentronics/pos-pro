@@ -8,12 +8,15 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   UserPlus, X, ChevronDown, CheckCircle2,
-  ClipboardList, Trash2, FileDown, Loader2, Pencil, Share2, Printer,
+  ClipboardList, Trash2, FileDown, Loader2, Pencil, Share2, Printer, Receipt,
 } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { downloadPdf } from "@/lib/download";
+import { useNumpadKeyboard } from "@/lib/useNumpadKeyboard";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
-import { printReceipt, type ReceiptData } from "@/lib/receiptPrinter";
+import { printReceipt, pairPrinter, isPrinterPaired, clearPrinterPairing, openPrinterConnectDialog, type CreditBill, type ReceiptData } from "@/lib/receiptPrinter";
+import { loadReceiptSettings } from "@/lib/receiptSettings";
+import { ReceiptSettingsTab } from "@/components/ReceiptSettingsTab";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export type CreditAccount = {
@@ -37,7 +40,53 @@ type CreditTx = {
   note: string | null;
   items?: any[] | null;
   created_at: string;
+  tab_status?: string | null;
 };
+
+type BillTx = {
+  id?: string;
+  type: string;
+  amount: number;
+  note: string | null;
+  items: { name?: string; qty?: number; price?: number }[] | null;
+  created_at: string;
+};
+
+function isCashCharge(note: string | null | undefined) {
+  return (note ?? "").startsWith("[CASH]");
+}
+
+function formatTxWhen(iso: string) {
+  const dt = new Date(iso);
+  return dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "America/Port_of_Spain" })
+    + " " + dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/Port_of_Spain" });
+}
+
+/** Charges that were rung as credit, payments that reduced the tab, and cash sales kept separate so they do not change the balance. */
+function summarizeBill(txs: BillTx[], balanceOwed: number): CreditBill {
+  let charges = 0;
+  let payments = 0;
+  let cashSales = 0;
+  const entries = txs.map((t) => {
+    const isPayment = t.type === "payment";
+    const isCash = !isPayment && isCashCharge(t.note);
+    const amount = Number(t.amount);
+    if (isPayment) payments += amount;
+    else if (isCash) cashSales += amount;
+    else charges += amount;
+    const itemLines = t.items && Array.isArray(t.items) && t.items.length > 0
+      ? t.items.map((it) => ({ name: it.name ?? "Item", qty: Number(it.qty ?? 1), price: Number(it.price) || 0 }))
+      : [{ name: (t.note || "Charge").replace(/^\[CASH\]\s*/, "") || "Charge", qty: 1, price: amount }];
+    return {
+      when: formatTxWhen(t.created_at),
+      kind: (isPayment ? "payment" : isCash ? "cash" : "charge") as CreditBill["entries"][number]["kind"],
+      lines: isPayment ? [] : itemLines,
+      amount,
+      note: t.note,
+    };
+  });
+  return { entries, charges, payments, cashSales, balanceOwed };
+}
 
 // ── Build bill PDF — returns base64 data URI ──────────────────────────────────
 async function buildBillPdf(account: CreditAccount, ownerName: string): Promise<string | null> {
@@ -95,16 +144,19 @@ async function buildBillPdf(account: CreditAccount, ownerName: string): Promise<
   for (const tx of txs ?? []) {
     if (y > CONTENT_BOTTOM) { doc.addPage(); y = 20; }
     const isCharge = tx.type === "charge";
+    const isCash = isCharge && isCashCharge(tx.note);
     const dateStr = new Date(tx.created_at).toLocaleString("en-GB", { hour:"2-digit", minute:"2-digit", hour12:true, day:"2-digit", month:"short", year:"numeric" });
+    const kindLabel = isCash ? "CASH" : isCharge ? "CHARGE" : "PAYMENT";
+    const kindRgb: [number, number, number] = isCash ? [70, 70, 70] : isCharge ? [200, 60, 40] : [20, 120, 60];
 
-    // Row header: CHARGE/PAYMENT label + date + total amount
+    // Row header: CHARGE/PAYMENT/CASH label + date + total amount
     doc.setFont("helvetica","bold");
-    doc.setTextColor(isCharge?200:40, isCharge?60:140, 40);
-    doc.text(isCharge?"CHARGE":"PAYMENT", LM, y);
+    doc.setTextColor(...kindRgb);
+    doc.text(kindLabel, LM, y);
     doc.setTextColor(0,0,0); doc.setFont("helvetica","normal");
     doc.text(dateStr, LM+22, y);
     doc.setFont("helvetica","bold");
-    doc.setTextColor(isCharge?200:40, isCharge?60:140, 40);
+    doc.setTextColor(...kindRgb);
     doc.text((isCharge?"+":"-")+"$"+Number(tx.amount).toFixed(2), RM, y, { align:"right" });
     doc.setTextColor(0,0,0);
     y += 5;
@@ -240,51 +292,32 @@ async function buildSingleRecordPdf(
 
   // Itemized table (charges only)
   const C_ITEM = LM + 4;
-  const C_QTY  = LM + 90;
-  const C_SP   = LM + 118;
-  const C_CP   = LM + 146;
-  const C_PROF = RM;
+  const C_QTY  = LM + 110;
+  const C_SP   = RM;
 
   if (isCharge && tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
     doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(150, 150, 150);
-    doc.text("ITEM",   C_ITEM, y);
-    doc.text("QTY",    C_QTY,  y, { align: "right" });
-    doc.text("SALE",   C_SP,   y, { align: "right" });
-    doc.text("COST",   C_CP,   y, { align: "right" });
-    doc.text("PROFIT", C_PROF, y, { align: "right" });
+    doc.text("ITEM", C_ITEM, y);
+    doc.text("QTY",  C_QTY,  y, { align: "right" });
+    doc.text("SALE", C_SP,   y, { align: "right" });
     y += 3.5;
     doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.15);
     doc.line(C_ITEM, y, RM, y); y += 3;
 
-    let totalSP = 0, totalCP = 0;
-    let hasCPData = false;
+    let totalSP = 0;
 
     for (const it of tx.items as any[]) {
       if (y > CONTENT_BOTTOM - 6) { doc.addPage(); y = 20; }
-      const qty    = Number(it.qty ?? 1);
-      const sp     = Number(it.price ?? 0) * qty;
-      const cp     = Number(it.cost_price ?? 0) * qty;
-      const profit = sp - cp;
-      const hasCP  = (it.cost_price ?? 0) > 0;
+      const qty = Number(it.qty ?? 1);
+      const sp  = Number(it.price ?? 0) * qty;
       totalSP += sp;
-      totalCP += cp;
-      if (hasCP) hasCPData = true;
 
       doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(30, 30, 30);
-      doc.text(doc.splitTextToSize(it.name ?? "", 72)[0], C_ITEM, y);
+      doc.text(doc.splitTextToSize(it.name ?? "", 95)[0], C_ITEM, y);
       doc.text(String(qty), C_QTY, y, { align: "right" });
 
       doc.setFont("helvetica", "bold"); doc.setTextColor(...ORANGE);
       doc.text("$" + sp.toFixed(2), C_SP, y, { align: "right" });
-
-      doc.setFont("helvetica", "normal"); doc.setTextColor(100, 100, 100);
-      doc.text(hasCP ? "$" + cp.toFixed(2) : "—", C_CP, y, { align: "right" });
-
-      const profColor: [number, number, number] = hasCP
-        ? (profit >= 0 ? [22, 163, 74] : [220, 38, 38])
-        : [160, 160, 160];
-      doc.setFont("helvetica", "bold"); doc.setTextColor(...profColor);
-      doc.text(hasCP ? "$" + profit.toFixed(2) : "—", C_PROF, y, { align: "right" });
       doc.setTextColor(0, 0, 0);
       y += 4.5;
     }
@@ -296,13 +329,6 @@ async function buildSingleRecordPdf(
     doc.text("Subtotal", C_ITEM, y);
     doc.setTextColor(...ORANGE);
     doc.text("$" + totalSP.toFixed(2), C_SP, y, { align: "right" });
-    if (hasCPData) {
-      doc.setTextColor(100, 100, 100);
-      doc.text("$" + totalCP.toFixed(2), C_CP, y, { align: "right" });
-      const totalProfit = totalSP - totalCP;
-      doc.setTextColor(totalProfit >= 0 ? 22 : 220, totalProfit >= 0 ? 163 : 38, totalProfit >= 0 ? 74 : 38);
-      doc.text("$" + totalProfit.toFixed(2), C_PROF, y, { align: "right" });
-    }
     doc.setTextColor(0, 0, 0);
     y += 8;
   } else if (tx.note) {
@@ -343,77 +369,109 @@ async function buildSingleRecordPdf(
   return doc.output("datauristring");
 }
 
-async function printThermalBill(account: CreditAccount, ownerName: string, cashierName?: string) {
-  const { data: txs, error } = await supabase
-    .from("credit_transactions")
-    .select("id, type, amount, note, items, created_at")
-    .eq("credit_account_id", account.id)
-    .order("created_at", { ascending: true });
+// ── Full Bill Receipt Preview ─────────────────────────────────────────────────
+// Loads all transactions for an account and renders a scrollable receipt paper
+function FullBillPreview({ account, ownerName }: { account: CreditAccount; ownerName: string }) {
+  const [bill, setBill] = useState<CreditBill | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [barName, setBarName] = useState(ownerName);
+  const [tagline, setTagline] = useState("");
 
-  if (error) {
-    toast.error("Failed to load transactions");
-    return;
-  }
+  useEffect(() => {
+    supabase
+      .from("credit_transactions")
+      .select("id, type, amount, note, items, created_at")
+      .eq("credit_account_id", account.id)
+      .order("created_at", { ascending: true })
+      .then(({ data }) => {
+        setBill(summarizeBill((data ?? []) as BillTx[], Number(account.balance_owed ?? 0)));
+        setLoading(false);
+      });
+    loadReceiptSettings(account.owner_id).then((saved) => {
+      if (!saved) return;
+      if (saved.barName) setBarName(saved.barName);
+      if (saved.tagline) setTagline(saved.tagline);
+      setLogoUrl(saved.logoData);
+    });
+  }, [account.id, account.balance_owed, account.owner_id]);
 
-  const items: { name: string; qty: number; price: number }[] = [];
-  let subtotal = 0;
+  return (
+    <div className="px-5 py-2 flex-1 min-h-0 overflow-y-auto">
+      <div className="bg-white text-zinc-900 rounded-xl p-4 shadow-inner text-left font-mono text-xs leading-tight border border-zinc-300 select-none">
+        {/* Header */}
+        {logoUrl && <img src={logoUrl} alt="" className="mx-auto mb-1 max-h-14 object-contain" />}
+        <div className="text-center font-black text-zinc-950 text-sm font-sans tracking-tight uppercase mb-0.5">
+          {barName}
+        </div>
+        <div className="text-center text-[10px] text-zinc-600 font-sans">
+          {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+        </div>
+        <div className="text-center text-[10px] text-zinc-600 font-sans">Customer: {account.full_name}</div>
+        {account.contact_number && (
+          <div className="text-center text-[10px] text-zinc-500 font-sans">{account.contact_number}</div>
+        )}
 
-  for (const tx of txs ?? []) {
-    if (tx.type === "charge") {
-      if (tx.items && Array.isArray(tx.items) && (tx.items as any[]).length > 0) {
-        for (const it of (tx.items as any[])) {
-          const qty = Number(it?.qty ?? 1);
-          const price = Number(it?.price ?? 0);
-          items.push({
-            name: it?.name || "Item",
-            qty,
-            price,
-          });
-          subtotal += qty * price;
-        }
-      } else {
-        const itemTitle = tx.note ? tx.note.replace(/^\[CASH\]\s*/, "") : "Charge";
-        items.push({
-          name: itemTitle,
-          qty: 1,
-          price: Number(tx.amount),
-        });
-        subtotal += Number(tx.amount);
-      }
-    }
-  }
+        <div className="border-t border-dashed border-zinc-400 my-2" />
 
-  const payments = (txs ?? []).filter((t) => t.type === "payment").reduce((s, t) => s + Number(t.amount), 0);
+        {loading || !bill ? (
+          <div className="text-center text-[10px] text-zinc-500 py-2">Loading…</div>
+        ) : (
+          <>
+            {bill.entries.length === 0 ? (
+              <div className="text-center text-[10px] text-zinc-500 py-2">No transactions</div>
+            ) : bill.entries.map((entry, idx) => (
+              <div key={idx} className="mb-2">
+                <div className="flex justify-between items-baseline text-[9px] mb-0.5">
+                  <span className="text-zinc-500">{entry.when}</span>
+                  <span className={`font-black tracking-wide ${
+                    entry.kind === "payment" ? "text-emerald-700" : entry.kind === "cash" ? "text-zinc-500" : "text-zinc-700"
+                  }`}>
+                    {entry.kind === "payment" ? "PAYMENT" : entry.kind === "cash" ? "CASH" : "CHARGE"}
+                  </span>
+                </div>
+                {entry.kind === "payment" ? (
+                  <div className="flex justify-between items-start">
+                    <span className="font-semibold text-emerald-800 pr-2 break-all">{entry.note || "Payment received"}</span>
+                    <span className="font-bold text-emerald-800 whitespace-nowrap">-${entry.amount.toFixed(2)}</span>
+                  </div>
+                ) : entry.lines.map((it, i) => (
+                  <div key={i} className="flex justify-between items-start">
+                    <span className={`font-semibold pr-2 break-all ${entry.kind === "cash" ? "text-zinc-600" : "text-zinc-900"}`}>{it.qty}× {it.name}</span>
+                    <span className={`font-bold whitespace-nowrap ${entry.kind === "cash" ? "text-zinc-600" : "text-zinc-950"}`}>${(it.qty * Number(it.price)).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
 
-  const receiptData: ReceiptData = {
-    storeName: ownerName || "Store",
-    locationName: "Main location",
-    orderNumber: "BILL",
-    serverName: cashierName || "Staff",
-    customerName: account.full_name,
-    items: items.length > 0 ? items : [{ name: "Account Balance", qty: 1, price: Number(account.balance_owed) }],
-    subtotal: subtotal > 0 ? subtotal : Number(account.balance_owed),
-    total: Number(account.balance_owed),
-    paid: payments,
-    change: 0,
-    payMode: "credit",
-    date: new Date().toLocaleString("en-US", {
-      month: "numeric",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: true,
-    }),
-  };
-
-  const res = await printReceipt(receiptData);
-  if (res.printed) {
-    toast.success("Sent to printer");
-  } else if (res.error) {
-    toast.error(res.error);
-  }
+            {/* Balance owed stays the database figure. Charges and payments are shown so a $0 balance is explained by the payment. */}
+            <div className="border-t border-dashed border-zinc-400 my-2" />
+            <div className="flex justify-between text-zinc-700">
+              <span>Charges</span>
+              <span>${bill.charges.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-emerald-800">
+              <span>Payments</span>
+              <span>-${bill.payments.toFixed(2)}</span>
+            </div>
+            {bill.cashSales > 0 && (
+              <div className="flex justify-between text-zinc-500">
+                <span>Cash sales</span>
+                <span>${bill.cashSales.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-black text-zinc-950 mt-1">
+              <span>Balance Owed</span>
+              <span>${bill.balanceOwed.toFixed(2)}</span>
+            </div>
+            {tagline && (
+              <div className="text-center text-[10px] text-zinc-500 mt-2">{tagline}</div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── Bill Action Modal ─────────────────────────────────────────────────────────
@@ -422,38 +480,64 @@ function BillModal({ account, ownerName, onClose }: {
   ownerName: string;
   onClose: () => void;
 }) {
-  const { profile } = useAuth();
-  const [busy, setBusy] = useState<"download" | "print" | "share" | null>(null);
-  const [downloaded, setDownloaded] = useState(false);
-  const [printed, setPrinted] = useState(false);
+  const [busy, setBusy] = useState<"share" | "print" | null>(null);
+  const [printerPaired, setPrinterPaired] = useState<boolean | null>(null);
+  const [pairing, setPairing] = useState(false);
   const safeName = account.full_name.replace(/\s+/g, "-").toLowerCase();
   const filename = `credit-bill-${safeName}.pdf`;
 
-  const handleDownload = async () => {
-    setBusy("download");
-    try {
-      const b64 = await buildBillPdf(account, ownerName);
-      if (b64) {
-        await downloadPdf(filename, b64);
-        setDownloaded(true);
-        toast.success(Capacitor.isNativePlatform() ? "Saved to Documents folder" : "PDF downloaded");
-        setTimeout(() => setDownloaded(false), 5000);
-      }
-    } catch (e: any) {
-      if (!String(e?.message ?? "").includes("cancel")) {
-        toast.error("Download failed: " + (e?.message ?? "unknown"));
-      }
-    }
-    setBusy(null);
+  useEffect(() => {
+    const refresh = () => { isPrinterPaired().then(setPrinterPaired); };
+    refresh();
+    window.addEventListener("pospro-printer-changed", refresh);
+    return () => window.removeEventListener("pospro-printer-changed", refresh);
+  }, []);
+
+  const buildReceiptData = async (): Promise<ReceiptData | null> => {
+    const { data: txs } = await supabase
+      .from("credit_transactions")
+      .select("id, type, amount, items, note, created_at")
+      .eq("credit_account_id", account.id)
+      .order("created_at", { ascending: true });
+    if (!txs) return null;
+
+    const creditBill = summarizeBill(txs as BillTx[], Number(account.balance_owed));
+
+    return {
+      storeName: ownerName,
+      customerName: account.full_name,
+      items: [],
+      subtotal: creditBill.charges,
+      total: creditBill.balanceOwed,
+      paid: creditBill.payments,
+      change: 0,
+      payMode: "credit",
+      creditBill,
+      date: new Date().toLocaleString("en-US", {
+        month: "numeric", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true,
+      }),
+    };
   };
 
-  const handlePrintThermal = async () => {
+  const handlePrint = async () => {
     setBusy("print");
     try {
-      const cashierName = profile?.username || "Staff";
-      await printThermalBill(account, ownerName, cashierName);
-      setPrinted(true);
-      setTimeout(() => setPrinted(false), 5000);
+      if (printerPaired === false) {
+        setPairing(true);
+        const paired = await pairPrinter();
+        setPairing(false);
+        if (!paired) { setBusy(null); return; }
+        setPrinterPaired(true);
+      }
+      const data = await buildReceiptData();
+      if (!data) { setBusy(null); return; }
+      const result = await printReceipt(data);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success("Receipt sent to printer");
+      }
     } catch (e: any) {
       toast.error("Print failed: " + (e?.message ?? "unknown"));
     }
@@ -463,22 +547,18 @@ function BillModal({ account, ownerName, onClose }: {
   const handleShare = async () => {
     setBusy("share");
     try {
-      const b64 = await buildBillPdf(account, ownerName);
-      if (!b64) { setBusy(null); return; }
-
       if (Capacitor.isNativePlatform()) {
+        const b64 = await buildBillPdf(account, ownerName);
+        if (!b64) { setBusy(null); return; }
         const { Filesystem, Directory } = await import("@capacitor/filesystem");
         const { Share } = await import("@capacitor/share");
-
         const base64Data = b64.replace(/^data:[^;]+;base64,/, "");
         const writeResult = await Filesystem.writeFile({
           path: filename,
           data: base64Data,
           directory: Directory.Cache,
         });
-
         const shareText = `Hi ${account.full_name}, please find your credit bill attached.`;
-
         await Share.share({
           title: `Credit Bill — ${account.full_name}`,
           text: shareText,
@@ -486,8 +566,9 @@ function BillModal({ account, ownerName, onClose }: {
           dialogTitle: "Send Bill",
         });
       } else {
-        await downloadPdf(filename, b64);
-        toast.success("Bill saved");
+        const text = `Credit Bill — ${account.full_name}\nBalance Owed: $${Number(account.balance_owed).toFixed(2)}`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+        toast.success("Opening WhatsApp share");
       }
     } catch (e: any) {
       if (!String(e?.message ?? "").includes("cancel")) {
@@ -499,159 +580,119 @@ function BillModal({ account, ownerName, onClose }: {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/75 backdrop-blur-sm"
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
       onClick={onClose}>
       <div
-        className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center"
+        className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90dvh]"
         style={{ background: "var(--gradient-card)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border/40">
-          <div className="text-left">
-            <h3 className="font-black text-lg leading-tight">Customer Bill</h3>
-            <p className="text-xs text-muted-foreground font-semibold truncate max-w-[200px]">{account.full_name}</p>
-          </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition">
+        <div className="flex items-center justify-between px-5 pt-5 pb-2 shrink-0">
+          <h3 className="font-black text-base">Bill — {account.full_name}</h3>
+          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted transition">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
-          {/* Account balance preview */}
-          <div className="rounded-2xl p-4 text-center border border-border/60 bg-muted/20">
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Balance Owed</div>
-            <div className="text-3xl font-black text-red-400 mt-0.5">
-              ${Number(account.balance_owed).toFixed(2)}
-            </div>
-          </div>
+        {/* Receipt paper preview */}
+        <FullBillPreview account={account} ownerName={ownerName} />
 
-          {/* 2 Side-by-Side Easy to Tap Buttons */}
-          <div className="grid grid-cols-2 gap-3">
-            {/* Button 1: Print (Terminal Receipt Printer) */}
+        <div className="px-5 pb-5 pt-3 flex flex-col gap-2 shrink-0">
+          <div className="flex gap-2">
             <button
-              onClick={handlePrintThermal}
-              disabled={!!busy}
-              className="h-20 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 text-white shadow-lg"
+              onClick={handlePrint}
+              disabled={busy === "print" || pairing}
+              className="flex-1 h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
               style={{ background: "var(--gradient-hero)" }}
             >
-              {busy === "print" ? (
-                <Loader2 className="h-6 w-6 animate-spin text-white" />
-              ) : printed ? (
-                <CheckCircle2 className="h-6 w-6 text-white" />
-              ) : (
-                <span className="text-xl leading-none">🖨️</span>
-              )}
-              <span className="text-xs font-black">{printed ? "Printed!" : "Print (Thermal)"}</span>
+              {busy === "print" || pairing
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : printerPaired === false ? "🔌 Connect Printer" : "Print"}
             </button>
-
-            {/* Button 2: Normal PDF Download */}
             <button
-              onClick={handleDownload}
-              disabled={!!busy}
-              className="h-20 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 text-foreground border border-border/80 shadow-sm hover:bg-muted/30"
-              style={{ background: "rgba(255,255,255,0.06)" }}
+              onClick={handleShare}
+              disabled={busy === "share"}
+              className="flex-1 h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95 text-foreground/80"
             >
-              {busy === "download" ? (
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              ) : downloaded ? (
-                <CheckCircle2 className="h-6 w-6 text-green-400" />
-              ) : (
-                <FileDown className="h-6 w-6 text-primary" />
-              )}
-              <span className="text-xs font-black">{downloaded ? "Downloaded!" : "Download PDF"}</span>
+              {busy === "share" ? <Loader2 className="h-4 w-4 animate-spin" /> : "PDF / WhatsApp"}
             </button>
           </div>
-
-          {/* WhatsApp Share */}
-          <button
-            onClick={handleShare}
-            disabled={!!busy}
-            className="w-full h-11 rounded-2xl font-black text-xs flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 border border-green-500/40"
-            style={{ background: "rgba(37,211,102,0.12)", color: "#25D366" }}
-          >
-            {busy === "share" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
-            Share via WhatsApp
-          </button>
+          {printerPaired && (
+            <button
+              onClick={async () => {
+                setPrinterPaired(false);
+                clearPrinterPairing();
+                const ok = await openPrinterConnectDialog();
+                setPrinterPaired(ok);
+              }}
+              className="text-[11px] text-muted-foreground underline text-center active:opacity-70"
+            >
+              Change printer
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-// ── Single-Transaction Receipt Modal ─────────────────────────────────────────
+// ── Single-record Receipt Modal ───────────────────────────────────────────────
+// Shows the bill receipt UI (Connect Printer + PDF/WhatsApp) for one credit tx
 function SingleReceiptModal({ tx, account, ownerName, onClose }: {
   tx: CreditTx;
   account: CreditAccount;
   ownerName: string;
   onClose: () => void;
 }) {
-  const { profile } = useAuth();
-  const [busy, setBusy] = useState<"print" | "download" | "share" | null>(null);
-  const [printed, setPrinted] = useState(false);
-  const [downloaded, setDownloaded] = useState(false);
+  const [busy, setBusy] = useState<"print" | "share" | null>(null);
+  const [printerPaired, setPrinterPaired] = useState<boolean | null>(null);
+  const [pairing, setPairing] = useState(false);
   const isCharge = tx.type === "charge";
-  const safeName = account.full_name.replace(/\s+/g, "-").toLowerCase();
   const dt = new Date(tx.created_at);
-  const dateTag = dt.toISOString().slice(0, 10);
-  const filename = `receipt-${safeName}-${dateTag}.pdf`;
+  const dateStr = dt.toLocaleString("en-US", {
+    month: "numeric", day: "numeric", year: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  });
+  const items: { name: string; qty: number; price: number }[] =
+    isCharge && tx.items && Array.isArray(tx.items) && tx.items.length > 0
+      ? tx.items.map((i: any) => ({ name: i.name ?? "Item", qty: i.qty ?? 1, price: Number(i.price) || 0 }))
+      : [{ name: tx.note || (isCharge ? "Charge" : "Payment"), qty: 1, price: Number(tx.amount) }];
 
-  // Build ReceiptData for this single transaction (thermal print)
-  const buildReceiptData = (): ReceiptData => {
-    const items: { name: string; qty: number; price: number }[] = [];
-    let subtotal = 0;
-    if (isCharge && Array.isArray(tx.items) && tx.items.length > 0) {
-      for (const it of tx.items as any[]) {
-        const qty = Number(it?.qty ?? 1);
-        const price = Number(it?.price ?? 0);
-        items.push({ name: it?.name || "Item", qty, price });
-        subtotal += qty * price;
-      }
-    } else {
-      const itemTitle = (tx.note ?? "").replace(/^\[CASH\]\s*/, "") || (isCharge ? "Charge" : "Payment");
-      items.push({ name: itemTitle, qty: 1, price: Number(tx.amount) });
-      subtotal = Number(tx.amount);
-    }
-    return {
-      storeName: ownerName || "Store",
-      locationName: "Main location",
-      orderNumber: isCharge ? "CHARGE" : "PAYMENT",
-      serverName: profile?.username || "Staff",
-      customerName: account.full_name,
-      items,
-      subtotal,
-      total: Number(tx.amount),
-      paid: isCharge ? 0 : Number(tx.amount),
-      change: 0,
-      payMode: isCharge ? "credit" : "cash",
-      date: dt.toLocaleString("en-US", {
-        month: "numeric", day: "numeric", year: "numeric",
-        hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true,
-      }),
-    };
-  };
+  useEffect(() => {
+    const refresh = () => { isPrinterPaired().then(setPrinterPaired); };
+    refresh();
+    window.addEventListener("pospro-printer-changed", refresh);
+    return () => window.removeEventListener("pospro-printer-changed", refresh);
+  }, []);
+
+  const receiptData = (): ReceiptData => ({
+    storeName: ownerName,
+    customerName: account.full_name,
+    orderNumber: isCharge ? "CHARGE" : "PAYMENT",
+    date: dateStr,
+    items,
+    subtotal: Number(tx.amount),
+    total: Number(tx.amount),
+    paid: isCharge ? 0 : Number(tx.amount),
+    change: 0,
+    payMode: "credit",
+  });
 
   const handlePrint = async () => {
     setBusy("print");
     try {
-      const res = await printReceipt(buildReceiptData());
-      if (res.printed) { toast.success("Sent to printer"); setPrinted(true); setTimeout(() => setPrinted(false), 5000); }
-      else if (res.error) toast.error(res.error);
-    } catch (e: any) { toast.error("Print failed: " + (e?.message ?? "unknown")); }
-    setBusy(null);
-  };
-
-  const handleDownload = async () => {
-    setBusy("download");
-    try {
-      const b64 = await buildSingleRecordPdf(tx, account, ownerName);
-      if (b64) {
-        await downloadPdf(filename, b64);
-        setDownloaded(true);
-        toast.success(Capacitor.isNativePlatform() ? "Saved to Documents" : "PDF downloaded");
-        setTimeout(() => setDownloaded(false), 5000);
+      if (printerPaired === false) {
+        setPairing(true);
+        const paired = await pairPrinter();
+        setPairing(false);
+        if (!paired) { setBusy(null); return; }
+        setPrinterPaired(true);
       }
+      const result = await printReceipt(receiptData());
+      if (result.error) toast.error(result.error);
+      else toast.success("Receipt sent to printer");
     } catch (e: any) {
-      if (!String(e?.message ?? "").includes("cancel")) toast.error("Download failed: " + (e?.message ?? "unknown"));
+      toast.error("Print failed: " + (e?.message ?? "unknown"));
     }
     setBusy(null);
   };
@@ -661,20 +702,18 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
     try {
       const b64 = await buildSingleRecordPdf(tx, account, ownerName);
       if (!b64) { setBusy(null); return; }
+      const safeName = account.full_name.replace(/\s+/g, "-").toLowerCase();
+      const dateTag = dt.toISOString().slice(0, 10);
+      const filename = `receipt-${safeName}-${dateTag}.pdf`;
       if (Capacitor.isNativePlatform()) {
         const { Filesystem, Directory } = await import("@capacitor/filesystem");
         const { Share } = await import("@capacitor/share");
         const base64Data = b64.replace(/^data:[^;]+;base64,/, "");
         const writeResult = await Filesystem.writeFile({ path: filename, data: base64Data, directory: Directory.Cache });
-        await Share.share({
-          title: `Receipt — ${account.full_name}`,
-          text: `Hi ${account.full_name}, please find your receipt attached.`,
-          url: writeResult.uri,
-          dialogTitle: "Send Receipt",
-        });
+        await Share.share({ title: `Receipt — ${account.full_name}`, url: writeResult.uri, dialogTitle: "Send Receipt" });
       } else {
         await downloadPdf(filename, b64);
-        toast.success("Receipt saved");
+        toast.success("Receipt downloaded");
       }
     } catch (e: any) {
       if (!String(e?.message ?? "").includes("cancel")) toast.error("Share failed: " + (e?.message ?? "unknown"));
@@ -683,112 +722,79 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
     onClose();
   };
 
-  const dateStr = dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  const timeStr = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/75 backdrop-blur-sm"
-      onClick={onClose}>
-      <div className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden"
-        style={{ background: "var(--gradient-card)" }}
-        onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border/40">
-          <div className="text-left">
-            <h3 className="font-black text-lg leading-tight">{isCharge ? "Charge Receipt" : "Payment Receipt"}</h3>
-            <p className="text-xs text-muted-foreground font-semibold truncate max-w-[200px]">{account.full_name}</p>
-          </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative w-full max-w-sm rounded-3xl overflow-hidden border border-border shadow-2xl"
+        style={{ background: "var(--gradient-card)" }} onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 pt-5 pb-2 flex items-center justify-between">
+          <h2 className="font-black text-lg">{isCharge ? "Charge Receipt" : "Payment Receipt"}</h2>
+          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
-          {/* Date + items list */}
-          <div className="rounded-2xl border border-border/60 bg-muted/20 overflow-hidden">
-            {/* Date row */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-border/30">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
-                {isCharge ? "Charge" : "Payment"}
-              </span>
-              <span className="text-[10px] text-muted-foreground">{dateStr} · {timeStr}</span>
+        {/* Receipt paper */}
+        <div className="px-5 py-2">
+          <div className="bg-white text-zinc-900 rounded-xl p-4 shadow-inner text-left font-mono text-xs leading-tight border border-zinc-300 select-none">
+            <div className="text-center font-black text-zinc-950 text-base font-sans tracking-tight uppercase mb-0.5">
+              {ownerName}
             </div>
-
-            {/* Item rows (charge with items) */}
-            {isCharge && Array.isArray(tx.items) && (tx.items as any[]).length > 0 ? (
-              <div className="px-4 py-2 space-y-1.5">
-                {(tx.items as any[]).map((it: any, i: number) => {
-                  const qty = Number(it?.qty ?? 1);
-                  const price = Number(it?.price ?? 0);
-                  return (
-                    <div key={i} className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-foreground flex-1 leading-snug">
-                        {qty > 1 && <span className="font-black text-primary mr-1">{qty}x</span>}
-                        {it?.name ?? "Item"}
-                      </span>
-                      <span className="text-xs font-black shrink-0" style={{ color: "var(--primary)" }}>
-                        ${(qty * price).toFixed(2)}
-                      </span>
-                    </div>
-                  );
-                })}
-                {/* Subtotal separator */}
-                <div className="flex items-center justify-between pt-1.5 border-t border-border/30 mt-1">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase">Subtotal</span>
-                  <span className="text-xs font-black text-foreground">${Number(tx.amount).toFixed(2)}</span>
+            <div className="text-center text-[10px] text-zinc-600">{dateStr}</div>
+            <div className="text-center text-[10px] text-zinc-600">Customer: {account.full_name}</div>
+            <div className="text-center text-[10px] text-zinc-600">{isCharge ? "CHARGE" : "PAYMENT"}</div>
+            <div className="border-t border-dashed border-zinc-400 my-2" />
+            <div className="space-y-1 my-2">
+              {items.map((it, idx) => (
+                <div key={idx} className="flex justify-between items-start">
+                  <span className="font-semibold text-zinc-900 pr-2 break-all">{it.qty}x {it.name}</span>
+                  <span className="font-bold text-zinc-950 whitespace-nowrap">${(it.qty * it.price).toFixed(2)}</span>
                 </div>
+              ))}
+            </div>
+            <div className="border-t border-dashed border-zinc-400 my-2" />
+            <div className="space-y-1">
+              <div className="flex justify-between font-bold text-zinc-900">
+                <span>Total</span>
+                <span>${Number(tx.amount).toFixed(2)}</span>
               </div>
-            ) : (
-              /* Fallback: no items — show note or plain amount */
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-xs text-foreground flex-1">
-                  {tx.note ? tx.note.replace(/^\[CASH\]\s*/, "") : isCharge ? "Charge" : "Payment"}
-                </span>
-                <span className={`text-sm font-black ${isCharge ? "text-red-400" : "text-green-400"}`}>
-                  {isCharge ? "+" : "−"}${Number(tx.amount).toFixed(2)}
-                </span>
-              </div>
-            )}
-
-            {/* Balance owed footer */}
-            <div className="flex items-center justify-between px-4 py-2.5 border-t border-border/30" style={{ background: "rgba(239,68,68,0.08)" }}>
-              <span className="text-xs font-bold text-red-400 uppercase tracking-wide">Balance Owed</span>
-              <span className="text-sm font-black text-red-400">${Number(account.balance_owed).toFixed(2)}</span>
             </div>
           </div>
+        </div>
 
-          {/* Print + Download */}
-          <div className="grid grid-cols-2 gap-3">
+        {/* Actions */}
+        <div className="px-5 pb-5 pt-2 flex flex-col gap-2">
+          <div className="flex gap-2">
             <button
               onClick={handlePrint}
-              disabled={!!busy}
-              className="h-20 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 text-white shadow-lg"
+              disabled={busy === "print" || pairing}
+              className="flex-1 h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
               style={{ background: "var(--gradient-hero)" }}
             >
-              {busy === "print" ? <Loader2 className="h-6 w-6 animate-spin" /> : printed ? <CheckCircle2 className="h-6 w-6" /> : <span className="text-xl">🖨️</span>}
-              <span className="text-xs font-black">{printed ? "Printed!" : "Print Receipt"}</span>
+              {busy === "print" || pairing
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : printerPaired === false ? "🔌 Connect Printer" : "Print"}
             </button>
             <button
-              onClick={handleDownload}
-              disabled={!!busy}
-              className="h-20 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 text-foreground border border-border/80 shadow-sm"
-              style={{ background: "rgba(255,255,255,0.06)" }}
+              onClick={handleShare}
+              disabled={busy === "share"}
+              className="flex-1 h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95 text-foreground/80"
             >
-              {busy === "download" ? <Loader2 className="h-6 w-6 animate-spin text-primary" /> : downloaded ? <CheckCircle2 className="h-6 w-6 text-green-400" /> : <FileDown className="h-6 w-6 text-primary" />}
-              <span className="text-xs font-black">{downloaded ? "Downloaded!" : "Download PDF"}</span>
+              {busy === "share" ? <Loader2 className="h-4 w-4 animate-spin" /> : "PDF / WhatsApp"}
             </button>
           </div>
-
-          {/* WhatsApp Share */}
-          <button
-            onClick={handleShare}
-            disabled={!!busy}
-            className="w-full h-11 rounded-2xl font-black text-xs flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 border border-green-500/40"
-            style={{ background: "rgba(37,211,102,0.12)", color: "#25D366" }}
-          >
-            {busy === "share" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
-            Share via WhatsApp
-          </button>
+          {printerPaired && (
+            <button
+              onClick={async () => {
+                setPrinterPaired(false);
+                clearPrinterPairing();
+                const ok = await openPrinterConnectDialog();
+                setPrinterPaired(ok);
+              }}
+              className="text-[11px] text-muted-foreground underline text-center active:opacity-70"
+            >
+              Change printer
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -798,12 +804,13 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function CreditPage() {
   const { profile } = useAuth();
-  const { effectiveOwnerId } = useChain();
+  const { effectiveOwnerId, activeBar } = useChain();
   const ownerId = effectiveOwnerId(profile?.role === "owner" ? (profile?.id ?? "") : (profile?.parent_id ?? ""));
   const ownerIdRef = useRef(ownerId);
   useEffect(() => { ownerIdRef.current = ownerId; }, [ownerId]);
 
-  const [tab, setTab]       = useState<"opened" | "closed" | "create">("opened");
+  const [tab, setTab]       = useState<"opened" | "closed" | "create" | "receipt">("opened");
+  const canEditReceipt = profile?.role === "owner";
   const [opened, setOpened] = useState<CreditAccount[]>([]);
   const [closed, setClosed] = useState<CreditAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -843,21 +850,22 @@ export default function CreditPage() {
 
       {/* Tab bar */}
       <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--gradient-card)" }}>
-        {(["opened", "closed", "create"] as const).map((t) => (
+        {(["opened", "closed", "create", "receipt"] as const).filter((t) => t !== "receipt" || canEditReceipt).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
+            title={t === "receipt" ? "Receipt settings" : undefined}
             className={`flex-1 py-2.5 rounded-xl text-sm font-black capitalize transition flex items-center justify-center gap-1.5 ${
               tab === t ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
             style={tab === t ? { background: "var(--gradient-hero)" } : {}}
           >
-            {t === "opened" ? "Opened" : t === "closed" ? "Closed" : "Create"}
+            {t === "receipt" ? <><Receipt className="h-4 w-4" /> Receipt</> : t === "opened" ? "Opened" : t === "closed" ? "Closed" : "Create"}
             {t === "opened" && opened.length > 0 && (
               <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[11px] font-black leading-none"
                 style={tab === "opened"
                   ? { background: "#7c2d12", color: "#ffffff" }
-                  : { background: "#fb923c", color: "#7c2d12" }
+                  : { background: "#c2410c", color: "#7c2d12" }
                 }>
                 {opened.length}
               </span>
@@ -866,7 +874,7 @@ export default function CreditPage() {
               <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[11px] font-black leading-none"
                 style={tab === "closed"
                   ? { background: "#7c2d12", color: "#ffffff" }
-                  : { background: "#fb923c", color: "#7c2d12" }
+                  : { background: "#c2410c", color: "#7c2d12" }
                 }>
                 {closed.length}
               </span>
@@ -885,6 +893,12 @@ export default function CreditPage() {
       )}
       {tab === "closed" && <ClosedTab accounts={closed} loading={loading} onRefresh={fetchAccounts} onEdit={setEditAccount} />}
       {tab === "create" && <CreateTab ownerId={ownerId!} onCreated={handleCreated} />}
+      {tab === "receipt" && canEditReceipt && ownerId && (
+        <ReceiptSettingsTab
+          ownerId={ownerId}
+          defaultBarName={activeBar?.bar_name || profile?.username || "Bar"}
+        />
+      )}
 
       {/* Edit customer modal */}
       {editAccount && (
@@ -912,7 +926,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
   const { profile } = useAuth();
   const { effectiveOwnerId } = useChain();
   const ownerId = effectiveOwnerId(profile?.role === "owner" ? (profile?.id ?? "") : (profile?.parent_id ?? ""));
-  const ownerName = profile?.username ?? "Store";
+  const ownerName = profile?.username ?? "Bar";
   const [expanded, setExpanded]     = useState<string | null>(null);
   const [txs, setTxs]               = useState<CreditTx[]>([]);
   const [txLoading, setTxLoading]   = useState(false);
@@ -920,16 +934,100 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
   const [confirmDeleteTx, setConfirmDeleteTx] = useState<CreditTx | null>(null);
   const [billAccount, setBillAccount] = useState<CreditAccount | null>(null);
   const [receiptTx, setReceiptTx] = useState<{ tx: CreditTx; account: CreditAccount } | null>(null);
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [billingId, setBillingId] = useState<string | null>(null);
+
+  // Open tab sessions — map of credit_account_id → tab_id
+  const [openTabs, setOpenTabs] = useState<Record<string, string>>({});
+  const [endingTabId, setEndingTabId] = useState<string | null>(null);
+
+  // Load open tabs for all accounts whenever the accounts list changes
+  useEffect(() => {
+    if (!ownerId || accounts.length === 0) return;
+    supabase
+      .from("credit_transactions")
+      .select("id, credit_account_id")
+      .eq("owner_id", ownerId)
+      .eq("tab_status", "open")
+      .then(({ data }) => {
+        const map: Record<string, string> = {};
+        for (const row of (data ?? []) as { id: string; credit_account_id: string }[]) {
+          map[row.credit_account_id] = row.id;
+        }
+        setOpenTabs(map);
+      });
+  }, [ownerId, accounts]);
+
+  const endTab = async (account: CreditAccount) => {
+    const tabTxId = openTabs[account.id];
+    if (!tabTxId) return;
+    setEndingTabId(account.id);
+
+    // Check if any orders were added — fetch the tab row amount first
+    const { data: tabRow } = await supabase
+      .from("credit_transactions")
+      .select("amount")
+      .eq("id", tabTxId)
+      .single();
+
+    const { error } = await supabase.rpc("close_credit_tab", { p_tab_tx_id: tabTxId });
+    setEndingTabId(null);
+    if (error) { toast.error("Failed to close tab: " + error.message); return; }
+
+    if (!tabRow || Number(tabRow.amount) === 0) {
+      toast.success("Tab cancelled — no charges recorded");
+    } else {
+      toast.success(`Tab closed for ${account.full_name}`);
+    }
+    setOpenTabs((prev) => { const next = { ...prev }; delete next[account.id]; return next; });
+    onRefresh();
+  };
+  const handleBillShare = async (account: CreditAccount) => {
+    setBillingId(account.id);
+    try {
+      const safeName = account.full_name.replace(/\s+/g, "-").toLowerCase();
+      const filename = `credit-bill-${safeName}.pdf`;
+      if (Capacitor.isNativePlatform()) {
+        const b64 = await buildBillPdf(account, ownerName);
+        if (!b64) { setBillingId(null); return; }
+        const { Filesystem, Directory } = await import("@capacitor/filesystem");
+        const { Share } = await import("@capacitor/share");
+        const base64Data = b64.replace(/^data:[^;]+;base64,/, "");
+        const writeResult = await Filesystem.writeFile({ path: filename, data: base64Data, directory: Directory.Cache });
+        await Share.share({ title: `Credit Bill — ${account.full_name}`, text: `Hi ${account.full_name}, please find your credit bill attached.`, url: writeResult.uri, dialogTitle: "Send Bill" });
+      } else {
+        const b64 = await buildBillPdf(account, ownerName);
+        if (b64) { await downloadPdf(filename, b64); toast.success("Bill downloaded"); }
+      }
+    } catch (e: any) {
+      if (!String(e?.message ?? "").includes("cancel")) toast.error("Failed: " + (e?.message ?? "unknown"));
+    }
+    setBillingId(null);
+  };
   // Inline payment
   const [payAmount, setPayAmount]   = useState("");
   const [padOpen, setPadOpen]       = useState(false);
   const [paying, setPaying]         = useState(false);
 
+  // Desktop keyboard support for the inline payment numpad
+  useEffect(() => {
+    if (!padOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key >= "0" && e.key <= "9") { e.preventDefault(); setPayAmount(v => { const dotIdx = v.indexOf("."); if (dotIdx !== -1 && v.length - dotIdx > 2) return v; return v === "0" ? e.key : v + e.key; }); }
+      else if (e.key === ".") { e.preventDefault(); setPayAmount(v => v.includes(".") ? v : v + "."); }
+      else if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); setPayAmount(v => v.slice(0, -1)); }
+      else if (e.key === "Enter") { e.preventDefault(); setPadOpen(false); }
+      else if (e.key === "Escape") { e.preventDefault(); setPadOpen(false); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [padOpen]);
+
   const loadTxs = async (accountId: string) => {
     setTxLoading(true);
     const { data } = await supabase
       .from("credit_transactions")
-      .select("id, credit_account_id, type, amount, note, items, created_at")
+      .select("id, credit_account_id, type, amount, note, items, created_at, tab_status")
       .eq("credit_account_id", accountId)
       .order("created_at", { ascending: false });
     setTxs((data ?? []) as CreditTx[]);
@@ -956,6 +1054,27 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
     if (amt > Number(account.balance_owed)) { toast.error(`Cannot exceed balance owed ($${Number(account.balance_owed).toFixed(2)})`); return; }
     if (!profile) return;
     setPaying(true);
+    if (editingPaymentId) {
+      const oldTx = txs.find((t) => t.id === editingPaymentId);
+      if (oldTx) {
+        await supabase.from("credit_transactions").delete().eq("id", oldTx.id);
+        const ownerId = profile?.role === "owner" ? profile.id : (profile as any)?.parent_id;
+        if (ownerId && profile?.id) {
+          const t = new Date(oldTx.created_at);
+          await (supabase as any).rpc("delete_credit_charge_wallet_rows", {
+            p_owner_id:   ownerId,
+            p_cashier_id: profile.id,
+            p_from_time:  new Date(t.getTime() - 5000).toISOString(),
+            p_to_time:    new Date(t.getTime() + 5000).toISOString(),
+          });
+        }
+        await supabase.rpc("reduce_credit_balance", {
+          p_credit_account_id: oldTx.credit_account_id,
+          p_amount: -oldTx.amount,
+        });
+      }
+      setEditingPaymentId(null);
+    }
     const { error } = await supabase.rpc("record_credit_payment", {
       p_credit_account_id: account.id,
       p_cashier_id: profile.id,
@@ -963,8 +1082,9 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
     });
     setPaying(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(amt >= Number(account.balance_owed) ? `${account.full_name}'s tab fully settled!` : `Payment of $${amt.toFixed(2)} recorded`);
+    toast.success(editingPaymentId ? "Payment updated" : (amt >= Number(account.balance_owed) ? `${account.full_name}'s tab fully settled!` : `Payment of $${amt.toFixed(2)} recorded`));
     setPayAmount("");
+    setEditingPaymentId(null);
     loadTxs(account.id);
     onRefresh();
   };
@@ -983,7 +1103,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
     // (client-side delete is blocked by RLS when cashier tries to delete owner's row)
     if (ownerId && profile?.id) {
       const t = new Date(tx.created_at);
-      await (supabase.rpc as any)("delete_credit_charge_wallet_rows", {
+      await (supabase as any).rpc("delete_credit_charge_wallet_rows", {
         p_owner_id:   ownerId,
         p_cashier_id: profile.id,
         p_from_time:  new Date(t.getTime() - 5000).toISOString(),
@@ -1018,6 +1138,38 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
     onRefresh();
   };
 
+  const deletePayment = async (tx: CreditTx) => {
+    setDeletingId(tx.id);
+    const ownerId = profile?.role === "owner" ? profile.id : (profile as any)?.parent_id;
+
+    const { error } = await supabase
+      .from("credit_transactions")
+      .delete()
+      .eq("id", tx.id);
+    if (error) { toast.error(error.message); setDeletingId(null); return; }
+
+    if (ownerId && profile?.id) {
+      const t = new Date(tx.created_at);
+      await (supabase as any).rpc("delete_credit_charge_wallet_rows", {
+        p_owner_id:   ownerId,
+        p_cashier_id: profile.id,
+        p_from_time:  new Date(t.getTime() - 5000).toISOString(),
+        p_to_time:    new Date(t.getTime() + 5000).toISOString(),
+      });
+    }
+
+    const { error: balErr } = await supabase.rpc("reduce_credit_balance", {
+      p_credit_account_id: tx.credit_account_id,
+      p_amount: -tx.amount,
+    });
+    if (balErr) { toast.error("Transaction deleted but balance update failed"); setDeletingId(null); return; }
+
+    setDeletingId(null);
+    toast.success("Payment removed — balance restored");
+    loadTxs(tx.credit_account_id);
+    onRefresh();
+  };
+
   if (loading) return <Spinner />;
   if (accounts.length === 0)
     return (
@@ -1029,12 +1181,40 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
 
   return (
     <div className="space-y-2">
-      {accounts.map((a) => (
+      {accounts.map((a) => {
+        const hasOpenTab = !!openTabs[a.id];
+        return (
         <div
           key={a.id}
-          className="rounded-2xl border border-border overflow-hidden"
-          style={{ background: "var(--gradient-card)" }}
+          className="rounded-2xl border overflow-hidden"
+          style={{
+            background: "var(--gradient-card)",
+            borderColor: hasOpenTab ? "rgba(251,146,60,0.5)" : "var(--border)",
+          }}
         >
+          {/* Tab running banner */}
+          {hasOpenTab && (
+            <div
+              className="flex items-center justify-between px-4 py-2 border-b"
+              style={{ background: "rgba(251,146,60,0.1)", borderColor: "rgba(251,146,60,0.3)" }}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-base">🍺</span>
+                <span className="text-xs font-black" style={{ color: "var(--primary)" }}>Tab Running</span>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); endTab(a); }}
+                disabled={endingTabId === a.id}
+                className="flex items-center gap-1.5 px-3 h-8 rounded-xl text-xs font-black transition active:scale-95 disabled:opacity-50"
+                style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#b91c1c" }}
+              >
+                {endingTabId === a.id
+                  ? <div className="h-3 w-3 rounded-full border-2 border-red-400 border-t-transparent animate-spin" />
+                  : "🔴 End Tab"}
+              </button>
+            </div>
+          )}
+
           {/* Account row */}
           <div
             className="p-4 cursor-pointer"
@@ -1054,7 +1234,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
                 {/* Amount owed box */}
                 <div className="w-16 h-16 rounded-2xl flex items-center justify-center border border-red-400/30"
                   style={{ background: "rgba(248,113,113,0.08)" }}>
-                  <span className="text-sm font-black text-red-400 text-center leading-tight px-1">
+                  <span className="text-sm font-black text-red-700 text-center leading-tight px-1">
                     ${Number(a.balance_owed).toFixed(2)}
                   </span>
                 </div>
@@ -1093,26 +1273,38 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
 
               {/* ── Inline payment input ── */}
               <div className="py-3 border-b border-border/40 mb-2">
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">Record Payment</p>
-                <div className="flex gap-2">
-                  {/* Tappable amount display — opens numpad */}
-                  <button
-                    onClick={() => setPadOpen((o) => !o)}
-                    className="flex items-center flex-[2] h-14 rounded-xl border border-input bg-background px-3 gap-1 text-left"
-                  >
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">
+                  {editingPaymentId ? "Update Payment" : "Record Payment"}
+                </p>
+                 <div className="flex gap-2">
+                   {/* Tappable amount display — opens numpad */}
+                  <div className="flex items-center flex-1 min-w-0 h-14 rounded-xl border border-input bg-background px-3 gap-1 text-left">
                     <span className="text-base font-bold text-muted-foreground">$</span>
-                    <span className={`text-xl font-black flex-1 ${payAmount ? "text-foreground" : "text-muted-foreground"}`}>
-                      {payAmount || `0.00`}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">max ${Number(a.balance_owed).toFixed(2)}</span>
-                  </button>
+                    <input
+                      type="text"
+                      inputMode={Capacitor.isNativePlatform() ? "none" : "decimal"}
+                      readOnly={Capacitor.isNativePlatform()}
+                      value={payAmount}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "" || /^\d*\.?\d*$/.test(val)) {
+                          setPayAmount(val);
+                        }
+                      }}
+                      onFocus={() => setPadOpen(true)}
+                      onClick={() => setPadOpen(true)}
+                      placeholder="0.00"
+                      className="flex-1 bg-transparent outline-none text-xl font-black min-w-0"
+                    />
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">max ${Number(a.balance_owed).toFixed(2)}</span>
+                  </div>
                   <Button
                     className="h-14 px-6 font-black text-base shrink-0 rounded-xl"
                     disabled={paying || !payAmount}
                     onClick={() => { setPadOpen(false); submitPayment(a); }}
                     style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
                   >
-                    {paying ? <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" /> : "Pay"}
+                    {paying ? <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" /> : (editingPaymentId ? "Update" : "Pay")}
                   </Button>
                 </div>
 
@@ -1165,32 +1357,69 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
                   const date = dt.toLocaleDateString("en-GB");
                   const time = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
                   const isCharge = tx.type === "charge";
-                  // Deletable only if it's a charge AND it's newer than the last payment
-                  const canDelete = isCharge && (lastPaymentIdx === -1 || idx < lastPaymentIdx);
+                  const isPayment = tx.type === "payment";
+                  // Charges deletable if newer than last payment; payments only if it's the latest one
+                  const canDelete = (!isCharge && !isPayment) ? false : (isPayment ? idx === lastPaymentIdx : (lastPaymentIdx === -1 || idx < lastPaymentIdx));
+                  const canEdit = isPayment && expanded === a.id;
+                  // Highlight the single tab row when it's open
+                  const isTabCharge = isCharge && tx.tab_status != null;
                   return (
                     <div
                       key={tx.id}
                       className="flex items-start justify-between py-2.5 border-b border-border/30 last:border-0"
+                      style={isTabCharge ? { background: "rgba(251,146,60,0.06)", borderRadius: "8px", paddingLeft: "8px", paddingRight: "4px", marginBottom: "2px" } : {}}
                     >
                       <div className="flex-1 min-w-0 pr-2">
-                        <p className="text-xs font-bold leading-snug">
-                          {tx.note ?? (isCharge ? "Credit charge" : "Payment received")}
-                        </p>
+                        {isTabCharge && (
+                          <span
+                            className="inline-block text-[9px] font-black px-1.5 py-0.5 rounded-full mb-0.5"
+                            style={{ background: "rgba(251,146,60,0.2)", color: "var(--primary)" }}
+                          >
+                            🍺 TAB
+                          </span>
+                        )}
+                        {isTabCharge && tx.items && tx.items.length > 0 ? (
+                          <div className="space-y-0.5">
+                            {tx.items.map((item: any, i: number) => (
+                              <p key={i} className="text-xs font-bold leading-snug">
+                                {item.qty}x {item.name}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs font-bold leading-snug">
+                            {tx.note ?? (isCharge ? "Credit charge" : "Payment received")}
+                          </p>
+                        )}
                         <p className="text-[10px] text-muted-foreground mt-0.5">{date} · {time}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                        <span className={`text-sm font-black ${isCharge ? "text-red-400" : "text-green-400"}`}>
+                        <span className={`text-sm font-black ${isCharge ? "text-red-700" : "text-green-700"}`}>
                           {isCharge ? "+" : "-"}${Number(tx.amount).toFixed(2)}
                         </span>
-                        {/* Per-record PDF button */}
+                        {/* Per-record receipt button */}
                         <button
-                          onClick={() => setReceiptTx({ tx, account: a })}
+                          onClick={(e) => { e.stopPropagation(); setReceiptTx({ tx, account: a }); }}
                           className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-primary/10 transition"
                           style={{ color: "var(--primary)" }}
-                          title="View receipt"
+                          title="Print bill"
                         >
                           <Printer className="h-3.5 w-3.5" />
                         </button>
+                        {canEdit && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingPaymentId(tx.id);
+                              setPayAmount(String(tx.amount));
+                            }}
+                            className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-primary/10 transition"
+                            style={{ color: "var(--primary)" }}
+                            title="Edit payment"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         {canDelete && (
                           <button
                             onClick={() => setConfirmDeleteTx(tx)}
@@ -1203,7 +1432,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
                             }
                           </button>
                         )}
-                        {!canDelete && <div className="h-7 w-7" />}
+                        {!canDelete && !canEdit && <div className="h-7 w-7" />}
                       </div>
                     </div>
                   );
@@ -1213,7 +1442,8 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
 
       {/* ── Confirm delete modal ── */}
       {confirmDeleteTx && (
@@ -1225,8 +1455,8 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
               </div>
               <h3 className="font-black text-base">Delete Record?</h3>
               <p className="text-xs text-muted-foreground mt-1 leading-snug">
-                {confirmDeleteTx.note ?? "This charge"}<br />
-                <span className="font-bold text-red-400">${Number(confirmDeleteTx.amount).toFixed(2)}</span> will be removed from the balance.
+                {confirmDeleteTx.note ?? (confirmDeleteTx.type === "payment" ? "This payment" : "This charge")}<br />
+                <span className="font-bold text-red-700">${Number(confirmDeleteTx.amount).toFixed(2)}</span> {confirmDeleteTx.type === "payment" ? "will be added back to the balance" : "will be removed from the balance"}.
               </p>
             </div>
             <div className="px-6 pb-6 pt-4 flex gap-3">
@@ -1236,7 +1466,12 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
               <Button
                 className="flex-1 h-11 font-black bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 disabled={deletingId === confirmDeleteTx.id}
-                onClick={() => { const tx = confirmDeleteTx; setConfirmDeleteTx(null); deleteCharge(tx); }}
+                onClick={() => {
+                  const tx = confirmDeleteTx;
+                  setConfirmDeleteTx(null);
+                  if (tx.type === "payment") deletePayment(tx);
+                  else deleteCharge(tx);
+                }}
               >
                 {deletingId === confirmDeleteTx.id
                   ? <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
@@ -1247,13 +1482,14 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
         </div>
       )}
 
+      {/* Single-record receipt modal */}
+      {receiptTx && (
+        <SingleReceiptModal tx={receiptTx.tx} account={receiptTx.account} ownerName={ownerName} onClose={() => setReceiptTx(null)} />
+      )}
+
       {/* Bill modal */}
       {billAccount && (
         <BillModal account={billAccount} ownerName={ownerName} onClose={() => setBillAccount(null)} />
-      )}
-      {/* Single receipt modal */}
-      {receiptTx && (
-        <SingleReceiptModal tx={receiptTx.tx} account={receiptTx.account} ownerName={ownerName} onClose={() => setReceiptTx(null)} />
       )}
     </div>
   );
@@ -1262,7 +1498,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
 // ── Closed Tab ─────────────────────────────────────────────────────────────────
 function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditAccount[]; loading: boolean; onRefresh: () => void; onEdit: (a: CreditAccount) => void }) {
   const { profile } = useAuth();
-  const ownerName = profile?.username ?? "Store";
+  const ownerName = profile?.username ?? "Bar";
   const [expanded, setExpanded]   = useState<string | null>(null);
   const [txs, setTxs]             = useState<CreditTx[]>([]);
   const [txLoading, setTxLoading] = useState(false);
@@ -1270,6 +1506,30 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
   const [deleting, setDeleting]   = useState(false);
   const [billAccount, setBillAccount] = useState<CreditAccount | null>(null);
   const [receiptTx, setReceiptTx] = useState<{ tx: CreditTx; account: CreditAccount } | null>(null);
+  const [billingId, setBillingId] = useState<string | null>(null);
+
+  const handleBillShare = async (account: CreditAccount) => {
+    setBillingId(account.id);
+    try {
+      const safeName = account.full_name.replace(/\s+/g, "-").toLowerCase();
+      const filename = `credit-bill-${safeName}.pdf`;
+      if (Capacitor.isNativePlatform()) {
+        const b64 = await buildBillPdf(account, ownerName);
+        if (!b64) { setBillingId(null); return; }
+        const { Filesystem, Directory } = await import("@capacitor/filesystem");
+        const { Share } = await import("@capacitor/share");
+        const base64Data = b64.replace(/^data:[^;]+;base64,/, "");
+        const writeResult = await Filesystem.writeFile({ path: filename, data: base64Data, directory: Directory.Cache });
+        await Share.share({ title: `Credit Bill — ${account.full_name}`, text: `Hi ${account.full_name}, please find your credit bill attached.`, url: writeResult.uri, dialogTitle: "Send Bill" });
+      } else {
+        const b64 = await buildBillPdf(account, ownerName);
+        if (b64) { await downloadPdf(filename, b64); toast.success("Bill downloaded"); }
+      }
+    } catch (e: any) {
+      if (!String(e?.message ?? "").includes("cancel")) toast.error("Failed: " + (e?.message ?? "unknown"));
+    }
+    setBillingId(null);
+  };
 
   const toggleExpand = async (accountId: string) => {
     if (expanded === accountId) { setExpanded(null); setTxs([]); return; }
@@ -1283,7 +1543,6 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
     setTxs((data ?? []) as CreditTx[]);
     setTxLoading(false);
   };
-
 
   const deleteAccount = async (account: CreditAccount) => {
     setDeleting(true);
@@ -1383,24 +1642,43 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
                   const date = dt.toLocaleDateString("en-GB");
                   const time = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
                   const isCharge = tx.type === "charge";
+                  const isTabCharge = isCharge && tx.tab_status != null;
                   return (
                     <div key={tx.id} className="flex items-start justify-between py-2.5 border-b border-border/30 last:border-0">
                       <div className="flex-1 min-w-0 pr-2">
-                        <p className="text-xs font-bold leading-snug">
-                          {tx.note ?? (isCharge ? "Credit charge" : "Payment received")}
-                        </p>
+                        {isTabCharge && (
+                          <span
+                            className="inline-block text-[9px] font-black px-1.5 py-0.5 rounded-full mb-0.5"
+                            style={{ background: "rgba(251,146,60,0.2)", color: "var(--primary)" }}
+                          >
+                            🍺 TAB
+                          </span>
+                        )}
+                        {isTabCharge && tx.items && tx.items.length > 0 ? (
+                          <div className="space-y-0.5">
+                            {tx.items.map((item: any, i: number) => (
+                              <p key={i} className="text-xs font-bold leading-snug">
+                                {item.qty}x {item.name}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs font-bold leading-snug">
+                            {tx.note ?? (isCharge ? "Credit charge" : "Payment received")}
+                          </p>
+                        )}
                         <p className="text-[10px] text-muted-foreground mt-0.5">{date} · {time}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                        <span className={`text-sm font-black ${isCharge ? "text-red-400" : "text-green-400"}`}>
+                        <span className={`text-sm font-black ${isCharge ? "text-red-700" : "text-green-700"}`}>
                           {isCharge ? "+" : "-"}${Number(tx.amount).toFixed(2)}
                         </span>
                         {/* Per-record receipt button */}
                         <button
-                          onClick={() => setReceiptTx({ tx, account: a })}
+                          onClick={(e) => { e.stopPropagation(); setReceiptTx({ tx, account: a }); }}
                           className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-primary/10 transition"
                           style={{ color: "var(--primary)" }}
-                          title="View receipt"
+                          title="Print bill"
                         >
                           <Printer className="h-3.5 w-3.5" />
                         </button>
@@ -1445,13 +1723,14 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
         </div>
       )}
 
+      {/* Single-record receipt modal */}
+      {receiptTx && (
+        <SingleReceiptModal tx={receiptTx.tx} account={receiptTx.account} ownerName={ownerName} onClose={() => setReceiptTx(null)} />
+      )}
+
       {/* Bill modal */}
       {billAccount && (
         <BillModal account={billAccount} ownerName={ownerName} onClose={() => setBillAccount(null)} />
-      )}
-      {/* Single receipt modal */}
-      {receiptTx && (
-        <SingleReceiptModal tx={receiptTx.tx} account={receiptTx.account} ownerName={ownerName} onClose={() => setReceiptTx(null)} />
       )}
     </div>
   );
@@ -1461,7 +1740,6 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
 type ActiveField = null | "name" | "idNumber" | "contact";
 
 function CreateTab({ ownerId, onCreated }: { ownerId: string; onCreated: (a: CreditAccount) => void }) {
-  const isTouchDevice = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
   const [name, setName]         = useState("");
   const [contact, setContact]   = useState("");
   const [idType, setIdType]     = useState<"drivers_permit" | "national_id">("national_id");
@@ -1508,90 +1786,96 @@ function CreateTab({ ownerId, onCreated }: { ownerId: string; onCreated: (a: Cre
       </div>
 
       {done && (
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-green-500/10 border border-green-500/30 text-sm text-green-400 font-semibold">
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-green-500/10 border border-green-500/30 text-sm text-green-700 font-semibold">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           Customer created. View in Closed tab.
         </div>
       )}
 
-      <form onSubmit={submit} className="space-y-3">
-        {/* Full Name */}
-        <div>
-          <Label>Full Name *</Label>
-          {isTouchDevice ? (
-            <>
-              <button type="button" onClick={() => { setDone(false); toggle("name"); }}
-                className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
-                style={{ background: "#ffffff" }}>
-                <span className={`text-sm font-black ${name ? "text-black" : "text-gray-400"}`}>
-                  {name || "e.g. John Smith"}
-                </span>
-              </button>
-              {activeField === "name" && <AlphaKeyboard value={name} onChange={(v) => { setName(v); setDone(false); }} onDone={() => setActiveField(null)} />}
-            </>
-          ) : (
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => { setName(e.target.value); setDone(false); }}
-              placeholder="e.g. John Smith"
-              required
-              className="w-full h-10 rounded-md border border-input px-3 text-sm font-semibold mt-1 outline-none focus:ring-1 focus:ring-primary"
-              style={{ background: "#ffffff", color: "#000000" }}
-            />
-          )}
-        </div>
+       <form onSubmit={submit} className="space-y-3">
+         {/* Full Name */}
+         <div>
+           <Label>Full Name *</Label>
+           <input
+             type="text"
+             value={name}
+             onChange={(e) => { setDone(false); setName(e.target.value); }}
+             onFocus={() => setActiveField("name")}
+             readOnly={Capacitor.isNativePlatform()}
+             placeholder="e.g. John Smith"
+             className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
+             style={{ background: "#ffffff" }}
+           />
+           {activeField === "name" && <AlphaKeyboard value={name} onChange={setName} onDone={() => setActiveField(null)} />}
+         </div>
 
-        {/* ID Type */}
-        <div>
-          <Label htmlFor="credit-idtype">ID Type</Label>
-          <select id="credit-idtype" value={idType}
-            onChange={(e) => setIdType(e.target.value as "drivers_permit" | "national_id")}
-            className="w-full h-10 rounded-md border border-input px-3 text-sm font-semibold mt-1"
-            style={{ background: "#ffffff", color: "#000000" }}>
-            <option value="drivers_permit">Driver's Permit</option>
-            <option value="national_id">National ID</option>
-          </select>
-        </div>
+         {/* ID Type */}
+         <div>
+           <Label htmlFor="credit-idtype">ID Type</Label>
+           <select id="credit-idtype" value={idType}
+             onChange={(e) => setIdType(e.target.value as "drivers_permit" | "national_id")}
+             className="w-full h-10 rounded-md border border-input px-3 text-sm font-semibold mt-1"
+             style={{ background: "#ffffff", color: "#000000" }}>
+             <option value="drivers_permit">Driver's Permit</option>
+             <option value="national_id">National ID</option>
+           </select>
+         </div>
 
-        {/* ID Number */}
-        <div>
-          <Label>ID Number</Label>
-          <button type="button" onClick={() => toggle("idNumber")}
-            className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
-            style={{ background: "#ffffff" }}>
-            <span className={`text-sm font-black ${idNumber ? "text-black" : "text-gray-400"}`}>
-              {idNumber || "e.g. 00000000"}
-            </span>
-          </button>
-          {activeField === "idNumber" && (
-            <NumPad value={idNumber} onChange={setIdNumber} maxLen={20} onDone={() => setActiveField(null)} />
-          )}
-        </div>
-
-        {/* Contact Number */}
-        <div>
-          <Label>Contact Number</Label>
-          <div className="flex items-center mt-1">
-            <span className="h-10 px-3 flex items-center rounded-l-md border border-r-0 border-input bg-muted text-sm font-bold text-muted-foreground select-none">868</span>
-            <button type="button" onClick={() => toggle("contact")}
-              className="flex-1 h-10 rounded-r-md border border-input px-3 text-left"
-              style={{ background: "#ffffff" }}>
-              <span className={`text-sm font-black ${contact ? "text-black" : "text-gray-400"}`}>
-                {contact || "XXX-XXXX"}
-              </span>
-            </button>
+          {/* ID Number */}
+          <div>
+            <Label>ID Number</Label>
+             <input
+               type="text"
+               inputMode={Capacitor.isNativePlatform() ? "none" : "numeric"}
+               readOnly={Capacitor.isNativePlatform()}
+               value={idNumber}
+               onChange={(e) => {
+                 const v = e.target.value.replace(/[^0-9]/g, "").slice(0, 7);
+                 setIdNumber(v);
+               }}
+               onFocus={() => setActiveField("idNumber")}
+               placeholder="e.g. 00000000"
+               maxLength={7}
+               className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
+               style={{ background: "#ffffff" }}
+             />
+            {activeField === "idNumber" && (
+              <NumPad value={idNumber} onChange={setIdNumber} maxLen={20} onDone={() => setActiveField(null)} />
+            )}
           </div>
-          {activeField === "contact" && (
-            <ContactNumPad value={contact} onChange={setContact} onDone={() => setActiveField(null)} />
-          )}
-        </div>
 
-        <Button type="submit" disabled={busy || !name.trim() || (contact.replace("-","").length > 0 && contact.replace("-","").length < 7)} className="w-full h-12 font-black text-base"
-          style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>
-          {busy ? "Creating…" : "Create Account"}
-        </Button>
-      </form>
+          {/* Contact Number */}
+          <div>
+            <Label>Contact Number</Label>
+            <div className="flex items-center mt-1">
+              <span className="h-10 px-3 flex items-center rounded-l-md border border-r-0 border-input bg-muted text-sm font-bold text-muted-foreground select-none">868</span>
+               <input
+                 type="text"
+                 inputMode={Capacitor.isNativePlatform() ? "none" : "tel"}
+                 readOnly={Capacitor.isNativePlatform()}
+                 value={contact}
+                 onChange={(e) => {
+                   const digits = e.target.value.replace(/[^0-9]/g, "").slice(0, 7);
+                   const formatted = digits.length > 3 ? digits.slice(0, 3) + "-" + digits.slice(3) : digits;
+                   setContact(formatted);
+                 }}
+                 onFocus={() => setActiveField("contact")}
+                 placeholder="XXX-XXXX"
+                 maxLength={8}
+                 className="flex-1 h-10 rounded-r-md border border-input px-3 text-left"
+                 style={{ background: "#ffffff" }}
+               />
+            </div>
+            {activeField === "contact" && (
+              <ContactNumPad value={contact} onChange={setContact} onDone={() => setActiveField(null)} />
+            )}
+          </div>
+
+         <Button type="submit" disabled={busy || !name.trim() || (contact.replace("-","").length > 0 && contact.replace("-","").length < 7)} className="w-full h-12 font-black text-base"
+           style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>
+           {busy ? "Creating…" : "Create Account"}
+         </Button>
+       </form>
     </div>
   );
 }
@@ -1600,6 +1884,16 @@ function CreateTab({ ownerId, onCreated }: { ownerId: string; onCreated: (a: Cre
 function NumPad({ value, onChange, maxLen = 20, onDone }: {
   value: string; onChange: (v: string) => void; maxLen?: number; onDone: () => void;
 }) {
+  useNumpadKeyboard({
+    enabled: true,
+    allowDecimal: false,
+    onKey: (k) => {
+      if (k === "⌫") onChange(value.slice(0, -1));
+      else if (value.length < maxLen) onChange(value + k);
+    },
+    onEnter: onDone,
+  });
+
   return (
     <div className="mt-2">
       <div className="grid grid-cols-3 gap-1.5">
@@ -1635,6 +1929,14 @@ function ContactNumPad({ value, onChange, onDone }: {
       onChange(d.length > 3 ? d.slice(0, 3) + "-" + d.slice(3) : d);
     }
   };
+
+  useNumpadKeyboard({
+    enabled: true,
+    allowDecimal: false,
+    onKey: handle,
+    onEnter: () => { if (complete) onDone(); },
+  });
+
   return (
     <div className="mt-2">
       {!complete && digits.length > 0 && (
@@ -1715,7 +2017,6 @@ function EditCustomerModal({ account, onClose, onSaved }: {
   const [idNumber, setIdNumber] = useState(parseIdNumber(account.id_number));
   const [busy, setBusy] = useState(false);
   const [activeField, setActiveField] = useState<null | "name" | "idNumber" | "contact">(null);
-  const isTouchDevice = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1759,26 +2060,17 @@ function EditCustomerModal({ account, onClose, onSaved }: {
           <form onSubmit={submit} className="space-y-3">
             <div>
               <Label>Full Name *</Label>
-              {isTouchDevice ? (
-                <>
-                  <button type="button" onClick={() => setActiveField(f => f === "name" ? null : "name")}
-                    className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
-                    style={{ background: "#ffffff" }}>
-                    <span className={`text-sm font-black ${name ? "text-black" : "text-gray-400"}`}>{name || "e.g. John Smith"}</span>
-                  </button>
-                  {activeField === "name" && <AlphaKeyboard value={name} onChange={setName} onDone={() => setActiveField(null)} />}
-                </>
-              ) : (
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. John Smith"
-                  required
-                  className="w-full h-10 rounded-md border border-input px-3 text-sm font-semibold mt-1 outline-none focus:ring-1 focus:ring-primary"
-                  style={{ background: "#ffffff", color: "#000000" }}
-                />
-              )}
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onFocus={() => setActiveField("name")}
+                readOnly={Capacitor.isNativePlatform()}
+                placeholder="e.g. John Smith"
+                className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
+                style={{ background: "#ffffff" }}
+              />
+              {activeField === "name" && <AlphaKeyboard value={name} onChange={setName} onDone={() => setActiveField(null)} />}
             </div>
             <div>
               <Label>ID Type</Label>
@@ -1789,27 +2081,48 @@ function EditCustomerModal({ account, onClose, onSaved }: {
                 <option value="national_id">National ID</option>
               </select>
             </div>
-            <div>
-              <Label>ID Number</Label>
-              <button type="button" onClick={() => setActiveField(f => f === "idNumber" ? null : "idNumber")}
-                className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
-                style={{ background: "#ffffff" }}>
-                <span className={`text-sm font-black ${idNumber ? "text-black" : "text-gray-400"}`}>{idNumber || "e.g. 00000000"}</span>
-              </button>
-              {activeField === "idNumber" && <NumPad value={idNumber} onChange={setIdNumber} maxLen={20} onDone={() => setActiveField(null)} />}
-            </div>
-            <div>
-              <Label>Contact Number</Label>
-              <div className="flex items-center mt-1">
-                <span className="h-10 px-3 flex items-center rounded-l-md border border-r-0 border-input bg-muted text-sm font-bold text-muted-foreground select-none">868</span>
-                <button type="button" onClick={() => setActiveField(f => f === "contact" ? null : "contact")}
-                  className="flex-1 h-10 rounded-r-md border border-input px-3 text-left"
-                  style={{ background: "#ffffff" }}>
-                  <span className={`text-sm font-black ${contact ? "text-black" : "text-gray-400"}`}>{contact || "XXX-XXXX"}</span>
-                </button>
+             <div>
+                <Label>ID Number</Label>
+                <input
+                  type="text"
+                  inputMode={Capacitor.isNativePlatform() ? "none" : "numeric"}
+                  readOnly={Capacitor.isNativePlatform()}
+                  value={idNumber}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/[^0-9]/g, "").slice(0, 7);
+                    setIdNumber(v);
+                  }}
+                  onFocus={() => setActiveField("idNumber")}
+                  placeholder="e.g. 00000000"
+                  maxLength={7}
+                  className="w-full h-10 rounded-md border border-input px-3 text-left mt-1"
+                  style={{ background: "#ffffff" }}
+                />
+                {activeField === "idNumber" && <NumPad value={idNumber} onChange={setIdNumber} maxLen={20} onDone={() => setActiveField(null)} />}
               </div>
-              {activeField === "contact" && <ContactNumPad value={contact} onChange={setContact} onDone={() => setActiveField(null)} />}
-            </div>
+              <div>
+                <Label>Contact Number</Label>
+                <div className="flex items-center mt-1">
+                  <span className="h-10 px-3 flex items-center rounded-l-md border border-r-0 border-input bg-muted text-sm font-bold text-muted-foreground select-none">868</span>
+                  <input
+                    type="text"
+                    inputMode={Capacitor.isNativePlatform() ? "none" : "tel"}
+                    readOnly={Capacitor.isNativePlatform()}
+                    value={contact}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/[^0-9]/g, "").slice(0, 7);
+                      const formatted = digits.length > 3 ? digits.slice(0, 3) + "-" + digits.slice(3) : digits;
+                      setContact(formatted);
+                    }}
+                    onFocus={() => setActiveField("contact")}
+                    placeholder="XXX-XXXX"
+                    maxLength={8}
+                    className="flex-1 h-10 rounded-r-md border border-input px-3 text-left"
+                    style={{ background: "#ffffff" }}
+                  />
+                </div>
+                {activeField === "contact" && <ContactNumPad value={contact} onChange={setContact} onDone={() => setActiveField(null)} />}
+              </div>
             <Button type="submit" disabled={busy || !name.trim() || (contact.replace("-","").length > 0 && contact.replace("-","").length < 7)}
               className="w-full h-12 font-black text-base"
               style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>

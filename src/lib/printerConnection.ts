@@ -5,6 +5,7 @@
  *   USB     — Web Serial API (Chrome/Edge on desktop; Chrome Android via USB-C/OTG)
  *   BT      — Web Bluetooth API (wireless thermal printers)
  *   Native  — Capacitor Android plugin (USB Host on POS terminals)
+ *   Electron — native serialport (Windows EXE) for USB printers + cash drawers
  *
  * The cash drawer is always wired through the printer, so once the printer is
  * connected, openDrawer() reuses the same port/device.
@@ -18,10 +19,17 @@
  *   pospro-printer-vid     -> decimal USB vendor id (USB mode only)
  *   pospro-printer-pid     -> decimal USB product id (USB mode only)
  *   pospro-printer-bt-name -> Bluetooth device name (BT mode only)
- *   pospro-drawer-pulse    -> hex ESC/POS pulse bytes (default: 1b70001919)
+ *   pospro-drawer-pulse    -> hex ESC/POS pulse bytes (default kicks pin 2 and pin 5)
  */
 
 import { Capacitor } from "@capacitor/core";
+import {
+  isElectronApp,
+  printBytesElectron,
+  openCashDrawerElectron,
+  getSavedPrinterPort,
+  clearPrinterConnection,
+} from "./electronPrinter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +65,9 @@ function read(key: string): string | null {
 }
 function clear(key: string) {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
+}
+function notifyPrinterChanged() {
+  try { window.dispatchEvent(new CustomEvent("pospro-printer-changed")); } catch { /* ignore */ }
 }
 
 // ─── Serial (USB) types ───────────────────────────────────────────────────────
@@ -107,9 +118,8 @@ function getBluetooth(): WebBluetoothAPI | null {
 // Standard BLE Serial Port Profile service/characteristic UUIDs
 const SPP_SERVICE = "000018f0-0000-1000-8000-00805f9b34fb";
 const SPP_CHAR    = "00002af1-0000-1000-8000-00805f9b34fb";
-// Fallback: Nordic UART Service
-const NUS_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const NUS_TX_CHAR = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+const ALT_SERVICE = "e7810a71-73ae-499d-8c15-faa9aef0c3f2";
+const ALT_CHAR    = "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f";
 
 // ─── Native Capacitor drawer types ───────────────────────────────────────────
 
@@ -125,7 +135,7 @@ function getNativeApi(): NativePrinterApi | null {
 
 // ─── ESC/POS drawer pulse ─────────────────────────────────────────────────────
 
-const DEFAULT_PULSE_HEX = "1b70001919";
+const DEFAULT_PULSE_HEX = "1b700019191b70011919";
 function getDrawerPulse(): Uint8Array {
   const hex = (read("pospro-drawer-pulse") ?? DEFAULT_PULSE_HEX).replace(/\s+/g, "");
   const pairs = hex.match(/[0-9a-fA-F]{2}/g) ?? [];
@@ -136,6 +146,10 @@ function getDrawerPulse(): Uint8Array {
 
 /** Returns the persisted connection info (no I/O — instant). */
 export function getConnectionInfo(): PrinterInfo {
+  if (isElectronApp()) {
+    const port = getSavedPrinterPort();
+    if (port) return { mode: "usb", label: `USB · ${port}` };
+  }
   const mode = (read("pospro-printer-mode") ?? "none") as PrinterMode;
   if (mode === "usb") {
     const vid = read("pospro-printer-vid");
@@ -152,6 +166,7 @@ export function getConnectionInfo(): PrinterInfo {
 
 /** Returns true if a printer was previously connected (mode ≠ "none"). */
 export function isPrinterConnected(): boolean {
+  if (isElectronApp()) return !!getSavedPrinterPort();
   return (read("pospro-printer-mode") ?? "none") !== "none";
 }
 
@@ -161,9 +176,15 @@ export function isPrinterConnected(): boolean {
  * Persists the VID/PID so future calls reuse the port silently.
  */
 export async function connectUSB(): Promise<ConnectResult> {
+  if (isElectronApp()) {
+    // Epson USB printers are Windows printers, not COM ports. Never auto-pick
+    // a serial device or open a second picker from here.
+    return { connected: false, mode: "usb", error: "Choose the printer in the connect window" };
+  }
+
   const serial = getSerial();
   if (!serial) {
-    return { connected: false, mode: "usb", error: "Web Serial not available — use Chrome/Edge or install the app" };
+    return { connected: false, mode: "usb", error: "Web Serial not available — use Chrome/Edge or install the Windows app" };
   }
   try {
     const port = await serial.requestPort();
@@ -173,6 +194,7 @@ export async function connectUSB(): Promise<ConnectResult> {
     if (vid != null) store("pospro-printer-vid", String(vid));
     if (pid != null) store("pospro-printer-pid", String(pid));
     store("pospro-printer-mode", "usb");
+    notifyPrinterChanged();
     const label = vid != null && pid != null ? `USB · VID ${vid} PID ${pid}` : "USB printer";
     return { connected: true, mode: "usb", label };
   } catch (e: unknown) {
@@ -193,11 +215,12 @@ export async function connectBluetooth(): Promise<ConnectResult> {
   try {
     const device = await bt.requestDevice({
       acceptAllDevices: true,
-      optionalServices: [SPP_SERVICE, NUS_SERVICE],
+      optionalServices: [SPP_SERVICE, ALT_SERVICE],
     });
     const name = device.name ?? "Bluetooth printer";
     store("pospro-printer-mode", "bt");
     store("pospro-printer-bt-name", name);
+    notifyPrinterChanged();
     return { connected: true, mode: "bt", label: `BT · ${name}` };
   } catch (e: unknown) {
     return { connected: false, mode: "bt", error: e instanceof Error ? e.message : String(e) };
@@ -210,6 +233,8 @@ export function disconnectPrinter(): void {
   clear("pospro-printer-vid");
   clear("pospro-printer-pid");
   clear("pospro-printer-bt-name");
+  clearPrinterConnection();
+  notifyPrinterChanged();
 }
 
 /**
@@ -218,6 +243,13 @@ export function disconnectPrinter(): void {
  * Opens, writes, then closes the connection.
  */
 export async function sendBytesToPrinter(bytes: Uint8Array): Promise<PrintResult> {
+  if (isElectronApp()) {
+    const port = getSavedPrinterPort();
+    if (!port) return { printed: false, mode: "none", error: "No printer paired — tap Connect Printer" };
+    const r = await printBytesElectron(port, bytes);
+    return { printed: r.success, mode: "usb", error: r.error, label: port };
+  }
+
   const mode = (read("pospro-printer-mode") ?? "none") as PrinterMode;
 
   // ── Capacitor native path ────────────────────────────────────────────────
@@ -281,14 +313,13 @@ export async function sendBytesToPrinter(bytes: Uint8Array): Promise<PrintResult
       const server = await device.gatt!.connect();
       let char: BtCharacteristic | undefined;
 
-      // Try SPP service first, fall back to NUS
       try {
         const svc = await server.getPrimaryService(SPP_SERVICE);
         char = await svc.getCharacteristic(SPP_CHAR);
       } catch {
         try {
-          const svc = await server.getPrimaryService(NUS_SERVICE);
-          char = await svc.getCharacteristic(NUS_TX_CHAR);
+          const svc = await server.getPrimaryService(ALT_SERVICE);
+          char = await svc.getCharacteristic(ALT_CHAR);
         } catch { /* char stays undefined */ }
       }
 
@@ -297,13 +328,12 @@ export async function sendBytesToPrinter(bytes: Uint8Array): Promise<PrintResult
         return { printed: false, mode: "bt", error: "Could not find print characteristic on device" };
       }
 
-      // Send in 512-byte chunks (BLE MTU limit)
-      const CHUNK = 512;
+      const CHUNK = 20;
       for (let i = 0; i < bytes.length; i += CHUNK) {
         const chunk = bytes.slice(i, i + CHUNK);
         try { await char.writeValueWithoutResponse(chunk); }
         catch { await char.writeValue(chunk); }
-        await new Promise((r) => setTimeout(r, 20));
+        await new Promise((r) => setTimeout(r, 10));
       }
 
       server.disconnect();
@@ -321,6 +351,13 @@ export async function sendBytesToPrinter(bytes: Uint8Array): Promise<PrintResult
  * Sends ESC/POS pulse via USB or Bluetooth — same device as the printer.
  */
 export async function openDrawerViaPrinter(): Promise<{ opened: boolean; error?: string }> {
+  if (isElectronApp()) {
+    const port = getSavedPrinterPort();
+    if (!port) return { opened: false, error: "No printer paired — tap Connect Printer" };
+    const pulseHex = (read("pospro-drawer-pulse") ?? DEFAULT_PULSE_HEX).replace(/\s+/g, "");
+    const r = await openCashDrawerElectron(port, pulseHex);
+    return { opened: !!r.success || !!r.opened, error: r.error };
+  }
   const pulse = getDrawerPulse();
   const result = await sendBytesToPrinter(pulse);
   return { opened: result.printed, error: result.error };

@@ -2,7 +2,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { friendlyError } from "@/lib/network-error";
 
-export const createCashier = async (data: { username: string; password: string; barOwnerId?: string; role?: string; jobTitle?: string }) => {
+export const createCashier = async (data: { username: string; password: string; firstName?: string; lastName?: string; barOwnerId?: string; role?: string; jobTitle?: string }) => {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error("Not authenticated");
 
@@ -21,6 +21,8 @@ export const createCashier = async (data: { username: string; password: string; 
       body: JSON.stringify({
         username: data.username,
         password: data.password,
+        first_name: data.firstName ?? "",
+        last_name: data.lastName ?? "",
         role: data.role ?? "cashier",
         ...(data.barOwnerId ? { bar_owner_id: data.barOwnerId } : {}),
         ...(data.jobTitle ? { job_title: data.jobTitle } : {}),

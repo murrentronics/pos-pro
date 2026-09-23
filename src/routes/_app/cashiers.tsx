@@ -8,12 +8,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import {
   Trash2, Eraser, UserPlus, User, Loader2, FileText, ChevronDown,
   Receipt, ArrowDownLeft, ArrowLeft, X, Download, KeyRound, Eye, EyeOff, DollarSign, CheckCircle2,
   Clock, LogIn, LogOut, CalendarDays, ChevronLeft, ChevronRight,
-  FileDown, Users, Pencil, Check, X,
+  FileDown, Users, Pencil,
 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -22,7 +26,12 @@ import {
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
 
-type Cashier = { id: string; username: string; wallet_balance: number; role?: string; job_title?: string; cashier_access?: string };
+type Cashier = { id: string; username: string; first_name?: string | null; last_name?: string | null; wallet_balance: number; role?: string; job_title?: string; cashier_access?: string };
+
+function shownName(p: { first_name?: string | null; username?: string | null }) {
+  const first = (p.first_name ?? "").trim();
+  return first || p.username || "";
+}
 
 type SalaryRecord = {
   id: string;
@@ -275,7 +284,7 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
   // Shared data
   const [timeCards, setTimeCards] = useState<TimeCardRow[]>([]);
   const [loading, setLoading]     = useState(true);
-  const [employees, setEmployees] = useState<{ id: string; username: string; role: string; job_title?: string }[]>([]);
+  const [employees, setEmployees] = useState<{ id: string; username: string; first_name?: string | null; role: string; job_title?: string }[]>([]);
   const [hoursSubTab, setHoursSubTab] = useState<"clock" | "timesheets">("clock");
 
   // Clock tab state
@@ -286,19 +295,26 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
   const [tsSelectedDate, setTsSelectedDate] = useState<string | null>(null);
   const [tsShowCal, setTsShowCal] = useState(false);
   const [tsPeriod, setTsPeriod] = useState<"day" | "week" | "month" | "year">("day");
-  const [tsStaffEmp, setTsStaffEmp] = useState<{ id: string; username: string; role: string; job_title?: string } | null>(null);
+  const [tsStaffEmp, setTsStaffEmp] = useState<{ id: string; username: string; first_name?: string | null; role: string; job_title?: string } | null>(null);
   const [tsShowStaffPicker, setTsShowStaffPicker] = useState(false);
   const [tsPdfBusy, setTsPdfBusy] = useState(false);
   const [openDate, setOpenDate] = useState<string | null>(null);
   const [openMonth, setOpenMonth] = useState<string | null>(null);
-  const [editingCardId, setEditingCardId] = useState<string | null>(null);
-  const [editOutTime, setEditOutTime] = useState("");
+  const [tsEditCard, setTsEditCard] = useState<TimeCardRow | null>(null);
+  const [tsEditField, setTsEditField] = useState<"in" | "out">("out");
+  const [tsEditDate, setTsEditDate] = useState("");
+  const [tsEditTime, setTsEditTime] = useState("12:00");
+  const [tsEditPeriod, setTsEditPeriod] = useState<"AM" | "PM">("PM");
+  const [tsEditInDate, setTsEditInDate] = useState("");
+  const [tsEditInTime, setTsEditInTime] = useState("12:00");
+  const [tsEditInPeriod, setTsEditInPeriod] = useState<"AM" | "PM">("AM");
+  const [tsEditBusy, setTsEditBusy] = useState(false);
 
   const loadEmployees = useCallback(async () => {
     const { data } = await supabase.from("profiles")
-      .select("id, username, role, job_title").eq("parent_id", ownerId)
+      .select("id, username, first_name, role, job_title").eq("parent_id", ownerId)
       .in("role", ["cashier", "manager", "custom"]).order("username", { ascending: true });
-    setEmployees((data ?? []) as { id: string; username: string; role: string; job_title?: string }[]);
+    setEmployees((data ?? []) as { id: string; username: string; first_name?: string | null; role: string; job_title?: string }[]);
   }, [ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadCards = useCallback(async () => {
@@ -312,18 +328,77 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
 
   useEffect(() => { loadEmployees(); loadCards(); }, [loadEmployees, loadCards]);
 
-  const handleSaveClockOut = async (tc: TimeCardRow) => {
-    if (!editOutTime) return;
-    // Parse "HH:MM" as Trinidad local time (UTC-4) and convert to UTC ISO
-    const [h, m] = editOutTime.split(":").map(Number);
-    const base = new Date(tc.work_date + "T00:00:00Z");
-    // Trinidad is UTC-4, so local HH:MM → UTC: add 4 hours offset
-    const utcMs = Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), h + 4, m, 0);
-    const iso = new Date(utcMs).toISOString();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from("time_cards").update({ clocked_out_at: iso }).eq("id", tc.id);
-    if (error) { toast.error(error.message); return; }
-    setEditingCardId(null);
+  function splitShiftIso(iso: string) {
+    const d = new Date(iso);
+    const date = d.toLocaleDateString("en-CA", { timeZone: "America/Port_of_Spain" });
+    const t = d.toLocaleTimeString("en-US", { timeZone: "America/Port_of_Spain", hour: "numeric", minute: "2-digit", hour12: true });
+    const [timeStr, period] = t.split(" ");
+    const [hh, mm] = timeStr.split(":");
+    return { date, time: `${hh.padStart(2, "0")}:${mm}`, period: (period === "AM" ? "AM" : "PM") as "AM" | "PM" };
+  }
+
+  function shiftIso(date: string, time: string, period: "AM" | "PM") {
+    let hours = parseInt(time.split(":")[0] || "0", 10);
+    const mins = parseInt(time.split(":")[1] || "0", 10);
+    if (period === "AM" && hours === 12) hours = 0;
+    if (period === "PM" && hours < 12) hours += 12;
+    return `${date}T${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:00-04:00`;
+  }
+
+  function slotBlocked(date: string, hour12: number, minute: number, period: "AM" | "PM") {
+    if (!date) return false;
+    const when = new Date(shiftIso(date, `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")}`, period));
+    if (tsEditField === "in") {
+      if (when.getTime() > Date.now()) return true;
+      if (tsEditCard?.clocked_out_at && when.getTime() >= new Date(tsEditCard.clocked_out_at).getTime()) return true;
+    } else if (tsEditCard?.clocked_in_at && when.getTime() <= new Date(tsEditCard.clocked_in_at).getTime()) {
+      return true;
+    }
+    return false;
+  }
+
+  function hourBlocked(date: string, hour12: number, period: "AM" | "PM") {
+    return slotBlocked(date, hour12, 0, period) && slotBlocked(date, hour12, 59, period);
+  }
+
+  function periodBlocked(date: string, period: "AM" | "PM") {
+    return Array.from({ length: 12 }, (_, i) => i + 1).every((h) => hourBlocked(date, h, period));
+  }
+
+  const handleTsEditSave = async () => {
+    if (!tsEditCard) return;
+    setTsEditBusy(true);
+    if (tsEditField === "out") {
+      if (!tsEditDate || !tsEditTime) { setTsEditBusy(false); return; }
+      const localIso = shiftIso(tsEditDate, tsEditTime, tsEditPeriod);
+      if (tsEditCard.clocked_in_at && new Date(localIso) <= new Date(tsEditCard.clocked_in_at)) {
+        toast.error("Clock out must be after clock in");
+        setTsEditBusy(false);
+        return;
+      }
+      const { error } = await (supabase as any).from("time_cards").update({ clocked_out_at: localIso }).eq("id", tsEditCard.id);
+      setTsEditBusy(false);
+      if (error) { toast.error(error.message); return; }
+      toast.success(`Clock out updated for ${tsEditCard.employee_name}`);
+    } else {
+      if (!tsEditInDate || !tsEditInTime) { setTsEditBusy(false); return; }
+      const localIso = shiftIso(tsEditInDate, tsEditInTime, tsEditInPeriod);
+      if (tsEditCard.clocked_out_at && new Date(localIso) >= new Date(tsEditCard.clocked_out_at)) {
+        toast.error("Clock in must be before clock out");
+        setTsEditBusy(false);
+        return;
+      }
+      if (new Date(localIso) > new Date()) {
+        toast.error("Clock in cannot be set to a future time");
+        setTsEditBusy(false);
+        return;
+      }
+      const { error } = await (supabase as any).from("time_cards").update({ clocked_in_at: localIso, work_date: tsEditInDate }).eq("id", tsEditCard.id);
+      setTsEditBusy(false);
+      if (error) { toast.error(error.message); return; }
+      toast.success(`Clock in updated for ${tsEditCard.employee_name}`);
+    }
+    setTsEditCard(null);
     loadCards();
   };
   useEffect(() => {
@@ -358,7 +433,7 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
   };
 
   function roleLabel(emp: { role: string; job_title?: string }) {
-    if (emp.role === "manager") return "Manager";
+    if (emp.role === "manager" || emp.job_title === "manager") return "Manager";
     if (emp.role === "custom" && emp.job_title) return emp.job_title;
     return "Cashier";
   }
@@ -425,11 +500,11 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
           {employees.length === 0
             ? <div className="text-center py-10 text-muted-foreground text-sm">No staff found.</div>
             : (() => {
-                const hMgrs  = employees.filter(e => e.role === "manager");
-                const hCshs  = employees.filter(e => e.role === "cashier");
+                const hMgrs  = employees.filter(e => e.role === "manager" || e.job_title === "manager");
+                const hCshs  = employees.filter(e => e.role === "cashier" && e.job_title !== "manager");
                 const hOthrs = employees.filter(e => e.role === "custom");
                 const hGroups: { label: string; color: string; borderColor: string; items: typeof employees }[] = [];
-                if (hMgrs.length  > 0) hGroups.push({ label: "Managers",      color: "rgba(134,239,172,0.08)", borderColor: "rgba(134,239,172,0.35)", items: hMgrs });
+                if (hMgrs.length  > 0) hGroups.push({ label: "Managers",      color: "rgba(20,83,45,0.06)", borderColor: "rgba(20,83,45,0.35)", items: hMgrs });
                 if (hCshs.length  > 0) hGroups.push({ label: "Cashiers",      color: "rgba(251,146,60,0.07)",  borderColor: "rgba(251,146,60,0.35)",  items: hCshs });
                 if (hOthrs.length > 0) hGroups.push({ label: "Other Workers", color: "rgba(167,139,250,0.07)", borderColor: "rgba(167,139,250,0.35)", items: hOthrs });
                 return hGroups.map(({ label, color, borderColor, items: empItems }) => (
@@ -448,30 +523,30 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
                     <button onClick={() => setSelectedEmp(isSel ? null : emp)}
                       className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition active:scale-[0.98] text-left"
                       style={{ background: isSel ? (isCIn ? "rgba(134,239,172,0.08)" : "rgba(239,68,68,0.06)") : "var(--gradient-card)",
-                        borderColor: empOpen ? "#86efac" : isSel ? "rgba(239,68,68,0.4)" : "var(--border)" }}>
+                        borderColor: empOpen ? "#15803d" : isSel ? "rgba(239,68,68,0.4)" : "var(--border)" }}>
                       <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0 font-black text-sm"
-                        style={{ background: empOpen ? "rgba(134,239,172,0.15)" : "rgba(255,255,255,0.06)", color: empOpen ? "#86efac" : "var(--primary)" }}>
-                        {emp.username.charAt(0).toUpperCase()}
+                        style={{ background: empOpen ? "rgba(20,83,45,0.12)" : "rgba(255,255,255,0.06)", color: empOpen ? "#14532d" : "var(--primary)" }}>
+                        {shownName(emp).charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-black text-sm truncate">{emp.username}</p>
+                        <p className="font-black text-sm truncate">{shownName(emp)}</p>
                         <p className="text-xs text-muted-foreground">{roleLabel(emp)}</p>
-                        {isSel && empOpen && <p className="text-[10px] mt-0.5" style={{ color: "rgba(134,239,172,0.8)" }}>Since {fmtClockTime(empOpen.clocked_in_at)} · {fmtWorkDuration(empOpen.clocked_in_at, null)} on shift</p>}
+                        {isSel && empOpen && <p className="text-[10px] mt-0.5 font-bold" style={{ color: "#14532d" }}>Since {fmtClockTime(empOpen.clocked_in_at)} · {fmtWorkDuration(empOpen.clocked_in_at, null)} on shift</p>}
                       </div>
                       {empOpen
-                        ? <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.4)" }}>Clocked In</span>
+                        ? <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "#166534", color: "#ffffff" }}>Clocked In</span>
                         : <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(255,255,255,0.06)", color: "var(--muted-foreground)", border: "1px solid var(--border)" }}>Out</span>}
                     </button>
                     {isSel && (
                       <div className="grid grid-cols-2 gap-3 pt-2 pb-4">
                         <button onClick={handleClockIn} disabled={isCIn || clockBusy || !storeIsOpen}
                           className="h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                          style={!isCIn && storeIsOpen ? { background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
+                          style={!isCIn && storeIsOpen ? { background: "#166534", border: "1.5px solid #14532d", color: "#ffffff" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
                           {clockBusy && !isCIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />} Clock In
                         </button>
                         <button onClick={handleClockOut} disabled={!isCIn || clockBusy}
                           className="h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                          style={isCIn ? { background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171", color: "#f87171" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
+                          style={isCIn ? { background: "rgba(239,68,68,0.12)", border: "1.5px solid #b91c1c", color: "#b91c1c" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
                           {clockBusy && isCIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />} Clock Out
                         </button>
                       </div>
@@ -493,19 +568,19 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
                 <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">On Shift Now</p>
                 {activeCards.map(tc => (
                   <div key={tc.id} className="flex items-center gap-3 px-4 py-3 rounded-2xl"
-                    style={{ background: "rgba(134,239,172,0.06)", border: "1.5px solid rgba(134,239,172,0.25)" }}>
+                    style={{ background: "rgba(20,83,45,0.06)", border: "1.5px solid rgba(20,83,45,0.28)" }}>
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 font-black text-sm"
-                      style={{ background: "rgba(134,239,172,0.15)", color: "#86efac" }}>
+                      style={{ background: "rgba(20,83,45,0.12)", color: "#14532d" }}>
                       {tc.employee_name.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-black text-sm truncate">{tc.employee_name}</p>
-                      <p className="text-xs mt-0.5" style={{ color: "rgba(134,239,172,0.8)" }}>
+                      <p className="text-xs mt-0.5 font-bold" style={{ color: "#14532d" }}>
                         Since {fmtClockTime(tc.clocked_in_at)} · {fmtWorkDuration(tc.clocked_in_at, null)} on shift
                       </p>
                     </div>
                     <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0"
-                      style={{ background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.4)" }}>Active</span>
+                      style={{ background: "#166534", color: "#ffffff" }}>Active</span>
                   </div>
                 ))}
               </div>
@@ -529,7 +604,7 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
               className="h-10 px-3 rounded-xl font-black text-xs flex items-center gap-1.5 border transition active:scale-95 shrink-0"
               style={tsStaffEmp ? { background: "var(--gradient-hero)", color: "var(--primary-foreground)", borderColor: "transparent" } : { background: "var(--gradient-card)", borderColor: "var(--border)", color: "var(--primary)" }}>
               <Users className="h-3.5 w-3.5" />
-              <span className="max-w-[72px] truncate">{tsStaffEmp ? tsStaffEmp.username : "Staff"}</span>
+              <span className="max-w-[72px] truncate">{tsStaffEmp ? shownName(tsStaffEmp) : "Staff"}</span>
             </button>
             <button
               onClick={async () => {
@@ -573,10 +648,10 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
                     className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/20 transition"
                     style={{ background: tsStaffEmp?.id === emp.id ? "rgba(251,146,60,0.08)" : undefined }}>
                     <div className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 font-black text-xs" style={{ background: "rgba(255,255,255,0.06)", color: "var(--primary)" }}>
-                      {emp.username.charAt(0).toUpperCase()}
+                      {shownName(emp).charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-black text-sm truncate">{emp.username}</p>
+                      <p className="font-black text-sm truncate">{shownName(emp)}</p>
                       <p className="text-xs text-muted-foreground">{roleLabel(emp)}</p>
                     </div>
                     {tsStaffEmp?.id === emp.id && <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>Selected</span>}
@@ -603,7 +678,7 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
           {(tsSelectedDate || tsStaffEmp) && (
             <div className="flex items-center gap-2 flex-wrap">
               {tsSelectedDate && <span className="text-[11px] font-black px-2.5 py-1 rounded-full" style={{ background: "rgba(251,146,60,0.12)", color: "var(--primary)", border: "1px solid rgba(251,146,60,0.3)" }}>{tsPeriodLabel}</span>}
-              {tsStaffEmp && <span className="text-[11px] font-black px-2.5 py-1 rounded-full" style={{ background: "rgba(134,239,172,0.1)", color: "#86efac", border: "1px solid rgba(134,239,172,0.3)" }}>{tsStaffEmp.username}</span>}
+              {tsStaffEmp && <span className="text-[11px] font-black px-2.5 py-1 rounded-full" style={{ background: "#166534", color: "#ffffff" }}>{shownName(tsStaffEmp)}</span>}
               <button onClick={() => { setTsSelectedDate(null); setTsStaffEmp(null); setTsPeriod("day"); setTsShowCal(false); }} className="text-[11px] font-black text-muted-foreground hover:text-foreground transition">Clear ✕</button>
             </div>
           )}
@@ -637,7 +712,7 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
                           <p className="font-black text-sm">{mLabel}</p>
                           <p className="text-xs text-muted-foreground">
                             {mDays.length} day{mDays.length !== 1 ? "s" : ""}
-                            {mActive && <span className="text-green-400 ml-1">· active</span>}
+                            {mActive && <span className="text-green-700 ml-1">· active</span>}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -663,7 +738,7 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
                                   className="w-full flex items-center justify-between px-4 py-2.5 pl-6 transition hover:bg-muted/20">
                                   <div className="text-left">
                                     <p className="font-black text-xs">{dl}</p>
-                                    <p className="text-[10px] text-muted-foreground">{cards.length} record{cards.length !== 1 ? "s" : ""}{dActive > 0 && <span className="text-green-400 ml-1">· {dActive} active</span>}</p>
+                                    <p className="text-[10px] text-muted-foreground">{cards.length} record{cards.length !== 1 ? "s" : ""}{dActive > 0 && <span className="text-green-700 ml-1">· {dActive} active</span>}</p>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <span className="font-black text-[11px]" style={{ color: "var(--primary)" }}>{dHM}</span>
@@ -677,67 +752,63 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
                                       const outTime = tc.clocked_out_at ? fmtClockTime(tc.clocked_out_at) : null;
                                       const dur     = fmtWorkDuration(tc.clocked_in_at, tc.clocked_out_at);
                                       const isAct   = !tc.clocked_out_at;
-                                      const isEditing = editingCardId === tc.id;
+                                      const openInEdit = () => {
+                                        const parts = splitShiftIso(tc.clocked_in_at);
+                                        setTsEditField("in");
+                                        setTsEditCard(tc);
+                                        setTsEditInDate(parts.date);
+                                        setTsEditInTime(parts.time);
+                                        setTsEditInPeriod(parts.period);
+                                      };
+                                      const openOutEdit = () => {
+                                        if (!tc.clocked_out_at) return;
+                                        const parts = splitShiftIso(tc.clocked_out_at);
+                                        setTsEditField("out");
+                                        setTsEditCard(tc);
+                                        setTsEditDate(parts.date);
+                                        setTsEditTime(parts.time);
+                                        setTsEditPeriod(parts.period);
+                                      };
                                       return (
                                         <div key={tc.id} className="px-4 py-3 pl-7 flex items-center gap-3">
                                           <div className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 font-black text-xs"
-                                            style={{ background: isAct ? "rgba(22,163,74,0.15)" : "rgba(0,0,0,0.05)", color: isAct ? "#15803d" : "var(--primary)" }}>
+                                            style={{ background: isAct ? "rgba(22,101,52,0.15)" : "rgba(0,0,0,0.05)", color: isAct ? "#14532d" : "var(--primary)" }}>
                                             {tc.employee_name.charAt(0).toUpperCase()}
                                           </div>
                                           <div className="flex-1 min-w-0">
                                             <p className="font-black text-sm truncate text-slate-800">{tc.employee_name}</p>
                                             <div className="flex items-center gap-1.5 text-xs mt-0.5 flex-wrap">
-                                              <LogIn className="h-3 w-3 shrink-0" style={{ color: "#15803d" }} />
-                                              <span className="font-bold" style={{ color: "#15803d" }}>{inTime}</span>
+                                              <LogIn className="h-3 w-3 shrink-0" style={{ color: "#14532d" }} />
+                                              <span className="font-bold" style={{ color: "#14532d" }}>{inTime}</span>
+                                              <button
+                                                type="button"
+                                                onClick={openInEdit}
+                                                className="h-6 w-6 rounded flex items-center justify-center shrink-0 transition active:scale-90 border border-slate-300 bg-white"
+                                                title="Edit clock-in time"
+                                              >
+                                                <Pencil className="h-3 w-3 text-slate-700" />
+                                              </button>
                                               {outTime ? (
                                                 <>
                                                   <span className="text-slate-300">→</span>
-                                                  <LogOut className="h-3 w-3 text-red-400 shrink-0" />
-                                                  {isEditing ? (
-                                                    <>
-                                                      <input
-                                                        type="time"
-                                                        value={editOutTime}
-                                                        onChange={e => setEditOutTime(e.target.value)}
-                                                        className="h-6 rounded px-1 text-xs font-bold border border-primary outline-none"
-                                                        style={{ color: "#000", background: "#fff", width: "6rem" }}
-                                                      />
-                                                      <button
-                                                        onClick={() => handleSaveClockOut(tc)}
-                                                        className="h-6 w-6 rounded-full flex items-center justify-center bg-green-600 active:scale-95 transition"
-                                                        title="Save"
-                                                      >
-                                                        <Check className="h-3 w-3 text-white" />
-                                                      </button>
-                                                      <button
-                                                        onClick={() => setEditingCardId(null)}
-                                                        className="h-6 w-6 rounded-full flex items-center justify-center bg-slate-200 active:scale-95 transition"
-                                                        title="Cancel"
-                                                      >
-                                                        <X className="h-3 w-3 text-slate-600" />
-                                                      </button>
-                                                    </>
-                                                  ) : (
-                                                    <>
-                                                      <span className="text-red-400 font-bold">{outTime}</span>
-                                                      <span className="text-slate-400 ml-1">· {dur}</span>
-                                                      <button
-                                                        onClick={() => { setEditingCardId(tc.id); setEditOutTime(outTime); }}
-                                                        className="h-5 w-5 rounded-full flex items-center justify-center active:scale-95 transition ml-0.5"
-                                                        style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.4)" }}
-                                                        title="Edit clock-out time"
-                                                      >
-                                                        <Pencil className="h-2.5 w-2.5" style={{ color: "var(--primary)" }} />
-                                                      </button>
-                                                    </>
-                                                  )}
+                                                  <LogOut className="h-3 w-3 text-red-700 shrink-0" />
+                                                  <span className="text-red-700 font-bold">{outTime}</span>
+                                                  <span className="text-slate-400 ml-1">· {dur}</span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={openOutEdit}
+                                                    className="h-6 w-6 rounded flex items-center justify-center shrink-0 transition active:scale-90 border border-slate-300 bg-white"
+                                                    title="Edit clock-out time"
+                                                  >
+                                                    <Pencil className="h-3 w-3 text-slate-700" />
+                                                  </button>
                                                 </>
                                               ) : (
-                                                <span className="font-semibold" style={{ color: "#15803d" }}>· still on shift</span>
+                                                <span className="font-semibold" style={{ color: "#14532d" }}>· still on shift</span>
                                               )}
                                             </div>
                                           </div>
-                                          {isAct && <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(22,163,74,0.12)", color: "#15803d", border: "1px solid rgba(22,163,74,0.3)" }}>Active</span>}
+                                          {isAct && <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "#166534", color: "#ffffff" }}>Active</span>}
                                         </div>
                                       );
                                     })}
@@ -754,6 +825,215 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
               })()}
         </div>
       )}
+
+      <Dialog open={!!tsEditCard} onOpenChange={(open) => !open && setTsEditCard(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {tsEditField === "in" ? "Edit Clock In Time" : "Edit Clock Out Time"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 pt-2">
+            <div>
+              <Label className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-2 block">Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm font-black flex items-center justify-between gap-2 hover:bg-accent/40 transition-colors"
+                  >
+                    <span>
+                      {(tsEditField === "in" ? tsEditInDate : tsEditDate)
+                        ? new Date((tsEditField === "in" ? tsEditInDate : tsEditDate) + "T12:00:00").toLocaleDateString("en-US", {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })
+                        : "Select date"}
+                    </span>
+                    <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 z-[200]" align="center" sideOffset={4}>
+                  <Calendar
+                    mode="single"
+                    selected={(tsEditField === "in" ? tsEditInDate : tsEditDate) ? new Date((tsEditField === "in" ? tsEditInDate : tsEditDate) + "T12:00:00") : undefined}
+                    onSelect={(day) => {
+                      if (!day) return;
+                      const y = day.getFullYear();
+                      const m = String(day.getMonth() + 1).padStart(2, "0");
+                      const d = String(day.getDate()).padStart(2, "0");
+                      const next = `${y}-${m}-${d}`;
+                      if (tsEditField === "in") setTsEditInDate(next);
+                      else setTsEditDate(next);
+                    }}
+                    disabled={(day) => {
+                      const y = day.getFullYear();
+                      const m = String(day.getMonth() + 1).padStart(2, "0");
+                      const d = String(day.getDate()).padStart(2, "0");
+                      const ymd = `${y}-${m}-${d}`;
+                      const start = new Date(`${ymd}T00:00:00-04:00`).getTime();
+                      const end = new Date(`${ymd}T23:59:00-04:00`).getTime();
+                      if (tsEditField === "in") {
+                        if (start > Date.now()) return true;
+                        if (tsEditCard?.clocked_out_at && start >= new Date(tsEditCard.clocked_out_at).getTime()) return true;
+                      } else if (tsEditCard?.clocked_in_at && end <= new Date(tsEditCard.clocked_in_at).getTime()) {
+                        return true;
+                      }
+                      return false;
+                    }}
+                    captionLayout="dropdown"
+                    className="rounded-xl border-0"
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div>
+              <Label className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-2 block">Time</Label>
+              <div className="flex items-center gap-2">
+                <ScrollArea className="h-40 flex-1 rounded-xl border border-border">
+                  <div className="p-2 space-y-1">
+                    {Array.from({ length: 12 }).map((_, i) => {
+                      const h = i + 1;
+                      const activeDate = tsEditField === "in" ? tsEditInDate : tsEditDate;
+                      const activeTime = tsEditField === "in" ? tsEditInTime : tsEditTime;
+                      const activePeriod = tsEditField === "in" ? tsEditInPeriod : tsEditPeriod;
+                      const currentHour = parseInt(activeTime.split(":")[0] || "12", 10);
+                      const isSelected = currentHour === h;
+                      const blocked = hourBlocked(activeDate, h, activePeriod);
+                      return (
+                        <button
+                          key={h}
+                          type="button"
+                          disabled={blocked}
+                          onClick={() => {
+                            if (blocked) return;
+                            let mins = parseInt(activeTime.split(":")[1] || "0", 10);
+                            if (slotBlocked(activeDate, h, mins, activePeriod)) {
+                              let found = -1;
+                              for (let m = 59; m >= 0; m--) {
+                                if (!slotBlocked(activeDate, h, m, activePeriod)) { found = m; break; }
+                              }
+                              if (found < 0) return;
+                              mins = found;
+                            }
+                            const val = `${String(h).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+                            if (tsEditField === "in") setTsEditInTime(val);
+                            else setTsEditTime(val);
+                          }}
+                          className={`w-full h-10 rounded-lg text-sm font-black transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed ${
+                            isSelected && !blocked
+                              ? "bg-primary text-primary-foreground"
+                              : "hover:bg-accent text-foreground"
+                          }`}
+                        >
+                          {String(h).padStart(2, "0")}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+
+                <ScrollArea className="h-40 flex-1 rounded-xl border border-border">
+                  <div className="p-2 space-y-1">
+                    {Array.from({ length: 60 }).map((_, i) => {
+                      const activeDate = tsEditField === "in" ? tsEditInDate : tsEditDate;
+                      const activeTime = tsEditField === "in" ? tsEditInTime : tsEditTime;
+                      const activePeriod = tsEditField === "in" ? tsEditInPeriod : tsEditPeriod;
+                      const currentHour = parseInt(activeTime.split(":")[0] || "12", 10);
+                      const currentMins = parseInt(activeTime.split(":")[1] || "0", 10);
+                      const isSelected = currentMins === i;
+                      const blocked = slotBlocked(activeDate, currentHour, i, activePeriod);
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          disabled={blocked}
+                          onClick={() => {
+                            if (blocked) return;
+                            const val = `${String(currentHour).padStart(2, "0")}:${String(i).padStart(2, "0")}`;
+                            if (tsEditField === "in") setTsEditInTime(val);
+                            else setTsEditTime(val);
+                          }}
+                          className={`w-full h-10 rounded-lg text-sm font-black transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed ${
+                            isSelected && !blocked
+                              ? "bg-primary text-primary-foreground"
+                              : "hover:bg-accent text-foreground"
+                          }`}
+                        >
+                          {String(i).padStart(2, "0")}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+
+                <div className="flex flex-col gap-1">
+                  {(["AM", "PM"] as const).map((p) => {
+                    const activeDate = tsEditField === "in" ? tsEditInDate : tsEditDate;
+                    const activePeriod = tsEditField === "in" ? tsEditInPeriod : tsEditPeriod;
+                    const blocked = periodBlocked(activeDate, p);
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        disabled={blocked}
+                        onClick={() => {
+                          if (blocked) return;
+                          const activeTime = tsEditField === "in" ? tsEditInTime : tsEditTime;
+                          let hour = parseInt(activeTime.split(":")[0] || "12", 10);
+                          let mins = parseInt(activeTime.split(":")[1] || "0", 10);
+                          if (slotBlocked(activeDate, hour, mins, p)) {
+                            let found = false;
+                            for (let h = 1; h <= 12 && !found; h++) {
+                              for (let m = 0; m < 60; m++) {
+                                if (!slotBlocked(activeDate, h, m, p)) { hour = h; mins = m; found = true; break; }
+                              }
+                            }
+                            if (!found) return;
+                          }
+                          const val = `${String(hour).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+                          if (tsEditField === "in") { setTsEditInPeriod(p); setTsEditInTime(val); }
+                          else { setTsEditPeriod(p); setTsEditTime(val); }
+                        }}
+                        className={`h-20 w-14 rounded-xl text-sm font-black transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed ${
+                          activePeriod === p && !blocked
+                            ? "bg-primary text-primary-foreground"
+                            : "border border-border hover:bg-accent text-foreground"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {tsEditField === "in" && tsEditCard?.clocked_out_at && (
+                <p className="text-[11px] text-muted-foreground mt-2">Times at or after clock out are disabled.</p>
+              )}
+            </div>
+
+            <Button
+              onClick={handleTsEditSave}
+              disabled={tsEditBusy || (() => {
+                const date = tsEditField === "in" ? tsEditInDate : tsEditDate;
+                const time = tsEditField === "in" ? tsEditInTime : tsEditTime;
+                const period = tsEditField === "in" ? tsEditInPeriod : tsEditPeriod;
+                if (!date || !time) return true;
+                const hour = parseInt(time.split(":")[0] || "0", 10);
+                const minute = parseInt(time.split(":")[1] || "0", 10);
+                return slotBlocked(date, hour, minute, period);
+              })()}
+              className="w-full h-12 font-black text-base"
+              style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+            >
+              {tsEditBusy ? "Saving…" : tsEditField === "in" ? "Save Clock In" : "Save Clock Out"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -806,7 +1086,7 @@ function SalaryHistory({ cashier, ownerId, onClose }: {
           <h2 className="font-black text-base">{cashier.username} — Salary History</h2>
           <p className="text-xs text-muted-foreground">
             {payments.length} payment{payments.length !== 1 ? "s" : ""} · Total{" "}
-            <span className="font-black" style={{ color: "#86efac" }}>${total.toFixed(2)}</span>
+            <span className="font-black" style={{ color: "#15803d" }}>${total.toFixed(2)}</span>
           </p>
         </div>
       </div>
@@ -834,12 +1114,12 @@ function SalaryHistory({ cashier, ownerId, onClose }: {
                   <div className="flex items-center gap-3">
                     <span className="font-black text-sm">{month}</span>
                     <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
-                      style={{ background: "rgba(134,239,172,0.12)", color: "#86efac", border: "1px solid rgba(134,239,172,0.25)" }}>
+                      style={{ background: "rgba(134,239,172,0.12)", color: "#15803d", border: "1px solid rgba(134,239,172,0.25)" }}>
                       {monthPayments.length} payment{monthPayments.length !== 1 ? "s" : ""}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="font-black text-sm" style={{ color: "#86efac" }}>${monthTotal.toFixed(2)}</span>
+                    <span className="font-black text-sm" style={{ color: "#15803d" }}>${monthTotal.toFixed(2)}</span>
                     <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
                   </div>
                 </button>
@@ -860,7 +1140,7 @@ function SalaryHistory({ cashier, ownerId, onClose }: {
                             <p className="font-bold text-sm">{dateStr}</p>
                             <p className="text-xs text-muted-foreground">{timeStr}</p>
                           </div>
-                          <p className="font-black text-sm" style={{ color: "#86efac" }}>${Number(p.amount).toFixed(2)}</p>
+                          <p className="font-black text-sm" style={{ color: "#15803d" }}>${Number(p.amount).toFixed(2)}</p>
                         </div>
                       );
                     })}
@@ -892,6 +1172,7 @@ function SalaryTab({ cashiers, ownerId }: { cashiers: Cashier[]; ownerId: string
   const [confirmPayCashier,      setConfirmPayCashier]      = useState<Cashier | null>(null);
   const [confirmScheduleCashier, setConfirmScheduleCashier] = useState<string | null>(null);
   const [historyCashier,         setHistoryCashier]         = useState<Cashier | null>(null);
+  const [salaryTab, setSalaryTab] = useState<"managers" | "cashiers" | "others">("managers");
 
   const loadSalaries = async () => {
     setLoadingSalaries(true);
@@ -1036,20 +1317,32 @@ function SalaryTab({ cashiers, ownerId }: { cashiers: Cashier[]; ownerId: string
   };
 
   if (loadingSalaries) return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
-  if (cashiers.length === 0) return <div className="text-muted-foreground py-10 text-center text-sm">No cashiers yet.</div>;
 
-  const salaryGroups: { label: string; color: string; borderColor: string; items: Cashier[] }[] = [];
-  const mgrs  = cashiers.filter(c => (c as any).job_title === "manager" && (c as any).role !== "custom");
-  const cshs  = cashiers.filter(c => (c as any).role !== "custom" && (c as any).job_title !== "manager");
+  const mgrs  = cashiers.filter(c => (c.role === "manager" || c.job_title === "manager") && c.role !== "custom");
+  const cshs  = cashiers.filter(c => c.role !== "custom" && c.role !== "manager" && c.job_title !== "manager");
   const othrs = cashiers.filter(c => (c as any).role === "custom");
-  if (mgrs.length  > 0) salaryGroups.push({ label: "Managers",      color: "rgba(134,239,172,0.08)", borderColor: "rgba(134,239,172,0.35)", items: mgrs });
-  if (cshs.length  > 0) salaryGroups.push({ label: "Cashiers",      color: "rgba(251,146,60,0.07)",  borderColor: "rgba(251,146,60,0.35)",  items: cshs });
-  if (othrs.length > 0) salaryGroups.push({ label: "Other Workers", color: "rgba(167,139,250,0.07)", borderColor: "rgba(167,139,250,0.35)", items: othrs });
+  const salaryGroups: { key: "managers" | "cashiers" | "others"; label: string; color: string; borderColor: string; items: Cashier[]; empty: string }[] = [
+    { key: "managers", label: "Managers", color: "rgba(20,83,45,0.06)", borderColor: "rgba(20,83,45,0.35)", items: mgrs, empty: "No managers yet." },
+    { key: "cashiers", label: "Cashiers", color: "rgba(251,146,60,0.07)", borderColor: "rgba(251,146,60,0.35)", items: cshs, empty: "No cashiers yet." },
+    { key: "others", label: "Others", color: "rgba(167,139,250,0.07)", borderColor: "rgba(167,139,250,0.35)", items: othrs, empty: "No other workers yet." },
+  ];
+  const activeSalary = salaryGroups.find(g => g.key === salaryTab) ?? salaryGroups[0];
 
   return (
   <>
     <div className="space-y-4 mt-4">
-      {salaryGroups.map(({ label, color, borderColor, items }) => (
+      <div className="grid grid-cols-3 gap-1.5 rounded-xl p-1" style={{ background: "var(--gradient-card)" }}>
+        {salaryGroups.map(g => (
+          <button key={g.key} type="button" onClick={() => setSalaryTab(g.key)}
+            className="h-9 rounded-lg font-black text-xs transition active:scale-[0.98]"
+            style={salaryTab === g.key ? { background: "var(--gradient-hero)", color: "#ffffff" } : { color: "#1e293b" }}>
+            {g.label} ({g.items.length})
+          </button>
+        ))}
+      </div>
+      {activeSalary.items.length === 0
+        ? <div className="text-muted-foreground py-8 text-center text-sm">{activeSalary.empty}</div>
+        : [activeSalary].map(({ label, color, borderColor, items }) => (
         <div key={label} className="rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${borderColor}`, background: color }}>
           {/* Group label */}
           <div className="px-3 py-2 border-b" style={{ borderColor, background: color }}>
@@ -1073,19 +1366,19 @@ function SalaryTab({ cashiers, ownerId }: { cashiers: Cashier[]; ownerId: string
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <p className="font-black text-sm">{c.username}</p>
+                  <p className="font-black text-sm">{shownName(c)}</p>
                   {(() => {
                     const isCustom = (c as any).role === "custom";
-                    const isMgr = (c as any).job_title === "manager";
+                    const isMgr = (c as any).role === "manager" || (c as any).job_title === "manager";
                     if (isCustom) return (
                       <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full shrink-0"
-                        style={{ background: "rgba(167,139,250,0.2)", border: "1px solid rgba(167,139,250,0.4)", color: "#c4b5fd" }}>
+                        style={{ background: "rgba(76,29,149,0.12)", border: "1px solid #5b21b6", color: "#4c1d95" }}>
                         {(c as any).job_title ?? "Worker"}
                       </span>
                     );
                     if (isMgr) return (
                       <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full shrink-0"
-                        style={{ background: "rgba(134,239,172,0.15)", border: "1px solid rgba(134,239,172,0.4)", color: "#86efac" }}>
+                        style={{ background: "rgba(134,239,172,0.15)", border: "1px solid rgba(134,239,172,0.4)", color: "#15803d" }}>
                         Manager
                       </span>
                     );
@@ -1100,7 +1393,7 @@ function SalaryTab({ cashiers, ownerId }: { cashiers: Cashier[]; ownerId: string
                 {salary ? (
                   <>
                     <p className="text-xs text-muted-foreground">
-                      <span className="font-black" style={{ color: "#86efac" }}>${Number(salary.amount).toFixed(2)}</span>
+                      <span className="font-black" style={{ color: "#15803d" }}>${Number(salary.amount).toFixed(2)}</span>
                       {salary.frequency && <> · {FREQ_LABELS[salary.frequency]}</>}
                       {!salary.frequency && <span className="text-muted-foreground"> · Pay Now only</span>}
                     </p>
@@ -1257,7 +1550,7 @@ function SalaryTab({ cashiers, ownerId }: { cashiers: Cashier[]; ownerId: string
                   <div className="flex gap-2 pt-1">
                     {salary && (
                       <button type="button" onClick={() => removeSalary(c.id)}
-                        className="h-12 px-4 rounded-xl font-black text-sm border border-red-500/40 text-red-400 hover:bg-red-500/10 transition">
+                        className="h-12 px-4 rounded-xl font-black text-sm border border-red-500/40 text-red-700 hover:bg-red-500/10 transition">
                         Remove
                       </button>
                     )}
@@ -1265,7 +1558,7 @@ function SalaryTab({ cashiers, ownerId }: { cashiers: Cashier[]; ownerId: string
                       disabled={saving || !formAmount || parseFloat(formAmount) <= 0}
                       onClick={() => setConfirmPayCashier(c)}
                       className="flex-1 h-12 rounded-xl font-black text-sm transition active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 border-2"
-                      style={{ background: "rgba(134,239,172,0.08)", borderColor: "#86efac", color: "#86efac" }}>
+                      style={{ background: "rgba(134,239,172,0.08)", borderColor: "#15803d", color: "#15803d" }}>
                       <DollarSign className="h-4 w-4" />
                       Pay ${parseFloat(formAmount) > 0 ? parseFloat(formAmount).toFixed(2) : "0.00"} Now
                     </button>
@@ -1275,7 +1568,7 @@ function SalaryTab({ cashiers, ownerId }: { cashiers: Cashier[]; ownerId: string
                   <div className="flex gap-2 pt-1">
                     {salary && (
                       <button type="button" onClick={() => removeSalary(c.id)}
-                        className="h-12 px-4 rounded-xl font-black text-sm border border-red-500/40 text-red-400 hover:bg-red-500/10 transition">
+                        className="h-12 px-4 rounded-xl font-black text-sm border border-red-500/40 text-red-700 hover:bg-red-500/10 transition">
                         Remove
                       </button>
                     )}
@@ -1295,7 +1588,7 @@ function SalaryTab({ cashiers, ownerId }: { cashiers: Cashier[]; ownerId: string
                     <div className="w-full max-w-xs rounded-3xl border border-border shadow-2xl overflow-hidden" style={{ background: "var(--gradient-card)" }} onClick={(e) => e.stopPropagation()}>
                       <div className="px-6 pt-6 pb-2 text-center">
                         <div className="h-12 w-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: "rgba(134,239,172,0.12)", border: "1px solid rgba(134,239,172,0.3)" }}>
-                          <DollarSign className="h-6 w-6" style={{ color: "#86efac" }} />
+                          <DollarSign className="h-6 w-6" style={{ color: "#15803d" }} />
                         </div>
                         <h3 className="font-black text-base">Confirm Payment</h3>
                         <p className="text-sm text-muted-foreground mt-1">
@@ -1311,7 +1604,7 @@ function SalaryTab({ cashiers, ownerId }: { cashiers: Cashier[]; ownerId: string
                         <button type="button" disabled={saving}
                           onClick={() => { setConfirmPayCashier(null); saveAndPayNow(c); }}
                           className="flex-1 h-11 rounded-xl font-black text-sm transition active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-1.5"
-                          style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
+                          style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #15803d", color: "#15803d" }}>
                           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Pay"}
                         </button>
                       </div>
@@ -1381,7 +1674,9 @@ type Order = {
   total: number;
   paid: number;
   change_given: number;
-  items: { name: string; qty: number; price: number }[];
+  discount_amount?: number | null;
+  original_total?: number | null;
+  items: { name: string; qty: number; price: number; discount?: number; original_price?: number }[];
   created_at: string;
 };
 
@@ -1545,12 +1840,26 @@ function CashierStatement({ cashier, ownerName, onClose }: { cashier: Cashier; o
           doc.text("$" + Number(o.total).toFixed(2), RM, y, { align: "right" });
           y += 5;
           doc.setFont("helvetica", "normal");
-          const items = (o.items || []).slice().sort((a: any, b: any) => a.name.localeCompare(b.name)).map((i) => i.qty + "x " + i.name).join(", ");
+          const items = (o.items || []).slice().sort((a: any, b: any) => a.name.localeCompare(b.name)).map((i) => {
+            const discountNote = i.discount && Number(i.discount) > 0
+              ? ` [was $${Number(i.original_price ?? i.price).toFixed(2)}, -$${Number(i.discount).toFixed(2)} off]`
+              : "";
+            return i.qty + "x " + i.name + discountNote;
+          }).join(", ");
           const wrapped = doc.splitTextToSize("  " + items, 155);
           doc.text(wrapped, LM, y);
           y += wrapped.length * 4.5 + 1;
           doc.setTextColor(100, 100, 100);
           doc.text("  Paid $" + Number(o.paid).toFixed(2) + "   Change $" + Number(o.change_given).toFixed(2), LM, y);
+          if (o.discount_amount && Number(o.discount_amount) > 0) {
+            y += 4;
+            doc.setTextColor(180, 130, 10);
+            doc.text(
+              "  Order discount: -$" + Number(o.discount_amount).toFixed(2) +
+              (o.original_total ? "  (was $" + Number(o.original_total).toFixed(2) + ")" : ""),
+              LM, y
+            );
+          }
           doc.setTextColor(0, 0, 0);
           y += 4;
           doc.setDrawColor(220, 220, 220);
@@ -1643,7 +1952,7 @@ function CashierStatement({ cashier, ownerName, onClose }: { cashier: Cashier; o
                         <div className="flex items-center gap-3">
                           <span className="font-black text-sm">{month}</span>
                           {hasCleared && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30 font-semibold">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-700 border border-green-500/30 font-semibold">
                               Sales
                             </span>
                           )}
@@ -1688,11 +1997,11 @@ function CashierStatement({ cashier, ownerName, onClose }: { cashier: Cashier; o
                             if (isTransferOut) {
                               return (
                                 <div key={tx.id} className="px-4 py-3 flex items-center gap-3 bg-green-500/5">
-                                  <ArrowDownLeft className="h-3.5 w-3.5 text-green-400 shrink-0" />
-                                  <div className="flex-1 text-xs text-green-400">
+                                  <ArrowDownLeft className="h-3.5 w-3.5 text-green-700 shrink-0" />
+                                  <div className="flex-1 text-xs text-green-700">
                                     {tx.note ?? "Cleared to owner"} · {new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "2-digit", month: "2-digit", year: "numeric" })}
                                   </div>
-                                  <span className="font-black text-green-400 text-sm">
+                                  <span className="font-black text-green-700 text-sm">
                                     -${Math.abs(Number(tx.amount)).toFixed(2)}
                                   </span>
                                 </div>
@@ -1702,10 +2011,10 @@ function CashierStatement({ cashier, ownerName, onClose }: { cashier: Cashier; o
                               return (
                                 <div key={tx.id} className="px-4 py-3 flex items-center gap-3 bg-blue-500/5">
                                   <div className="h-3.5 w-3.5 shrink-0 text-blue-400 font-black text-xs flex items-center justify-center">💳</div>
-                                  <div className="flex-1 text-xs text-blue-300">
+                                  <div className="flex-1 text-xs text-blue-700">
                                     {tx.note ?? "Credit payment"} · {new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "2-digit", month: "2-digit", year: "numeric" })}
                                   </div>
-                                  <span className="font-black text-blue-300 text-sm">
+                                  <span className="font-black text-blue-700 text-sm">
                                     +${Number(tx.amount).toFixed(2)}
                                   </span>
                                 </div>
@@ -1715,10 +2024,10 @@ function CashierStatement({ cashier, ownerName, onClose }: { cashier: Cashier; o
                               return (
                                 <div key={tx.id} className="px-4 py-3 flex items-center gap-3 bg-amber-500/5">
                                   <div className="h-3.5 w-3.5 shrink-0 text-amber-400 font-black text-xs flex items-center justify-center">🪙</div>
-                                  <div className="flex-1 text-xs text-amber-300">
+                                  <div className="flex-1 text-xs text-amber-700">
                                     {tx.note ?? "Credit charge"} · {new Date(tx.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "2-digit", month: "2-digit", year: "numeric" })}
                                   </div>
-                                  <span className="font-black text-amber-300 text-sm">Credit</span>
+                                  <span className="font-black text-amber-700 text-sm">Credit</span>
                                 </div>
                               );
                             }
@@ -1741,6 +2050,12 @@ function CashierStatement({ cashier, ownerName, onClose }: { cashier: Cashier; o
                               <div className="mt-1 text-xs text-muted-foreground line-clamp-2">
                                 {(o.items || []).map((i) => `${i.qty}× ${i.name}`).join(" · ")}
                               </div>
+                              {o.discount_amount != null && Number(o.discount_amount) > 0 && (
+                                <div className="mt-0.5 text-[11px] font-black" style={{ color: "#d97706" }}>
+                                  -${Number(o.discount_amount).toFixed(2)} off
+                                  {o.original_total != null ? ` (was $${Number(o.original_total).toFixed(2)})` : ""}
+                                </div>
+                              )}
                               <div className="mt-0.5 text-xs text-muted-foreground">
                                 Paid ${Number(o.paid).toFixed(2)} · Change ${Number(o.change_given).toFixed(2)}
                               </div>
@@ -1767,6 +2082,7 @@ export default function CashiersPage() {
   const { t } = useTranslation();
   const [list, setList] = useState<Cashier[]>([]);
   const [tab, setTab] = useState("add");
+  const [manageTab, setManageTab] = useState<"managers" | "cashiers" | "others">("managers");
   // ── Role picker state ──────────────────────────────────────────────────────
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<"cashier" | "manager" | "custom" | null>(null);
@@ -1774,6 +2090,8 @@ export default function CashiersPage() {
   const [createStep, setCreateStep] = useState<"role" | "form" | "access">("role");
   // cashier / manager fields
   const [u, setU] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [p, setP] = useState("");
   // custom worker fields
   const [customName, setCustomName]   = useState("");
@@ -1837,7 +2155,7 @@ export default function CashiersPage() {
     const ownerIdForQuery = effectiveOwnerId(profile.id);
     const { data } = await supabase
       .from("profiles")
-      .select("id,username,wallet_balance,role,job_title,cashier_access")
+      .select("id,username,first_name,last_name,wallet_balance,role,job_title,cashier_access")
       .eq("parent_id", ownerIdForQuery)
       .in("role", ["cashier", "manager", "custom"])
       .order("created_at", { ascending: false });
@@ -1872,16 +2190,27 @@ export default function CashiersPage() {
     if (!session?.access_token) { toast.error("Not authenticated"); return; }
     if (/\s/.test(u)) { const m = "Username cannot contain spaces"; setUsernameError(m); toast.error(m); return; }
     if (!/^[a-z0-9_]+$/.test(u)) { const m = "Lowercase letters, numbers and underscores only"; setUsernameError(m); toast.error(m); return; }
+    if (!firstName.trim()) { toast.error("Enter a first name"); return; }
     setUsernameError(null);
     setBusy(true);
     try {
-      await create({
+      const created = await create({
         username: u,
         password: p,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         role: selectedRole === "manager" ? "manager" : "cashier",
+        jobTitle: selectedRole === "manager" ? "manager" : undefined,
         ...(activeBarId ? { barOwnerId: activeBarId } : {}),
       });
-      setU(""); setP(""); setSelectedRole(null);
+      if (created.id) {
+        await supabase.from("profiles").update({
+          first_name: firstName.trim(),
+          last_name: lastName.trim() || null,
+        }).eq("id", created.id);
+      }
+      setU(""); setFirstName(""); setLastName(""); setP(""); setSelectedRole(null);
+      setManageTab(selectedRole === "manager" ? "managers" : "cashiers");
       setTab("manage");
       load();
     } catch (err: unknown) {
@@ -1910,6 +2239,7 @@ export default function CashiersPage() {
       if (error) { toast.error(error.message); return; }
       toast.success(`${customName.trim()} added as ${customTitle.trim()}`);
       setCustomName(""); setCustomTitle(""); setSelectedRole(null);
+      setManageTab("others");
       setTab("manage");
       load();
     } catch (err: unknown) {
@@ -1920,7 +2250,10 @@ export default function CashiersPage() {
   };
 
   const onClear = async (c: Cashier) => {
-    const { error } = await supabase.rpc("transfer_cashier_to_owner", { _cashier_id: c.id });
+    const isMgr = c.role === "manager" || c.job_title === "manager";
+    const { error } = isMgr
+      ? await supabase.rpc("transfer_manager_to_owner", { _manager_id: c.id })
+      : await supabase.rpc("transfer_cashier_to_owner", { _cashier_id: c.id });
     if (error) { toast.error(error.message); } else { load(); refreshProfile(); toast.success(`Balance cleared from ${c.username}`); }
   };
 
@@ -2047,7 +2380,7 @@ export default function CashiersPage() {
             style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-6 pb-2 text-center">
               <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3"
-                style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #86efac" }}>
+                style={{ background: "rgba(134,239,172,0.12)", border: "1.5px solid #15803d" }}>
                 <span className="text-2xl">🟢</span>
               </div>
               <h2 className="font-black text-xl">Open Store</h2>
@@ -2078,7 +2411,7 @@ export default function CashiersPage() {
                   onClick={confirmOpenBarWithFloat}
                   disabled={barToggleBusy || !floatBarAmount}
                   className="flex-1 h-12 rounded-2xl font-black text-sm transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                  style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }}>
+                  style={{ background: "rgba(134,239,172,0.15)", border: "1.5px solid #15803d", color: "#15803d" }}>
                   {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open Store"}
                 </button>
               </div>
@@ -2121,8 +2454,8 @@ export default function CashiersPage() {
             onClick={storeIsOpen ? () => setShowConfirmClose(true) : handleOpenBar}
             className="h-10 px-4 rounded-xl font-black text-sm flex items-center gap-2 transition active:scale-95 disabled:opacity-50"
             style={storeIsOpen
-              ? { background: "rgba(134,239,172,0.15)", border: "1.5px solid #86efac", color: "#86efac" }
-              : { background: "rgba(239,68,68,0.12)", border: "1.5px solid #f87171", color: "#f87171" }}>
+              ? { background: "#166534", border: "1.5px solid #14532d", color: "#ffffff" }
+              : { background: "rgba(239,68,68,0.12)", border: "1.5px solid #b91c1c", color: "#b91c1c" }}>
             {barToggleBusy
               ? <Loader2 className="h-4 w-4 animate-spin" />
               : <span className="text-xs">{storeIsOpen ? "🟢" : "🔴"}</span>}
@@ -2161,7 +2494,7 @@ export default function CashiersPage() {
                   <div className="h-12 w-12 rounded-xl flex items-center justify-center text-2xl"
                     style={{ background: "rgba(134,239,172,0.15)" }}>👔</div>
                   <span className="font-black text-sm">{t("role_manager_label", "Manager")}</span>
-                  <span className="text-[10px] text-muted-foreground text-center leading-tight">{t("manager_desc", "Items, Wallet & Management only")}</span>
+                  <span className="text-[10px] text-muted-foreground text-center leading-tight">{t("manager_desc", "Store, wallet, and manage")}</span>
                 </button>
                 {/* Custom */}
                 <button type="button" onClick={() => setSelectedRole("custom")}
@@ -2185,8 +2518,18 @@ export default function CashiersPage() {
                 <span className="font-black text-sm">
                   {selectedRole === "manager" ? "👔 New Manager" : "💰 New Cashier"}
                 </span>
-                <button type="button" onClick={() => { setSelectedRole(null); setU(""); setP(""); setUsernameError(null); }}
+                <button type="button" onClick={() => { setSelectedRole(null); setU(""); setFirstName(""); setLastName(""); setP(""); setUsernameError(null); }}
                   className="text-xs font-bold text-muted-foreground hover:text-foreground transition">← Back</button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>First name</Label>
+                  <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Tom" required autoComplete="off" />
+                </div>
+                <div>
+                  <Label>Last name</Label>
+                  <Input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Smith" autoComplete="off" />
+                </div>
               </div>
               <div>
                 <Label>{t("username", "Username")}</Label>
@@ -2259,18 +2602,31 @@ export default function CashiersPage() {
         </TabsContent>
 
         <TabsContent value="manage">
-          <div className="mt-6 space-y-2">
-            {list.length === 0 && <div className="text-muted-foreground py-8 text-center">No staff yet.</div>}
+          <div className="mt-4 space-y-2">
             {(() => {
               const byName = (a: typeof list[0], b: typeof list[0]) => a.username.localeCompare(b.username);
-              const managers = list.filter(c => (c as any).job_title === "manager" && (c as any).role !== "custom").sort(byName);
-              const cashiers = list.filter(c => (c as any).role !== "custom" && (c as any).job_title !== "manager").sort(byName);
+              const managers = list.filter(c => ((c as any).role === "manager" || (c as any).job_title === "manager") && (c as any).role !== "custom").sort(byName);
+              const cashiers = list.filter(c => (c as any).role !== "custom" && (c as any).role !== "manager" && (c as any).job_title !== "manager").sort(byName);
               const others   = list.filter(c => (c as any).role === "custom").sort(byName);
-              const groups: { label: string; color: string; borderColor: string; items: typeof list }[] = [];
-              if (cashiers.length > 0) groups.push({ label: "Cashiers",      color: "rgba(251,146,60,0.07)",  borderColor: "rgba(251,146,60,0.35)",  items: cashiers });
-              if (managers.length > 0) groups.push({ label: "Managers",      color: "rgba(134,239,172,0.08)", borderColor: "rgba(134,239,172,0.35)", items: managers });
-              if (others.length   > 0) groups.push({ label: "Other Workers", color: "rgba(167,139,250,0.07)", borderColor: "rgba(167,139,250,0.35)", items: others });
-              return groups.map(({ label, color, borderColor, items }) => (
+              const groups: { key: "managers" | "cashiers" | "others"; label: string; color: string; borderColor: string; items: typeof list; empty: string }[] = [
+                { key: "managers", label: "Managers", color: "rgba(20,83,45,0.06)", borderColor: "rgba(20,83,45,0.35)", items: managers, empty: "No managers yet." },
+                { key: "cashiers", label: "Cashiers", color: "rgba(251,146,60,0.07)", borderColor: "rgba(251,146,60,0.35)", items: cashiers, empty: "No cashiers yet." },
+                { key: "others", label: "Others", color: "rgba(167,139,250,0.07)", borderColor: "rgba(167,139,250,0.35)", items: others, empty: "No other workers yet." },
+              ];
+              const active = groups.find(g => g.key === manageTab) ?? groups[0];
+              return (<>
+              <div className="grid grid-cols-3 gap-1.5 rounded-xl p-1" style={{ background: "var(--gradient-card)" }}>
+                {groups.map(g => (
+                  <button key={g.key} type="button" onClick={() => setManageTab(g.key)}
+                    className="h-9 rounded-lg font-black text-xs transition active:scale-[0.98]"
+                    style={manageTab === g.key ? { background: "var(--gradient-hero)", color: "#ffffff" } : { color: "#1e293b" }}>
+                    {g.label} ({g.items.length})
+                  </button>
+                ))}
+              </div>
+              {active.items.length === 0
+                ? <div className="text-muted-foreground py-8 text-center">{active.empty}</div>
+                : [active].map(({ label, color, borderColor, items }) => (
                 <div key={label} className="rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${borderColor}`, background: color }}>
                   {/* Group label */}
                   <div className="px-3 py-2 border-b" style={{ borderColor, background: `${color}` }}>
@@ -2279,11 +2635,11 @@ export default function CashiersPage() {
                   <div className="space-y-0">
                   {items.map((c, idx) => {
               const isCustom = (c as any).role === "custom";
-              const isManager = (c as any).job_title === "manager";
+              const isManager = (c as any).role === "manager" || (c as any).job_title === "manager";
               const roleBadge = isCustom
-                ? { label: (c as any).job_title ?? "Worker", color: "rgba(167,139,250,0.2)", border: "rgba(167,139,250,0.4)", text: "#c4b5fd" }
+                ? { label: (c as any).job_title ?? "Worker", color: "rgba(76,29,149,0.12)", border: "#5b21b6", text: "#4c1d95" }
                 : isManager
-                ? { label: "Manager", color: "rgba(134,239,172,0.15)", border: "rgba(134,239,172,0.4)", text: "#86efac" }
+                ? { label: "Manager", color: "#166534", border: "#14532d", text: "#ffffff" }
                 : { label: "Cashier", color: "rgba(var(--primary-rgb,251 146 60)/0.15)", border: "rgba(var(--primary-rgb,251 146 60)/0.4)", text: "var(--primary)" };
               return (
               <div key={c.id} className={`p-3 ${idx < items.length - 1 ? "border-b" : ""}`} style={{ borderColor, background: "transparent" }}>
@@ -2293,24 +2649,18 @@ export default function CashiersPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold truncate">{c.username}</span>
+                      <span className="font-bold truncate">{shownName(c)}</span>
                       <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full shrink-0"
                         style={{ background: roleBadge.color, border: `1px solid ${roleBadge.border}`, color: roleBadge.text }}>
                         {roleBadge.label}
                       </span>
                     </div>
-                    {!isCustom && !isManager && (
+                    {!isCustom && (
                       <div className="text-sm text-muted-foreground">
                         Balance: <span className="text-primary font-black">${Number(c.wallet_balance).toFixed(2)}</span>
                       </div>
                     )}
                   </div>
-                  {/* Delete button — for managers, Password sits inline here too */}
-                  {isManager && (
-                    <Button size="sm" variant="outline" className="h-9 px-3 shrink-0 font-black text-xs" onClick={() => { setResetPwCashier(c); setNewPw(""); setShowNewPw(false); }}>
-                      <KeyRound className="h-4 w-4 mr-1" /> Password
-                    </Button>
-                  )}
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button size="sm" variant="destructive" className="h-9 w-9 p-0 shrink-0"><Trash2 className="h-4 w-4" /></Button>
@@ -2331,8 +2681,8 @@ export default function CashiersPage() {
                     </AlertDialogContent>
                   </AlertDialog>
                 </div>
-                {/* Action buttons — custom workers: none; managers: inline above; cashiers: all */}
-                {!isCustom && !isManager && (
+                {/* Action buttons — custom workers have no login; managers and cashiers share wallet actions */}
+                {!isCustom && (
                   <div className="flex flex-wrap items-center gap-2 mt-3">
                     <Button size="sm" variant="outline" className="flex-1 min-w-[90px] h-12 text-sm font-black" onClick={() => setStatementCashier(c)}>
                       <FileText className="h-5 w-5 mr-1.5" /> Statement
@@ -2350,7 +2700,8 @@ export default function CashiersPage() {
             })}
                   </div>
                 </div>
-              ));
+              ))}
+              </>);
             })()}
           </div>
         </TabsContent>

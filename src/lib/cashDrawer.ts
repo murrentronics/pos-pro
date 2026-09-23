@@ -2,6 +2,7 @@
  * cashDrawer.ts — POS cash drawer integration for P.O.S. Pro.
  *
  * `openCashDrawer()` pops the physical cash drawer:
+ *  - Windows EXE (Electron): native serialport to the paired COM printer.
  *  - Installed app (Capacitor/Android on a POS terminal): delegates to the
  *    `CashDrawer` native plugin, which sends an ESC/POS pulse over Android USB
  *    Host to a connected USB receipt printer / cash drawer.
@@ -22,8 +23,9 @@
  */
 
 import { Capacitor } from "@capacitor/core";
+import { isElectronApp } from "./electronPrinter";
 
-export type CashDrawerMethod = "native" | "webserial" | "none";
+export type CashDrawerMethod = "native" | "webserial" | "electron" | "none";
 
 export interface CashDrawerResult {
   opened: boolean;
@@ -142,8 +144,7 @@ async function openViaWebSerial(cfg: CashDrawerConfig): Promise<CashDrawerResult
   }
 
   if (!port) {
-    const filters = cfg.vid != null ? [{ usbVendorId: cfg.vid }] : undefined;
-    port = await serial.requestPort(filters ? { filters } : undefined);
+    return { opened: false, method: "none", error: "No printer connected" };
   }
 
   await port.open({ baudRate: 9600, dataBits: 8, stopBits: 1, parity: "none", bufferSize: 4096 });
@@ -188,9 +189,20 @@ export async function openCashDrawer(options?: CashDrawerOptions): Promise<CashD
     const { isPrinterConnected, openDrawerViaPrinter } = await import("@/lib/printerConnection");
     if (isPrinterConnected()) {
       const r = await openDrawerViaPrinter();
-      return { opened: r.opened, method: r.opened ? "webserial" : "none", error: r.error };
+      const method: CashDrawerMethod = r.opened
+        ? (isElectronApp() ? "electron" : "webserial")
+        : "none";
+      return { opened: r.opened, method, error: r.error };
     }
   } catch { /* fall through to direct serial */ }
+
+  if (isElectronApp()) {
+    return {
+      opened: false,
+      method: "none",
+      error: "Pair a USB printer in the Windows app first — the cash drawer is wired through the printer",
+    };
+  }
 
   const cfg = resolveConfig(options);
   try {

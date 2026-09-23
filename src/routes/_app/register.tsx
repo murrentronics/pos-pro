@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Trash2, Minus, Plus, Loader2, X, CheckCircle2, ScanLine } from "lucide-react";
+import { Trash2, Minus, Plus, Loader2, X, CheckCircle2, ScanLine, UserPlus, Usb, Bluetooth } from "lucide-react";
 import { toast } from "sonner";
 import { categoryIcon } from "@/lib/categories";
 import { useTranslation } from "@/lib/i18n";
@@ -15,8 +15,22 @@ import { enqueue } from "@/lib/offlineQueue";
 import { useImageCache } from "@/lib/useImageCache";
 import { productImageUrl } from "@/lib/imageUrl";
 import { openCashDrawer } from "@/lib/cashDrawer";
-import { printReceipt, type ReceiptData, type PrintResult } from "@/lib/receiptPrinter";
+import {
+  printReceipt,
+  printReceiptAndOpenDrawer,
+  pairUsbPrinter,
+  pairBluetoothPrinter,
+  isPrinterPaired,
+  getPrinterConnectionType,
+  getSavedPrinterLabel,
+  clearPrinterPairing,
+  openPrinterConnectDialog,
+  type ReceiptData,
+  type PrinterConnectionType,
+} from "@/lib/receiptPrinter";
+import { brandReceipt } from "@/lib/receiptSettings";
 import { playBeep } from "@/lib/playBeep";
+import { useNumpadKeyboard, applyMoneyKey, applyIntKey } from "@/lib/useNumpadKeyboard";
 import {
   cacheProducts,
   getCachedProducts,
@@ -136,7 +150,7 @@ const ProductCard = React.memo(function ProductCard({
                 e.stopPropagation();
                 onRemove(p.id);
               }}
-              className="absolute top-1.5 right-1.5 h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition text-black shadow z-20"
+              className="absolute top-1.5 right-1.5 h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition text-white shadow z-20"
               style={{ background: "#dc2626" }}
             >
               <X className="h-4 w-4" />
@@ -158,7 +172,7 @@ const ProductCard = React.memo(function ProductCard({
                 <Minus className="h-4 w-4 text-black" />
               </button>
               <div
-                className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-black text-black"
+                className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-black text-white"
                 style={{ background: "var(--gradient-hero)" }}
               >
                 {inCartQty}
@@ -186,7 +200,7 @@ const ProductCard = React.memo(function ProductCard({
                       className="flex items-center justify-between gap-0.5 rounded-lg px-1.5 py-0.5"
                       style={{ background: "var(--gradient-hero)" }}
                     >
-                      <span className="text-[9px] font-black text-black leading-tight flex-1 truncate">
+                      <span className="text-[9px] font-black text-white leading-tight flex-1 truncate">
                         {v.qty}× {shortLabel}
                       </span>
                       <button
@@ -198,7 +212,7 @@ const ProductCard = React.memo(function ProductCard({
                         className="h-4 w-4 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition"
                         style={{ background: "rgba(0,0,0,0.35)" }}
                       >
-                        <X className="h-2.5 w-2.5 text-black" />
+                        <X className="h-2.5 w-2.5 text-white" />
                       </button>
                     </div>
                   );
@@ -223,7 +237,7 @@ const ProductCard = React.memo(function ProductCard({
                     className="flex items-center justify-between gap-0.5 rounded-lg px-1.5 py-0.5"
                     style={{ background: "rgba(251,146,60,0.85)" }}
                   >
-                    <span className="text-[9px] font-black text-black leading-tight flex-1 truncate">
+                    <span className="text-[9px] font-black text-white leading-tight flex-1 truncate">
                       {v.qty}× {shortLabel}
                     </span>
                     <button
@@ -235,7 +249,7 @@ const ProductCard = React.memo(function ProductCard({
                       className="h-4 w-4 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition"
                       style={{ background: "rgba(0,0,0,0.35)" }}
                     >
-                      <X className="h-2.5 w-2.5 text-black" />
+                      <X className="h-2.5 w-2.5 text-white" />
                     </button>
                   </div>
                 );
@@ -1231,34 +1245,33 @@ export default function RegisterPage() {
     toast.success("🔴 Store closed");
   };
 
-  const handleSaleDone = () => {
+  const handleSaleDone = async () => {
+    if (lastSale && lastSale.payMode !== "credit") {
+      await openCashDrawer();
+    }
     setShowSaleCompleteModal(false);
-    setPrinterResult(null);
     setLastSale(null);
   };
 
   const handlePrintAndDone = async () => {
     if (!lastSale) return;
     setPrintingReceipt(true);
-    setPrinterResult(null);
     try {
-      const result = await printReceipt(lastSale);
-      setPrinterResult(result);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setPrinterResult({ printed: false, mode: "none", error: msg });
+      const result = lastSale.payMode === "credit"
+        ? await printReceipt(lastSale)
+        : await printReceiptAndOpenDrawer(lastSale);
+      if (result.error || !result.printed) {
+        toast.error(result.error || "Print failed — connect the USB printer first");
+        return;
+      }
+    } catch {
+      toast.error("Print failed — check the printer connection");
+      return;
     } finally {
       setPrintingReceipt(false);
     }
-  };
-
-  const handleOpenDrawer = async () => {
-    setOpeningDrawer(true);
-    try {
-      await openCashDrawer();
-    } finally {
-      setOpeningDrawer(false);
-    }
+    setShowSaleCompleteModal(false);
+    setLastSale(null);
   };
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -1267,10 +1280,14 @@ export default function RegisterPage() {
   // Ref to hold a pending edit-order payload until products have loaded
   const pendingEditRef = useRef<{
     orderId: string;
+    createdAt?: string;
+    orderNumber?: number;
     items: {
+      id?: string;
       name: string;
       qty: number;
       price: number;
+      units_consumed?: number | null;
       discount?: number;
       original_price?: number;
     }[];
@@ -1323,6 +1340,9 @@ export default function RegisterPage() {
   // ── Edit-order state — set when user taps the pencil on a wallet record ──
   const [editOrder, setEditOrder] = useState<{
     orderId: string;
+    createdAt?: string;
+    orderNumber?: number;
+    originalItems: { id?: string; qty: number; units_consumed?: number | null }[];
     originalTotal: number;
     paid: number;
     changeGiven: number;
@@ -1337,22 +1357,7 @@ export default function RegisterPage() {
     const raw = localStorage.getItem(`pospro-edit-order-${ownerId}`);
     if (!raw) return;
     try {
-      const payload = JSON.parse(raw) as {
-        orderId: string;
-        items: {
-          name: string;
-          qty: number;
-          price: number;
-          discount?: number;
-          original_price?: number;
-        }[];
-        originalTotal: number;
-        paid: number;
-        changeGiven: number;
-        discountAmount: number;
-        type: "cash" | "credit";
-        creditTxId?: string;
-      };
+      const payload = JSON.parse(raw) as NonNullable<typeof pendingEditRef.current>;
       localStorage.removeItem(`pospro-edit-order-${ownerId}`);
       // Match each saved item name against loaded products to get full product data (price, cost_price etc.)
       // We wait until products have loaded before trying to match, so this runs in a separate effect below.
@@ -1373,16 +1378,21 @@ export default function RegisterPage() {
     // Map saved item names back to loaded products to restore full product data
     const newCart: CartItem[] = payload.items
       .map((saved) => {
-        const match = products.find((p) => p.name === saved.name);
+        const baseId = saved.id?.includes("__") ? saved.id.split("__")[0] : saved.id;
+        const match = (baseId ? products.find((p) => p.id === baseId) : undefined)
+          ?? products.find((p) => p.name === saved.name);
+        const units = saved.units_consumed != null && Number(saved.units_consumed) > 0
+          ? Number(saved.units_consumed)
+          : undefined;
         if (!match) {
-          // Fallback: use saved data as-is so nothing is lost
           return {
-            id: saved.name,
+            id: saved.id || saved.name,
             name: saved.name,
             price: saved.price,
             qty: saved.qty,
             image_url: null,
             category: undefined,
+            ...(units != null ? { _units_consumed: units } : {}),
             ...(saved.discount
               ? { _discount: saved.discount, _originalPrice: saved.original_price ?? saved.price }
               : {}),
@@ -1390,7 +1400,11 @@ export default function RegisterPage() {
         }
         return {
           ...match,
+          id: saved.id || match.id,
+          name: saved.name,
+          price: saved.price,
           qty: saved.qty,
+          ...(units != null ? { _units_consumed: units } : {}),
           ...(saved.discount
             ? { _discount: saved.discount, _originalPrice: saved.original_price ?? match.price }
             : {}),
@@ -1401,6 +1415,13 @@ export default function RegisterPage() {
     setCart(newCart);
     setEditOrder({
       orderId: payload.orderId,
+      createdAt: payload.createdAt,
+      orderNumber: payload.orderNumber,
+      originalItems: payload.items.map((it) => ({
+        id: it.id,
+        qty: it.qty,
+        units_consumed: it.units_consumed ?? null,
+      })),
       originalTotal: payload.originalTotal,
       paid: payload.paid,
       changeGiven: payload.changeGiven,
@@ -1408,7 +1429,7 @@ export default function RegisterPage() {
       type: payload.type,
       creditTxId: payload.creditTxId,
     });
-    toast.success("Edit mode — adjust items then tap Update Order");
+    toast.success("Edit mode — adjust items then tap Save Edit");
     // products is the only dep we watch; pendingEditRef is a ref (stable)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products]);
@@ -1420,8 +1441,68 @@ export default function RegisterPage() {
   const [showSaleCompleteModal, setShowSaleCompleteModal] = useState(false);
   const [lastSale, setLastSale] = useState<ReceiptData | null>(null);
   const [printingReceipt, setPrintingReceipt] = useState(false);
-  const [printerResult, setPrinterResult] = useState<PrintResult | null>(null);
-  const [openingDrawer, setOpeningDrawer] = useState(false);
+  const [printerPaired, setPrinterPaired] = useState<boolean | null>(null);
+  const [printerConnType, setPrinterConnType] = useState<PrinterConnectionType>("none");
+  const [pairingPrinter, setPairingPrinter] = useState(false);
+
+  useEffect(() => {
+    if (!showSaleCompleteModal) return;
+    const refresh = () => {
+      setPrinterConnType(getPrinterConnectionType());
+      void isPrinterPaired().then(setPrinterPaired);
+    };
+    refresh();
+    window.addEventListener("pospro-printer-changed", refresh);
+    return () => window.removeEventListener("pospro-printer-changed", refresh);
+  }, [showSaleCompleteModal]);
+
+  const handlePairUsb = async () => {
+    setPairingPrinter(true);
+    try {
+      const ok = await pairUsbPrinter();
+      if (ok) {
+        setPrinterPaired(true);
+        setPrinterConnType("usb");
+        toast.success("USB printer connected — cash drawer ready");
+      }
+    } catch {
+      toast.error("Could not connect USB printer");
+    } finally {
+      setPairingPrinter(false);
+    }
+  };
+
+  const handlePairBluetooth = async () => {
+    setPairingPrinter(true);
+    try {
+      const ok = await pairBluetoothPrinter();
+      if (ok) {
+        setPrinterPaired(true);
+        setPrinterConnType("bt");
+        toast.success("Bluetooth printer connected");
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.toLowerCase().includes("bluetooth") && msg.toLowerCase().includes("not available")) {
+        toast.error("Bluetooth not available — use Chrome on Android or Chrome desktop");
+      } else {
+        toast.error("Bluetooth pairing failed: " + msg);
+      }
+    } finally {
+      setPairingPrinter(false);
+    }
+  };
+
+  const handleChangePrinter = async () => {
+    clearPrinterPairing();
+    setPrinterPaired(false);
+    setPrinterConnType("none");
+    const ok = await openPrinterConnectDialog();
+    if (ok) {
+      setPrinterPaired(true);
+      setPrinterConnType(getPrinterConnectionType());
+    }
+  };
 
   // Persist cart to localStorage whenever it changes
   useEffect(() => {
@@ -1769,6 +1850,15 @@ export default function RegisterPage() {
   // ── Item detail modal (opens for every product tap) ─────────────────────
   const [varPickerProduct, setVarPickerProduct] = useState<Product | null>(null);
 
+  useNumpadKeyboard({
+    enabled: showFloatModal,
+    allowDecimal: false,
+    onKey: (k) => setFloatBarAmount((v) => applyIntKey(v, k)),
+    onEnter: () => {
+      if (!barToggleBusy && floatBarAmount) void confirmOpenBarWithFloat();
+    },
+  });
+
   return (
     <React.Fragment>
       {/* ── Float Modal (Open Store) ── */}
@@ -2040,7 +2130,7 @@ export default function RegisterPage() {
                   {scannerExternalDetected ? (
                     <div className="text-center space-y-2">
                       <div className="h-12 w-12 rounded-full bg-green-100 border-2 border-green-400 flex items-center justify-center mx-auto">
-                        <CheckCircle2 className="h-6 w-6 text-green-600" />
+                        <CheckCircle2 className="h-6 w-6 text-green-900" />
                       </div>
                       <p className="text-xs font-black text-green-700">Scanner Connected</p>
                       <p className="text-[10px] text-slate-500">Ready to scan — items appear in Current Order</p>
@@ -2194,7 +2284,7 @@ export default function RegisterPage() {
                                       e.stopPropagation();
                                       removeItem(p.id);
                                     }}
-                                    className="absolute top-1.5 right-1.5 h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition text-black shadow z-10"
+                                    className="absolute top-1.5 right-1.5 h-8 w-8 rounded-full flex items-center justify-center active:scale-90 transition text-white shadow z-10"
                                     style={{ background: "#dc2626" }}
                                   >
                                     <X className="h-4 w-4" />
@@ -2216,7 +2306,7 @@ export default function RegisterPage() {
                                       <Minus className="h-4 w-4 text-black" />
                                     </button>
                                     <div
-                                      className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-black text-black"
+                                      className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-black text-white"
                                       style={{ background: "var(--gradient-hero)" }}
                                     >
                                       {inCart.qty}
@@ -2295,22 +2385,31 @@ export default function RegisterPage() {
       <div className="shrink-0 p-3 border-t border-border" style={{ background: "var(--background)" }}>
         {cartCount > 0 ? (
           editOrder ? (
-            /* ── Edit mode: Cancel + Update Order ── */
-            <div className="flex gap-2 md:hidden">
-              <button
-                onClick={() => { setEditOrder(null); setCart([]); }}
-                className="h-14 rounded-2xl flex items-center justify-center px-5 font-black text-sm border border-border active:scale-[0.98] transition"
-                style={{ background: "var(--background)", color: "var(--foreground)", minWidth: "5rem" }}
+            <div className="space-y-2 md:hidden">
+              <div
+                className="w-full rounded-2xl px-4 py-2 flex items-center justify-between border border-yellow-500/40"
+                style={{ background: "rgba(234,179,8,0.10)" }}
               >
-                Cancel
-              </button>
+                <span className="text-amber-700 font-black text-xs">
+                  Editing sale
+                  {editOrder.createdAt
+                    ? ` · ${new Date(editOrder.createdAt).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short" })}`
+                    : ""}
+                </span>
+                <button
+                  onClick={() => { setEditOrder(null); setCart([]); }}
+                  className="text-amber-700 font-black text-xs underline"
+                >
+                  Cancel
+                </button>
+              </div>
               <button
                 onClick={() => setCashOpen(true)}
-                className="flex-1 h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
+                className="w-full h-14 rounded-2xl flex items-center justify-between px-5 font-black text-lg text-primary-foreground shadow-2xl active:scale-[0.98] transition"
                 style={{ background: "var(--gradient-hero)" }}
               >
                 <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">{cartCount}</span>
-                <span>Update Order</span>
+                <span>Save Edit</span>
                 <span className="text-primary-foreground/80 text-base font-bold">${total.toFixed(2)}</span>
               </button>
             </div>
@@ -2373,7 +2472,7 @@ export default function RegisterPage() {
                         </button>
                         <span className="text-xs font-black w-5 text-center text-slate-800">{item.qty}</span>
                         <button onClick={() => addToCart(item)} className="h-6 w-6 rounded-md flex items-center justify-center transition active:scale-95" style={{ background: "var(--gradient-hero)" }}>
-                          <Plus className="h-3 w-3 text-black" />
+                          <Plus className="h-3 w-3 text-white" />
                         </button>
                         <button onClick={() => removeItem(item.id)} className="h-6 w-6 rounded-md bg-red-100 flex items-center justify-center text-red-600 hover:bg-red-200 transition active:scale-95 ml-0.5">
                           <Trash2 className="h-3 w-3" />
@@ -2393,7 +2492,7 @@ export default function RegisterPage() {
                       className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"
                       style={{ background: "var(--gradient-hero)" }}
                     >
-                      Update Order · ${total.toFixed(2)}
+                      Save Edit · ${total.toFixed(2)}
                     </button>
                     <button
                       onClick={() => { setEditOrder(null); setCart([]); }}
@@ -2432,22 +2531,27 @@ export default function RegisterPage() {
           }}
           onClose={() => {
             setCashOpen(false);
-            setEditOrder(null);
           }}
           ownerId={ownerId}
           editOrder={editOrder}
           onEditComplete={() => setEditOrder(null)}
-          onSuccess={async ({ paid, change, orderDiscount, payMode, selectedCustomer }) => {
-            const todayStr = new Date().toISOString().slice(0, 10);
+          onSuccess={async ({ paid, change, orderDiscount, payMode, selectedCustomer, receiptOverride, orderNumber }) => {
+            const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Port_of_Spain" });
             const savedDate = localStorage.getItem("pospro_order_date");
+            const fromServer = receiptOverride?.orderNumber ?? orderNumber;
             let seq = parseInt(localStorage.getItem("pospro_order_seq") || "0", 10);
-            if (savedDate !== todayStr) {
-              seq = 1;
+            if (fromServer == null) {
+              if (savedDate !== todayStr) {
+                seq = 1;
+                localStorage.setItem("pospro_order_date", todayStr);
+              } else {
+                seq += 1;
+              }
+              localStorage.setItem("pospro_order_seq", seq.toString());
+            } else if (typeof fromServer === "number") {
+              localStorage.setItem("pospro_order_seq", String(fromServer));
               localStorage.setItem("pospro_order_date", todayStr);
-            } else {
-              seq += 1;
             }
-            localStorage.setItem("pospro_order_seq", seq.toString());
 
             const dateStr = new Date().toLocaleString("en-US", {
               month: "numeric",
@@ -2460,45 +2564,53 @@ export default function RegisterPage() {
             });
 
             // Cashier Name = active logged-in user username (e.g. Dasie)
-            const cashierName = profile?.username || "Cashier";
+            const cashierName = (profile?.first_name ?? "").trim() || profile?.username || "Cashier";
             // Store / Business Name = storeBusinessName or profile username
             const businessName = storeBusinessName || profile?.username || "Store";
 
             const saleData: ReceiptData = {
               storeName: businessName,
               locationName: "Main location",
-              orderNumber: seq,
+              orderNumber: fromServer ?? seq,
               serverName: cashierName,
-              items: cart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) })),
-              subtotal: total,
-              total: Math.max(0, total - orderDiscount),
+              items: receiptOverride?.items ?? cart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) })),
+              subtotal: receiptOverride?.total ?? total,
+              discount: receiptOverride ? undefined : (orderDiscount > 0 ? orderDiscount : undefined),
+              originalTotal: receiptOverride ? undefined : (orderDiscount > 0 ? total : undefined),
+              total: receiptOverride?.total ?? Math.max(0, total - orderDiscount),
               paid,
               change,
-              payMode: payMode ?? "cash",
+              payMode: receiptOverride?.payMode ?? payMode ?? "cash",
               customerName: selectedCustomer?.full_name,
               date: dateStr,
             };
-            setLastSale(saleData);
+            setLastSale(await brandReceipt(saleData));
             setPrinterResult(null);
             setShowSaleCompleteModal(true);
 
-            // Optimistically decrement stock_qty in local state using the cart
-            // that's about to be cleared. This prevents the badge snapping back
-            // to the old value while waiting for the DB realtime event to arrive.
+            // New sale: subtract the cart. Edit: put the old units back, then subtract the new cart.
             setProducts((prev) => {
               const qtyByProduct: Record<string, number> = {};
+              const apply = (rawId: string | undefined, units: number, sign: number) => {
+                if (!rawId || rawId.startsWith("shot-") || rawId.startsWith("pack-")) return;
+                const productId = rawId.includes("__") ? rawId.split("__")[0] : rawId;
+                qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + sign * units;
+              };
+              for (const old of editOrder?.originalItems ?? []) {
+                const units = old.units_consumed != null && Number(old.units_consumed) > 0
+                  ? Number(old.units_consumed)
+                  : old.qty;
+                apply(old.id, units, 1);
+              }
               for (const c of cart) {
-                const productId = c.id.includes("__") ? c.id.split("__")[0] : c.id;
-                // Use _units_consumed when set (variation deals) so stock reflects
-                // actual units consumed, not number of deals
                 const units = (c as any)._units_consumed ?? c.qty;
-                qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + units;
+                apply(c.id, units, -1);
               }
               return prev.map((p) =>
                 qtyByProduct[p.id] !== undefined &&
                 p.stock_qty !== undefined &&
                 p.stock_qty !== null
-                  ? { ...p, stock_qty: Math.max(0, p.stock_qty - qtyByProduct[p.id]) }
+                  ? { ...p, stock_qty: Math.max(0, p.stock_qty + qtyByProduct[p.id]) }
                   : p,
               );
             });
@@ -2563,7 +2675,7 @@ export default function RegisterPage() {
             <div className="px-6 pt-5 pb-2 shrink-0 space-y-1">
               <div className="flex justify-center">
                 <div className="h-10 w-10 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
-                  <CheckCircle2 className="h-6 w-6 text-green-400" strokeWidth={1.5} />
+                  <CheckCircle2 className="h-6 w-6 text-green-700" strokeWidth={1.5} />
                 </div>
               </div>
               <h2 className="font-black text-lg">Sale Complete</h2>
@@ -2573,6 +2685,7 @@ export default function RegisterPage() {
             <div className="px-5 py-2 overflow-y-auto flex-1">
               <div className="bg-white text-zinc-900 rounded-xl p-4 shadow-inner text-left font-mono text-xs leading-tight border border-zinc-300 select-none">
                 {/* Store Header */}
+                {lastSale.logoUrl && <img src={lastSale.logoUrl} alt="" className="mx-auto mb-1 max-h-16 object-contain" />}
                 <div className="text-center font-black text-zinc-950 text-base font-sans tracking-tight uppercase mb-0.5">
                   {lastSale.storeName || "My Business"}
                 </div>
@@ -2581,6 +2694,9 @@ export default function RegisterPage() {
                 )}
                 <div className="text-center text-[10px] text-zinc-600">{lastSale.date || ""}</div>
                 <div className="text-center text-[10px] text-zinc-600">Served by {lastSale.serverName || "Staff"}</div>
+                {lastSale.customerName && (
+                  <div className="text-center text-[10px] text-zinc-700">Customer: {lastSale.customerName}</div>
+                )}
 
                 <div className="border-t border-dashed border-zinc-400 my-2" />
 
@@ -2613,6 +2729,12 @@ export default function RegisterPage() {
                     <span>Subtotal</span>
                     <span>${lastSale.subtotal.toFixed(2)}</span>
                   </div>
+                  {lastSale.discount != null && lastSale.discount > 0 && (
+                    <div className="flex justify-between font-black" style={{ color: "#d97706" }}>
+                      <span>Discount{lastSale.originalTotal != null ? ` (was $${lastSale.originalTotal.toFixed(2)})` : ""}</span>
+                      <span>-${lastSale.discount.toFixed(2)}</span>
+                    </div>
+                  )}
                   {lastSale.tax != null && lastSale.tax > 0 && (
                     <div className="flex justify-between text-zinc-700">
                       <span>Tax</span>
@@ -2638,68 +2760,84 @@ export default function RegisterPage() {
                     <span>${lastSale.change.toFixed(2)}</span>
                   </div>
                 </div>
+                <div className="text-center text-[10px] text-zinc-500 mt-2">
+                  {lastSale.footerTagline || "Thank you for your purchase!"}
+                </div>
               </div>
 
-              {/* ── Printer result panel (mirrors cash drawer modal) ── */}
-              {printerResult && (
-                <div className="mt-3 rounded-2xl border p-4 text-center"
-                  style={{
-                    borderColor: printerResult.printed ? "#15803d" : "#f87171",
-                    background: printerResult.printed ? "rgba(134,239,172,0.08)" : "rgba(239,68,68,0.08)",
-                  }}>
-                  <div className="h-10 w-10 rounded-full flex items-center justify-center mx-auto mb-2"
-                    style={{
-                      background: printerResult.printed ? "rgba(22,163,74,0.12)" : "rgba(239,68,68,0.12)",
-                      border: "1.5px solid " + (printerResult.printed ? "#15803d" : "#f87171"),
-                    }}>
-                    <span className="text-lg">{printerResult.printed ? "✅" : "❌"}</span>
+            </div>
+
+            {/* Actions — Print & Done and Done. Both kick the drawer through the printer. */}
+            <div className="px-6 pb-5 pt-3 flex flex-col gap-2 shrink-0">
+              {printerPaired === false && (
+                <div className="space-y-2">
+                  <p className="text-[11px] text-muted-foreground text-center">
+                    Connect a USB printer to print receipts and open the cash drawer
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => { void handlePairUsb(); }}
+                      disabled={pairingPrinter}
+                      className="h-11 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 border-2"
+                      style={{ background: "rgba(99,102,241,0.10)", color: "#1e3a8a", borderColor: "rgba(99,102,241,0.35)" }}
+                    >
+                      {pairingPrinter ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Usb className="h-4 w-4" />USB</>}
+                    </button>
+                    <button
+                      onClick={() => { void handlePairBluetooth(); }}
+                      disabled={pairingPrinter}
+                      className="h-11 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 border-2"
+                      style={{ background: "rgba(59,130,246,0.10)", color: "#1e3a8a", borderColor: "rgba(59,130,246,0.35)" }}
+                    >
+                      {pairingPrinter ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Bluetooth className="h-4 w-4" />Bluetooth</>}
+                    </button>
                   </div>
-                  <p className="font-black text-sm">{printerResult.printed ? "Sent to Printer" : "Print Failed"}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {printerResult.printed
-                      ? <>{printerResult.label ?? (printerResult.mode === "bt" ? "Bluetooth" : "USB")}</>
-                      : printerResult.error ?? "Unknown error"}
+                  <p className="text-[10px] text-slate-600 text-center leading-relaxed">
+                    The cash drawer is plugged into the printer. USB connects to the printer on this PC.
+                    For Bluetooth, pair the printer in your device settings first.
                   </p>
                 </div>
               )}
-            </div>
 
-            {/* Actions */}
-            <div className="px-6 pb-5 pt-2 flex flex-col gap-2 shrink-0">
-              {/* Row 1 — Open Drawer */}
-              <button
-                onClick={handleOpenDrawer}
-                disabled={openingDrawer}
-                className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 border border-border hover:bg-muted/30 text-foreground/80"
-              >
-                {openingDrawer ? <Loader2 className="h-4 w-4 animate-spin" /> : "🗃️ Open Drawer"}
-              </button>
-
-              {/* Row 2 — Print + Done (or just Done after print result) */}
-              {!printerResult ? (
-                <div className="flex gap-2">
+              <div className="flex gap-2">
+                {printerPaired === true && (
                   <button
-                    onClick={handlePrintAndDone}
+                    onClick={() => { void handlePrintAndDone(); }}
                     disabled={printingReceipt}
-                    className="flex-1 h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
+                    className="flex-1 h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
                     style={{ background: "var(--gradient-hero)" }}
                   >
-                    {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : "🖨️ Print"}
+                    {printingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : "Print & Done"}
                   </button>
-                  <button
-                    onClick={handleSaleDone}
-                    className="flex-1 h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95 text-foreground/80"
-                  >
-                    Done
+                )}
+                {printerPaired === null && (
+                  <button disabled className="flex-1 h-14 rounded-2xl font-black text-sm flex items-center justify-center opacity-40 text-primary-foreground" style={{ background: "var(--gradient-hero)" }}>
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   </button>
-                </div>
-              ) : (
+                )}
                 <button
-                  onClick={handleSaleDone}
-                  className="w-full h-12 rounded-2xl font-black text-sm border border-border hover:bg-muted/30 transition active:scale-95"
+                  onClick={() => { void handleSaleDone(); }}
+                  className={`h-14 rounded-2xl font-black text-sm flex items-center justify-center transition active:scale-95 border-2 ${printerPaired === true || printerPaired === null ? "flex-1" : "w-full"}`}
+                  style={{ background: "#ffffff", color: "#14532d", borderColor: "#166534" }}
                 >
                   Done
                 </button>
+              </div>
+
+              {printerPaired === true && (
+                <div className="flex items-center justify-center gap-2 pt-0.5">
+                  <span className="text-[10px] text-slate-600">
+                    {printerConnType === "bt"
+                      ? "Bluetooth"
+                      : (getSavedPrinterLabel() || "USB")}
+                  </span>
+                  <button
+                    onClick={() => { void handleChangePrinter(); }}
+                    className="text-[11px] text-slate-700 underline"
+                  >
+                    Change printer
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -2745,7 +2883,7 @@ function CashItemActions({
         className="h-11 w-11 rounded-full flex items-center justify-center active:scale-90 transition shrink-0"
         style={{ background: "var(--gradient-hero)" }}
       >
-        <Plus className="h-5 w-5 text-black" />
+        <Plus className="h-5 w-5 text-white" />
       </button>
       {/* X — removes item */}
       <button
@@ -2753,7 +2891,7 @@ function CashItemActions({
         className="h-11 w-11 rounded-full flex items-center justify-center active:scale-90 transition shrink-0"
         style={{ background: "rgba(239,68,68,0.12)", border: "1.5px solid rgba(239,68,68,0.35)" }}
       >
-        <X className="h-5 w-5 text-red-400" />
+        <X className="h-5 w-5 text-red-700" />
       </button>
     </div>
   );
@@ -2785,9 +2923,16 @@ function CashOverlay({
     orderDiscount: number;
     payMode: string | null;
     selectedCustomer: CreditAccount | null;
+    orderNumber?: number;
+    receiptOverride?: {
+      items: { name: string; qty: number; price: number }[];
+      total: number;
+      orderNumber: string | number;
+      payMode: "credit";
+    };
   }) => void;
   ownerId: string;
-  editOrder?: { orderId: string; type: "cash" | "credit"; creditTxId?: string } | null;
+  editOrder?: { orderId: string; orderNumber?: number; type: "cash" | "credit"; creditTxId?: string } | null;
   onEditComplete?: () => void;
 }) {
   const { profile } = useAuth();
@@ -2809,6 +2954,8 @@ function CashOverlay({
   const [customers, setCustomers] = useState<CreditAccount[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(false);
+  const [openTabs, setOpenTabs] = useState<Record<string, string>>({});
+  const [tabBusy, setTabBusy] = useState(false);
 
   // Inline create-customer form in right panel
   const isTouchDevice = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
@@ -2861,27 +3008,36 @@ function CashOverlay({
   useEffect(() => {
     if (!ownerId) return;
     setLoadingCustomers(true);
-    supabase
-      .from("credit_accounts")
-      .select("id, full_name, contact_number, balance_owed, status")
-      .eq("owner_id", ownerId)
-      .order("full_name")
-      .then(async ({ data, error }) => {
-        if (data) {
-          // Network success — update state and refresh cache
-          setCustomers(data as CreditAccount[]);
-          cacheCreditAccounts(ownerId, data as CreditAccount[]);
-        } else {
-          // Network failed (offline) — serve from IndexedDB cache
-          console.warn(
-            "[CashOverlay] customers fetch failed, using cache:",
-            error?.message ?? "offline",
-          );
-          const cached = await getCachedCreditAccounts(ownerId);
-          setCustomers(cached as CreditAccount[]);
-        }
-        setLoadingCustomers(false);
-      });
+    Promise.all([
+      supabase
+        .from("credit_accounts")
+        .select("id, full_name, contact_number, balance_owed, status")
+        .eq("owner_id", ownerId)
+        .order("full_name"),
+      supabase
+        .from("credit_transactions")
+        .select("id, credit_account_id")
+        .eq("owner_id", ownerId)
+        .eq("tab_status", "open"),
+    ]).then(async ([{ data, error }, { data: tabData }]) => {
+      const tabMap: Record<string, string> = {};
+      for (const row of (tabData ?? []) as { id: string; credit_account_id: string }[]) {
+        tabMap[row.credit_account_id] = row.id;
+      }
+      setOpenTabs(tabMap);
+      if (data) {
+        setCustomers(data as CreditAccount[]);
+        cacheCreditAccounts(ownerId, data as CreditAccount[]);
+      } else {
+        console.warn(
+          "[CashOverlay] customers fetch failed, using cache:",
+          error?.message ?? "offline",
+        );
+        const cached = await getCachedCreditAccounts(ownerId);
+        setCustomers(cached as CreditAccount[]);
+      }
+      setLoadingCustomers(false);
+    });
   }, [ownerId]);
 
   useEffect(() => {
@@ -2906,55 +3062,89 @@ function CashOverlay({
     // Unique id to group all ops from this checkout together
     const groupId = `order-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-    if (payMode === "credit" && selectedCustomer) {
-      // ── Credit order ──────────────────────────────────────────────────
-      // record_credit_charge RPC handles stock decrement internally — no separate call needed.
+    if (payMode === "credit" && selectedCustomer && !editOrder) {
+      // Credit charge, or append onto an open tab. Stock is decremented inside the RPC.
       const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
       const discountNote =
         orderDiscount > 0
           ? ` | Disc: -$${orderDiscount.toFixed(2)} (orig $${total.toFixed(2)})`
           : "";
-      const creditPayload = {
-        p_credit_account_id: selectedCustomer.id,
-        p_cashier_id: profile.id,
-        p_amount: discountedTotal,
-        p_items: cart.map((c) => ({
-          id: c.id,
-          name: c.name,
-          price: c.price,
-          cost_price: (c as any).cost_price ?? 0,
-          qty: c.qty,
-        })),
-        p_note: itemsDesc + discountNote,
-      };
-      if (!isOnline) {
-        await enqueue("rpc_record_credit_charge", creditPayload, groupId);
+      const saleItems = cart.map((c) => ({
+        id: c.id,
+        name: c.name,
+        price: c.price,
+        cost_price: (c as any).cost_price ?? 0,
+        qty: c.qty,
+        ...((c as any)._units_consumed != null
+          ? { units_consumed: (c as any)._units_consumed }
+          : {}),
+      }));
+      const activeTabId = openTabs[selectedCustomer.id];
+      const finishCredit = (message: string) => {
         setBusy(false);
-        toast.success(`💾 Saved offline — will sync when reconnected`);
+        toast.success(message);
         onSuccess({
           paid: paidNum,
           change: changeNum,
           orderDiscount,
-          payMode: "cash",
-          selectedCustomer: selectedCustomer,
+          payMode: "credit",
+          selectedCustomer,
         });
+      };
+      if (!isOnline) {
+        if (activeTabId) {
+          await enqueue(
+            "rpc_append_to_tab",
+            {
+              p_tab_tx_id: activeTabId,
+              p_cashier_id: profile.id,
+              p_amount: discountedTotal,
+              p_items: saleItems,
+              p_note: itemsDesc + discountNote,
+            },
+            groupId,
+          );
+        } else {
+          await enqueue(
+            "rpc_record_credit_charge",
+            {
+              p_credit_account_id: selectedCustomer.id,
+              p_cashier_id: profile.id,
+              p_amount: discountedTotal,
+              p_items: saleItems,
+              p_note: itemsDesc + discountNote,
+            },
+            groupId,
+          );
+        }
+        finishCredit("💾 Saved offline — will sync when reconnected");
         return;
       }
-      const { error } = await supabase.rpc("record_credit_charge", creditPayload);
+      const { error } = activeTabId
+        ? await supabase.rpc("append_to_tab", {
+            p_tab_tx_id: activeTabId,
+            p_cashier_id: profile.id,
+            p_amount: discountedTotal,
+            p_items: saleItems,
+            p_note: itemsDesc + discountNote,
+          })
+        : await supabase.rpc("record_credit_charge", {
+            p_credit_account_id: selectedCustomer.id,
+            p_cashier_id: profile.id,
+            p_amount: discountedTotal,
+            p_items: saleItems,
+            p_note: itemsDesc + discountNote,
+          });
       if (error) {
         setBusy(false);
         toast.error(error.message);
         return;
       }
-      setBusy(false);
-      toast.success(`Charged $${discountedTotal.toFixed(2)} to ${selectedCustomer.full_name}`);
-      onSuccess({
-        paid: paidNum,
-        change: changeNum,
-        orderDiscount,
-        payMode: "cash",
-        selectedCustomer: selectedCustomer,
-      });
+      finishCredit(
+        activeTabId
+          ? `Added $${discountedTotal.toFixed(2)} to ${selectedCustomer.full_name}'s tab`
+          : `Charged $${discountedTotal.toFixed(2)} to ${selectedCustomer.full_name}`,
+      );
       return;
     }
 
@@ -2980,6 +3170,11 @@ function CashOverlay({
     };
 
     if (!isOnline) {
+      if (editOrder) {
+        setBusy(false);
+        toast.error("Editing a sale needs a connection so the same order is updated");
+        return;
+      }
       await enqueue("orders_insert", orderPayload, groupId);
       if (payMode === "cash" && selectedCustomer) {
         const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
@@ -3015,17 +3210,30 @@ function CashOverlay({
       return;
     }
 
-    const { error } = editOrder
-      ? await (supabase.rpc as any)("edit_order", {
-          p_order_id: editOrder.orderId,
-          p_items: orderPayload.items,
-          p_total: discountedTotal,
-          p_paid: paidNum,
-          p_change_given: changeNum,
-          p_discount_amount: orderDiscount > 0 ? orderDiscount : null,
-          p_original_total: orderDiscount > 0 ? total : null,
-        })
-      : await supabase.from("orders").insert(orderPayload);
+    let savedOrderNumber: number | undefined = editOrder?.orderNumber;
+    let error: { message: string } | null = null;
+    if (editOrder) {
+      const res = await (supabase.rpc as any)("edit_order", {
+        p_order_id: editOrder.orderId,
+        p_items: orderPayload.items,
+        p_total: discountedTotal,
+        p_paid: paidNum,
+        p_change_given: changeNum,
+        p_discount_amount: orderDiscount > 0 ? orderDiscount : null,
+        p_original_total: orderDiscount > 0 ? total : null,
+      });
+      error = res.error;
+    } else {
+      const withNum = await supabase.from("orders").insert(orderPayload).select("id, order_number").single();
+      if (!withNum.error) {
+        savedOrderNumber = withNum.data?.order_number ?? undefined;
+      } else if (/order_number/i.test(withNum.error.message)) {
+        const plain = await supabase.from("orders").insert(orderPayload);
+        error = plain.error;
+      } else {
+        error = withNum.error;
+      }
+    }
     if (error) {
       setBusy(false);
       toast.error(error.message);
@@ -3034,10 +3242,12 @@ function CashOverlay({
     if (editOrder) {
       onEditComplete?.();
     }
-    // Trigger handle_order_insert fires automatically — no separate stock RPC needed
+    // edit_order updates this same row (id and time stay put) and moves stock and wallet by the difference.
+    // A new sale is handled by the handle_order_insert trigger.
 
-    // If a customer was selected with cash, record history without changing balance
-    if (payMode === "cash" && selectedCustomer) {
+    // If a customer was selected with cash, record history without changing balance.
+    // An edit already updated the same order, so it must not add another history row.
+    if (payMode === "cash" && selectedCustomer && !editOrder) {
       const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
       await supabase.from("credit_transactions").insert({
         credit_account_id: selectedCustomer.id,
@@ -3063,8 +3273,47 @@ function CashOverlay({
       orderDiscount,
       payMode: "cash",
       selectedCustomer: selectedCustomer,
+      orderNumber: savedOrderNumber,
     });
   };
+
+  const applyDiscount = () => {
+    const d = Math.min(parseFloat(discountVal) || 0, total);
+    setOrderDiscount(d);
+    setDiscountOpen(false);
+  };
+
+  const discountActive = step === 1 && discountOpen && orderDiscount === 0;
+
+  useNumpadKeyboard({
+    enabled: discountActive,
+    onKey: (k) => setDiscountVal((v) => applyMoneyKey(v, k)),
+    onEnter: applyDiscount,
+  });
+
+  useNumpadKeyboard({
+    enabled: step === 1 && !discountActive,
+    onKey: () => {},
+    onEnter: () => setStep(2),
+    allowDecimal: false,
+  });
+
+  useNumpadKeyboard({
+    enabled: step === 2 && payMode !== "credit",
+    onKey: (k) => setPaid((v) => applyMoneyKey(v, k)),
+    onEnter: () => {
+      if (enough && !busy) void submit();
+    },
+  });
+
+  useNumpadKeyboard({
+    enabled: step === 2 && payMode === "credit",
+    onKey: () => {},
+    onEnter: () => {
+      if (!busy) void submit();
+    },
+    allowDecimal: false,
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
@@ -3154,7 +3403,7 @@ function CashOverlay({
                             ? {
                                 background: "rgba(34,197,94,0.15)",
                                 border: "1px solid rgba(34,197,94,0.4)",
-                                color: "#4ade80",
+                                color: "#15803d",
                               }
                             : {
                                 background: "rgba(250,204,21,0.1)",
@@ -3188,7 +3437,7 @@ function CashOverlay({
                       className="rounded-xl border border-yellow-500/30 p-3 space-y-2"
                       style={{ background: "oklch(0.18 0.04 80 / 0.5)" }}
                     >
-                      <div className="text-xs font-semibold text-yellow-300/70 uppercase tracking-widest text-center">
+                      <div className="text-xs font-semibold text-amber-700/70 uppercase tracking-widest text-center">
                         Order Discount ($)
                       </div>
                       <div
@@ -3224,11 +3473,7 @@ function CashOverlay({
                           background: "var(--gradient-hero)",
                           color: "var(--primary-foreground)",
                         }}
-                        onClick={() => {
-                          const d = Math.min(parseFloat(discountVal) || 0, total);
-                          setOrderDiscount(d);
-                          setDiscountOpen(false);
-                        }}
+                        onClick={applyDiscount}
                       >
                         Apply Discount
                       </button>
@@ -3307,12 +3552,12 @@ function CashOverlay({
                       ${discountedTotal.toFixed(2)}
                     </div>
                     {orderDiscount > 0 && (
-                      <div className="text-xs text-green-400 font-semibold">
+                      <div className="text-xs text-green-300 font-semibold">
                         -${orderDiscount.toFixed(2)} discount applied
                       </div>
                     )}
                     {Number(selectedCustomer.balance_owed) > 0 && (
-                      <div className="text-sm text-red-400 font-semibold">
+                      <div className="text-sm text-red-300 font-semibold">
                         Current balance: ${Number(selectedCustomer.balance_owed).toFixed(2)}
                       </div>
                     )}
@@ -3370,33 +3615,154 @@ function CashOverlay({
                   </>
                 )}
               </div>
-              <div className="shrink-0 px-5 pb-5 pt-3 border-t border-border flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1 h-12"
-                  onClick={() => {
-                    setStep(1);
-                    setPaid("");
-                  }}
-                >
-                  {t("back", "Back")}
-                </Button>
-                <Button
-                  className="flex-1 h-12 font-black text-base"
-                  disabled={(payMode === "credit" ? false : !enough) || busy}
-                  onClick={() => {
-                    submit();
-                  }}
-                  style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
-                >
-                  {busy ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : payMode === "credit" ? (
-                    "Confirm Credit"
-                  ) : (
-                    t("confirm_sale", "Confirm Sale")
+              <div className="shrink-0 px-5 pb-5 pt-3 border-t border-border flex flex-col gap-2">
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    className="h-12 px-4"
+                    onClick={() => {
+                      setStep(1);
+                      setPaid("");
+                    }}
+                  >
+                    {t("back", "Back")}
+                  </Button>
+                  {payMode === "credit" && selectedCustomer && (
+                    openTabs[selectedCustomer.id] ? (
+                      <Button
+                        className="flex-1 h-12 font-black text-base"
+                        disabled={tabBusy || busy}
+                        onClick={async () => {
+                          if (!profile || !selectedCustomer) return;
+                          if (!isOnline) {
+                            toast.error("Connect to the internet to end a tab.");
+                            return;
+                          }
+                          const tabId = openTabs[selectedCustomer.id];
+                          setTabBusy(true);
+                          const itemsDesc = cart.map((c) => `${c.qty}x ${c.name}`).join(", ");
+                          const discountNote =
+                            orderDiscount > 0
+                              ? ` | Disc: -$${orderDiscount.toFixed(2)} (orig $${total.toFixed(2)})`
+                              : "";
+                          const { error: appendErr } = await supabase.rpc("append_to_tab", {
+                            p_tab_tx_id: tabId,
+                            p_cashier_id: profile.id,
+                            p_amount: discountedTotal,
+                            p_items: cart.map((c) => ({
+                              id: c.id,
+                              name: c.name,
+                              price: c.price,
+                              cost_price: (c as any).cost_price ?? 0,
+                              qty: c.qty,
+                              ...((c as any)._units_consumed != null
+                                ? { units_consumed: (c as any)._units_consumed }
+                                : {}),
+                            })),
+                            p_note: itemsDesc + discountNote,
+                          });
+                          if (appendErr) {
+                            setTabBusy(false);
+                            toast.error("Failed to add order: " + appendErr.message);
+                            return;
+                          }
+                          const { error: closeErr } = await supabase.rpc("close_credit_tab", {
+                            p_tab_tx_id: tabId,
+                          });
+                          if (closeErr) {
+                            setTabBusy(false);
+                            toast.error("Failed to close tab: " + closeErr.message);
+                            return;
+                          }
+                          const { data: tabRow } = await supabase
+                            .from("credit_transactions")
+                            .select("amount, items")
+                            .eq("id", tabId)
+                            .maybeSingle();
+                          setTabBusy(false);
+                          setOpenTabs((prev) => {
+                            const next = { ...prev };
+                            delete next[selectedCustomer.id];
+                            return next;
+                          });
+                          const tabItems = (tabRow?.items as { name?: string; qty?: number; price?: number }[]) ?? [];
+                          const tabTotal = Number(tabRow?.amount ?? discountedTotal);
+                          onSuccess({
+                            paid: 0,
+                            change: 0,
+                            orderDiscount: 0,
+                            payMode: "credit",
+                            selectedCustomer,
+                            receiptOverride: {
+                              items: tabItems.map((it) => ({
+                                name: it.name ?? "",
+                                qty: Number(it.qty ?? 0),
+                                price: Number(it.price ?? 0),
+                              })),
+                              total: tabTotal,
+                              orderNumber: "TAB",
+                              payMode: "credit",
+                            },
+                          });
+                        }}
+                        style={{
+                          background: "rgba(239,68,68,0.15)",
+                          border: "2px solid rgba(239,68,68,0.5)",
+                          color: "#b91c1c",
+                        }}
+                      >
+                        {tabBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "End Tab"}
+                      </Button>
+                    ) : (
+                      <Button
+                        className="flex-1 h-12 font-black text-base"
+                        disabled={tabBusy || busy}
+                        onClick={async () => {
+                          if (!profile || !selectedCustomer) return;
+                          if (!isOnline) {
+                            toast.error("Connect to the internet to open a tab.");
+                            return;
+                          }
+                          setTabBusy(true);
+                          const { data: tabId, error } = await supabase.rpc("open_credit_tab", {
+                            p_credit_account_id: selectedCustomer.id,
+                            p_cashier_id: profile.id,
+                          });
+                          setTabBusy(false);
+                          if (error || !tabId) {
+                            toast.error(error?.message ?? "Failed to open tab");
+                            return;
+                          }
+                          setOpenTabs((prev) => ({ ...prev, [selectedCustomer.id]: tabId }));
+                          toast.success(`Tab opened for ${selectedCustomer.full_name}`);
+                        }}
+                        style={{
+                          background: "rgba(251,146,60,0.12)",
+                          border: "2px solid rgba(251,146,60,0.45)",
+                          color: "var(--primary)",
+                        }}
+                      >
+                        {tabBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Run Tab"}
+                      </Button>
+                    )
                   )}
-                </Button>
+                  <Button
+                    className="flex-1 h-12 font-black text-base"
+                    disabled={(payMode === "credit" ? false : !enough) || busy || tabBusy}
+                    onClick={() => {
+                      submit();
+                    }}
+                    style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+                  >
+                    {busy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : payMode === "credit" ? (
+                      openTabs[selectedCustomer?.id ?? ""] ? "Add to Tab" : "Confirm Credit"
+                    ) : (
+                      t("confirm_sale", "Confirm Sale")
+                    )}
+                  </Button>
+                </div>
               </div>
             </>
           )}
@@ -3408,23 +3774,32 @@ function CashOverlay({
             className={`
             w-full md:w-64 flex flex-col shrink-0
             md:static
-            ${showRightPanel ? "absolute inset-0 z-[60] rounded-3xl" : "hidden md:flex"}
+            ${showRightPanel ? "absolute z-[60] rounded-3xl" : "hidden md:flex"}
           `}
             style={{
               background: "oklch(0.15 0.02 60)",
               border: "3px solid #f97316",
               borderRadius: "1rem",
+              ...(showRightPanel ? {
+                top: "12px",
+                right: "12px",
+                bottom: "12px",
+                left: "12px",
+                width: "auto",
+                height: "auto",
+              } : {}),
             }}
           >
-            {/* Done button — mobile only, closes the panel */}
+            {/* Header — mobile only. Create stays in the footer on tablet and desktop. */}
             <div className="md:hidden flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
               <span className="text-sm font-black text-white/60">Customer / Payment</span>
               <button
-                onClick={() => setShowRightPanel(false)}
-                className="h-9 px-5 rounded-xl font-black text-sm text-primary-foreground active:scale-95 transition"
+                onClick={() => setShowCreateCustomer(true)}
+                className="h-9 px-3 rounded-xl font-black text-sm text-primary-foreground active:scale-95 transition flex items-center gap-1.5"
                 style={{ background: "var(--gradient-hero)" }}
               >
-                Done
+                <UserPlus className="h-4 w-4" />
+                <span>+ Create</span>
               </button>
             </div>
             {/* Cash / Credit big square buttons */}
@@ -3466,111 +3841,9 @@ function CashOverlay({
             </div>
             {/* Customer list — visible when Cash or Credit is selected */}
             {payMode && (
-              <div className="flex-1 overflow-y-auto px-4 pb-2 space-y-2 min-h-0 pt-1">
-                {showCreateCustomer ? (
-                  /* ── Inline create customer form ── */
-                  <div className="space-y-3 pt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-white/80 uppercase tracking-widest">New Customer</span>
-                      <button
-                        type="button"
-                        onClick={() => { setShowCreateCustomer(false); setCreateActiveField(null); }}
-                        className="text-xs text-white/40 hover:text-white/70 transition"
-                      >
-                        ✕ Cancel
-                      </button>
-                    </div>
-                    {/* Full Name */}
-                    <div>
-                      <p className="text-xs text-white/50 mb-1">Full Name *</p>
-                      <input
-                        type="text"
-                        inputMode={isTouchDevice ? "none" : "text"}
-                        value={createName}
-                        onChange={(e) => setCreateName(e.target.value)}
-                        onFocus={() => { if (isTouchDevice) setCreateActiveField("name"); }}
-                        placeholder="e.g. John Smith"
-                        className="w-full h-10 rounded-xl border border-white/20 bg-white/5 px-3 text-sm font-black text-white placeholder:text-white/30 outline-none focus:border-white/50"
-                      />
-                      {isTouchDevice && createActiveField === "name" && (
-                        <CreditAlphaKeyboard
-                          value={createName}
-                          onChange={setCreateName}
-                          onDone={() => setCreateActiveField(null)}
-                        />
-                      )}
-                    </div>
-                    {/* Contact Number */}
-                    <div>
-                      <p className="text-xs text-white/50 mb-1">Contact Number</p>
-                      <div className="flex items-center">
-                        <span className="h-10 px-3 flex items-center rounded-l-xl border border-r-0 border-white/20 bg-white/10 text-xs font-bold text-white/60 select-none">
-                          868
-                        </span>
-                        <input
-                          type="text"
-                          inputMode="none"
-                          value={createContact}
-                          onChange={(e) => setCreateContact(e.target.value.replace(/[^0-9\-]/g, ""))}
-                          onFocus={() => setCreateActiveField("contact")}
-                          placeholder="XXX-XXXX"
-                          maxLength={8}
-                          className="flex-1 h-10 rounded-r-xl border border-white/20 bg-white/5 px-3 text-sm font-black text-white placeholder:text-white/30 outline-none focus:border-white/50"
-                        />
-                      </div>
-                      {createActiveField === "contact" && (
-                        <CreditContactPad
-                          value={createContact}
-                          onChange={setCreateContact}
-                          onDone={() => setCreateActiveField(null)}
-                        />
-                      )}
-                    </div>
-                    {/* ID Type + Number */}
-                    <div>
-                      <p className="text-xs text-white/50 mb-1">ID Type</p>
-                      <select
-                        value={createIdType}
-                        onChange={(e) => setCreateIdType(e.target.value as "drivers_permit" | "national_id")}
-                        className="w-full h-10 rounded-xl border border-white/20 bg-white/5 px-3 text-sm font-semibold text-white"
-                      >
-                        <option value="drivers_permit">Driver's Permit</option>
-                        <option value="national_id">National ID</option>
-                      </select>
-                    </div>
-                    <div>
-                      <p className="text-xs text-white/50 mb-1">ID Number</p>
-                      <input
-                        type="text"
-                        inputMode="none"
-                        value={createIdNumber}
-                        onChange={(e) => setCreateIdNumber(e.target.value.replace(/[^0-9]/g, "").slice(0, 20))}
-                        onFocus={() => setCreateActiveField("idNumber")}
-                        placeholder="e.g. 00000000"
-                        className="w-full h-10 rounded-xl border border-white/20 bg-white/5 px-3 text-sm font-black text-white placeholder:text-white/30 outline-none focus:border-white/50"
-                      />
-                      {createActiveField === "idNumber" && (
-                        <CreditNumPad
-                          value={createIdNumber}
-                          onChange={setCreateIdNumber}
-                          maxLen={20}
-                          onDone={() => setCreateActiveField(null)}
-                        />
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      disabled={createBusy || !createName.trim()}
-                      onClick={createCustomer}
-                      className="w-full h-11 rounded-2xl font-black text-sm text-primary-foreground transition active:scale-95 disabled:opacity-40 flex items-center justify-center gap-2"
-                      style={{ background: "var(--gradient-hero)" }}
-                    >
-                      {createBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "+ Create Customer"}
-                    </button>
-                  </div>
-                ) : (
-                  /* ── Customer list ── */
-                  loadingCustomers ? (
+              <div className="flex flex-col flex-1 min-h-0">
+                <div className="flex-1 overflow-y-auto px-4 pt-1 pb-2 space-y-2 min-h-0">
+                  {loadingCustomers ? (
                     <div className="flex justify-center py-6">
                       <Loader2 className="h-5 w-5 animate-spin text-primary" />
                     </div>
@@ -3588,20 +3861,27 @@ function CashOverlay({
                                 background: "var(--gradient-hero)",
                                 color: "var(--primary-foreground)",
                               }
-                            : { background: "oklch(0.22 0.02 60)", color: "rgba(255,255,255,0.85)" }
+                            : openTabs[c.id]
+                              ? { background: "rgba(251,146,60,0.12)", color: "rgba(255,255,255,0.85)", border: "1px solid rgba(251,146,60,0.45)" }
+                              : { background: "oklch(0.22 0.02 60)", color: "rgba(255,255,255,0.85)" }
                         }
                       >
                         <span
-                          className={`text-sm font-black leading-tight flex-1 pr-3 ${selectedCustomer?.id === c.id ? "text-black" : ""}`}
+                          className={`text-sm font-black leading-tight flex-1 pr-3 ${selectedCustomer?.id === c.id ? "text-white" : ""}`}
                         >
                           {c.full_name}
+                          {openTabs[c.id] && (
+                            <span className={`ml-2 text-[10px] font-black ${selectedCustomer?.id === c.id ? "text-white" : "text-orange-700"}`}>
+                              TAB
+                            </span>
+                          )}
                         </span>
                         <span
                           className={`text-xs font-black shrink-0 ${
                             selectedCustomer?.id === c.id
-                              ? "text-black"
+                              ? "text-white"
                               : Number(c.balance_owed) > 0
-                                ? "text-red-400"
+                                ? "text-red-700"
                                 : "text-amber-700"
                           }`}
                         >
@@ -3611,37 +3891,146 @@ function CashOverlay({
                         </span>
                       </button>
                     ))
-                  )
-                )}
-              </div>
-            )}
-            {/* Create Customer footer button — shown when a pay mode is active and not already creating */}
-            {payMode && !showCreateCustomer && (
-              <div className="shrink-0 px-4 pb-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => { setShowCreateCustomer(true); setCreateActiveField(null); }}
-                  className="w-full h-10 rounded-2xl font-black text-sm border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition active:scale-95 flex items-center justify-center gap-1.5"
-                  style={{ background: "oklch(0.22 0.02 60)" }}
-                >
-                  <span className="text-base leading-none">＋</span> New Customer
-                </button>
+                  )}
+                </div>
+                {/* Sticky footer — mobile: Done | tablet and desktop: Create */}
+                <div className="px-4 pb-4 pt-2 shrink-0 flex justify-center">
+                  <button
+                    onClick={() => setShowRightPanel(false)}
+                    className="md:hidden h-12 px-10 rounded-2xl font-black text-sm border-2 active:scale-95 transition"
+                    style={{ background: "rgba(37,211,102,0.10)", color: "#25D366", borderColor: "rgba(37,211,102,0.4)" }}
+                  >
+                    Done
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowCreateCustomer(true); setCreateActiveField(null); }}
+                    className="hidden md:flex h-11 px-5 rounded-2xl font-black text-sm text-primary-foreground active:scale-95 transition items-center gap-2 w-full justify-center"
+                    style={{ background: "var(--gradient-hero)" }}
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    <span>+ Create</span>
+                  </button>
+                </div>
               </div>
             )}
             {!payMode && (
-              <div className="flex-1 flex items-center justify-center px-4 pb-4 min-h-[80px]">
-                <p className="text-xs text-white/30 text-center">
-                  Select Cash or Credit
-                  <br />
-                  to assign a customer,
-                  <br />
-                  or Proceed as Guest
-                </p>
+              <div className="flex flex-col flex-1 min-h-0">
+                <div className="flex-1 flex items-center justify-center px-4 min-h-[80px]">
+                  <p className="text-xs text-white/30 text-center">
+                    Select Cash or Credit
+                    <br />
+                    to assign a customer,
+                    <br />
+                    or Proceed as Guest
+                  </p>
+                </div>
+                <div className="md:hidden px-4 pb-4 pt-2 shrink-0 flex justify-center">
+                  <button
+                    onClick={() => setShowRightPanel(false)}
+                    className="h-12 px-10 rounded-2xl font-black text-sm border-2 active:scale-95 transition"
+                    style={{ background: "rgba(37,211,102,0.10)", color: "#25D366", borderColor: "rgba(37,211,102,0.4)" }}
+                  >
+                    Done
+                  </button>
+                </div>
               </div>
             )}
           </div>
         )}
       </div>
+
+      {showCreateCustomer && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div
+            className="relative w-full max-w-sm rounded-3xl overflow-hidden border shadow-2xl max-h-[90dvh] overflow-y-auto"
+            style={{ background: "var(--gradient-card)", borderColor: "var(--primary)" }}
+          >
+            <div className="px-5 pt-5 pb-3 flex justify-between items-center">
+              <h2 className="font-black text-lg" style={{ color: "var(--primary)" }}>New Customer</h2>
+              <button
+                type="button"
+                onClick={() => { setShowCreateCustomer(false); setCreateActiveField(null); }}
+                className="h-8 w-8 rounded-full flex items-center justify-center bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-5 pb-5 space-y-3">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Full Name *</p>
+                <input
+                  type="text"
+                  inputMode={isTouchDevice ? "none" : "text"}
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  onFocus={() => { if (isTouchDevice) setCreateActiveField("name"); }}
+                  placeholder="e.g. John Smith"
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-black"
+                  autoFocus
+                />
+                {isTouchDevice && createActiveField === "name" && (
+                  <CreditAlphaKeyboard value={createName} onChange={setCreateName} onDone={() => setCreateActiveField(null)} />
+                )}
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">ID Type</p>
+                <select
+                  value={createIdType}
+                  onChange={(e) => setCreateIdType(e.target.value as "drivers_permit" | "national_id")}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-semibold"
+                >
+                  <option value="drivers_permit">Driver's Permit</option>
+                  <option value="national_id">National ID</option>
+                </select>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">ID Number</p>
+                <input
+                  type="text"
+                  inputMode="none"
+                  value={createIdNumber}
+                  onChange={(e) => setCreateIdNumber(e.target.value.replace(/[^0-9]/g, "").slice(0, 20))}
+                  onFocus={() => setCreateActiveField("idNumber")}
+                  placeholder="e.g. 00000000"
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-black"
+                />
+                {createActiveField === "idNumber" && (
+                  <CreditNumPad value={createIdNumber} onChange={setCreateIdNumber} maxLen={20} onDone={() => setCreateActiveField(null)} />
+                )}
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Contact Number</p>
+                <div className="flex items-center">
+                  <span className="h-10 px-3 flex items-center rounded-l-md border border-r-0 border-input bg-muted text-sm font-bold text-muted-foreground select-none">868</span>
+                  <input
+                    type="text"
+                    inputMode="none"
+                    value={createContact}
+                    onChange={(e) => setCreateContact(e.target.value.replace(/[^0-9\-]/g, "").slice(0, 8))}
+                    onFocus={() => setCreateActiveField("contact")}
+                    placeholder="XXX-XXXX"
+                    maxLength={8}
+                    className="flex-1 h-10 rounded-r-md border border-input px-3 text-sm font-black"
+                  />
+                </div>
+                {createActiveField === "contact" && (
+                  <CreditContactPad value={createContact} onChange={setCreateContact} onDone={() => setCreateActiveField(null)} />
+                )}
+              </div>
+              <button
+                type="button"
+                disabled={createBusy || !createName.trim()}
+                onClick={createCustomer}
+                className="w-full h-12 rounded-2xl font-black text-base text-primary-foreground disabled:opacity-40 flex items-center justify-center gap-2"
+                style={{ background: "var(--gradient-hero)" }}
+              >
+                {createBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create & Select"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3655,6 +4044,13 @@ function SaleSuccessBanner({
   change: number;
   onOk: () => void;
 }) {
+  useNumpadKeyboard({
+    enabled: true,
+    onKey: () => {},
+    onEnter: onOk,
+    allowDecimal: false,
+  });
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
       <div
@@ -3663,11 +4059,11 @@ function SaleSuccessBanner({
       >
         <div className="pt-10 pb-6 flex justify-center">
           <div className="h-24 w-24 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center">
-            <CheckCircle2 className="h-14 w-14 text-green-400" strokeWidth={1.5} />
+            <CheckCircle2 className="h-14 w-14 text-green-300" strokeWidth={1.5} />
           </div>
         </div>
         <div className="px-8 pb-2">
-          <div className="text-xs font-semibold uppercase tracking-widest text-orange-400/80 mb-1">
+          <div className="text-xs font-semibold uppercase tracking-widest text-orange-300/80 mb-1">
             Customer Paid
           </div>
           <div className="text-3xl font-black text-orange-300">${paid.toFixed(2)}</div>
@@ -3732,11 +4128,13 @@ function CashCustomerOverlay({
     orderDiscount: number;
     payMode: string | null;
     selectedCustomer: CreditAccount | null;
+    orderNumber?: number;
   }) => void;
   ownerId: string;
 }) {
   const { profile } = useAuth();
   const { isOnline } = useNetworkStatus();
+  const isTouchDevice = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
   const [step, setStep] = useState<"pick" | "confirm" | "create" | "pay">("pick");
   const [accounts, setAccounts] = useState<CreditAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
@@ -3831,10 +4229,20 @@ function CashCustomerOverlay({
       return;
     }
 
-    const { error: orderErr } = await supabase.from("orders").insert(orderPayload);
-    if (orderErr) {
+    const withNum = await supabase.from("orders").insert(orderPayload).select("id, order_number").single();
+    let savedOrderNumber: number | undefined;
+    if (!withNum.error) {
+      savedOrderNumber = withNum.data?.order_number ?? undefined;
+    } else if (/order_number/i.test(withNum.error.message)) {
+      const plain = await supabase.from("orders").insert(orderPayload);
+      if (plain.error) {
+        setBusy(false);
+        toast.error(plain.error.message);
+        return;
+      }
+    } else {
       setBusy(false);
-      toast.error(orderErr.message);
+      toast.error(withNum.error.message);
       return;
     }
     // handle_order_insert trigger fires automatically — no separate stock RPC needed
@@ -3848,6 +4256,7 @@ function CashCustomerOverlay({
       orderDiscount,
       payMode: "cash",
       selectedCustomer: selectedAccount,
+      orderNumber: savedOrderNumber,
     });
   };
 
@@ -3877,6 +4286,26 @@ function CashCustomerOverlay({
     setSelectedAccount(acc as CreditAccount);
     setStep("pay");
   };
+
+  useNumpadKeyboard({
+    enabled: step === "pay" && !!selectedAccount,
+    onKey: (k) => setPaid((v) => applyMoneyKey(v, k)),
+    onEnter: () => {
+      if (selectedAccount && enough && !busy) void submitCashOrder(selectedAccount);
+    },
+  });
+
+  useNumpadKeyboard({
+    enabled: !!confirmPick,
+    onKey: () => {},
+    onEnter: () => {
+      if (!confirmPick) return;
+      setSelectedAccount(confirmPick);
+      setConfirmPick(null);
+      setStep("pay");
+    },
+    allowDecimal: false,
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
@@ -3922,7 +4351,7 @@ function CashCustomerOverlay({
                         )}
                       </div>
                       {Number(a.balance_owed) > 0 && (
-                        <span className="text-xs font-black text-red-400 shrink-0 ml-2">
+                        <span className="text-xs font-black text-red-700 shrink-0 ml-2">
                           owes ${Number(a.balance_owed).toFixed(2)}
                         </span>
                       )}
@@ -4210,6 +4639,7 @@ function CreditSaleOverlay({
   const { profile } = useAuth();
   const { t } = useTranslation();
   const { isOnline } = useNetworkStatus();
+  const isTouchDevice = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
   const [step, setStep] = useState<"review" | "pick" | "confirm" | "create">("review");
   const [accounts, setAccounts] = useState<CreditAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
@@ -4280,6 +4710,16 @@ function CreditSaleOverlay({
     toast.success(`Charged $${total.toFixed(2)} to ${account.full_name}`);
     onSuccess();
   };
+
+  useNumpadKeyboard({
+    enabled: !!confirmPick,
+    onKey: () => {},
+    onEnter: () => {
+      if (!confirmPick || busy) return;
+      void chargeAccount(confirmPick);
+    },
+    allowDecimal: false,
+  });
 
   const createAndCharge = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -4473,7 +4913,7 @@ function CreditSaleOverlay({
                       </div>
                       <div className="flex items-center gap-2 shrink-0 ml-2">
                         <span
-                          className={`text-sm font-black ${Number(a.balance_owed) > 0 ? "text-red-400" : "text-green-400"}`}
+                          className={`text-sm font-black ${Number(a.balance_owed) > 0 ? "text-red-700" : "text-green-700"}`}
                         >
                           ${Number(a.balance_owed).toFixed(2)}
                         </span>
@@ -4515,7 +4955,7 @@ function CreditSaleOverlay({
                 ${total.toFixed(2)}
               </p>
               {Number(confirmPick.balance_owed) > 0 && (
-                <p className="text-base text-red-400 font-semibold">
+                <p className="text-base text-red-700 font-semibold">
                   Current balance: ${Number(confirmPick.balance_owed).toFixed(2)}
                 </p>
               )}
@@ -4704,6 +5144,16 @@ function CreditNumPad({
   maxLen?: number;
   onDone: () => void;
 }) {
+  useNumpadKeyboard({
+    enabled: true,
+    allowDecimal: false,
+    onKey: (k) => {
+      if (k === "⌫") onChange(value.slice(0, -1));
+      else if (value.length < maxLen) onChange(value + k);
+    },
+    onEnter: onDone,
+  });
+
   return (
     <div className="mt-2">
       <div className="grid grid-cols-3 gap-1.5">
@@ -4757,6 +5207,16 @@ function CreditContactPad({
       onChange(d.length > 3 ? d.slice(0, 3) + "-" + d.slice(3) : d);
     }
   };
+
+  useNumpadKeyboard({
+    enabled: true,
+    allowDecimal: false,
+    onKey: (k) => handle(k),
+    onEnter: () => {
+      if (complete) onDone();
+    },
+  });
+
   return (
     <div className="mt-2">
       {!complete && (

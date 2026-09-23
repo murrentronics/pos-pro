@@ -9,6 +9,7 @@ import { UpdateBanner } from "@/components/UpdateBanner";
 import { OfflineProvider, useOffline } from "@/lib/OfflineProvider";
 
 import LoginPage from "@/pages/LoginPage";
+import DownloadAppPage from "@/pages/DownloadAppPage";
 import AppLayout from "@/pages/AppLayout";
 import RegisterPage from "@/pages/RegisterPage";
 import ProductsPage from "@/pages/ProductsPage";
@@ -26,6 +27,7 @@ import SwitchBarPage from "@/pages/SwitchBarPage";
 import SummaryPage from "@/pages/SummaryPage";
 import ManagerPage from "@/pages/ManagerPage";
 import StockCheckPage from "@/pages/StockCheckPage";
+import StockCountPage from "@/pages/StockCountPage";
 import ManualPage from "@/pages/ManualPage";
 import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
 import TermsPage from "@/pages/TermsPage";
@@ -85,6 +87,7 @@ function AppWithUpdateCheck() {
       <HashRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/download" element={<DownloadAppPage />} />
           <Route path="/" element={<AppLayout />}>
             <Route index element={<Navigate to="/register" replace />} />
             <Route path="register" element={<RegisterPage />} />
@@ -100,6 +103,7 @@ function AppWithUpdateCheck() {
             <Route path="summary" element={<SummaryPage />} />
             <Route path="manager" element={<ManagerPage />} />
             <Route path="stock-check" element={<StockCheckPage />} />
+            <Route path="stock-count" element={<StockCountPage />} />
             <Route path="manual" element={<ManualPage />} />
             <Route path="admin" element={<AdminPage />} />
             <Route path="admin/banking" element={<AdminBankingPage />} />
@@ -124,7 +128,9 @@ function AppWithUpdateCheck() {
 }
 
 export default function App() {
-  const [splashDone, setSplashDone] = useState(false);
+  const [splashDone, setSplashDone] = useState(
+    () => typeof window !== "undefined" && window.location.hash.startsWith("#/download")
+  );
   // Read cached business name for the splash screen (profile may not be loaded yet)
   const [splashBusinessName, setSplashBusinessName] = useState<string | undefined>(undefined);
 

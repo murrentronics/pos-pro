@@ -4,7 +4,11 @@ import App from "./App";
 import "./styles.css";
 
 // Web entry point — no Capacitor, no native plugins.
-// Used for the Safari/browser build served at bartendazpro-web.pages.dev
+// Used for the Safari/browser build served at pospro-web.pages.dev
+
+if (["/download", "/download.html"].includes(window.location.pathname.replace(/\/$/, "") || "/")) {
+  window.location.replace("/#/download");
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

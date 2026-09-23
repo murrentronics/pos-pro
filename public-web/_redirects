@@ -1,1 +1,6 @@
-/* /index.html 200
+# HashRouter does not need a /* → index.html rewrite.
+# That splat was returning HTML for /assets/*.js (MIME type text/html), which blanked the site.
+#
+# public-web/download.html is served at /download by Cloudflare Pages.
+# Do not rewrite /download → download.html or /index.html.
+# The html rewrite 308-loops, and index.html sent guests to the login app.

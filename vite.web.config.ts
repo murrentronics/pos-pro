@@ -1,7 +1,7 @@
 /**
- * Web build config — for bartendazpro-web.pages.dev
+ * Web build config — for pospro-web.pages.dev
  * This is a plain React SPA (no Capacitor, no native plugins).
- * Deploy the dist/web folder to a separate Cloudflare Pages project.
+ * Deploy the dist/web folder with `npm run deploy:web` (via cap:sync).
  */
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
