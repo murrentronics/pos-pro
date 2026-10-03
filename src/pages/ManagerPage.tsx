@@ -132,10 +132,15 @@ function ManagerMain({
       .select("id").eq("owner_id", ownerId).is("closed_at", null).limit(1).maybeSingle();
     if (existingOpen) { setBarToggleBusy(false); toast.error("Store is already open"); return; }
     const now = new Date().toISOString();
-    const { error } = await supabase.from("profiles")
+    const { data: opened, error } = await supabase.from("profiles")
       .update({ store_session_start: now, store_closed_at: null, cashier_float: barFloatVal, cashier_float_set_at: now } as any)
-      .eq("id", ownerId);
-    if (error) { setBarToggleBusy(false); toast.error("Failed to open store"); return; }
+      .eq("id", ownerId)
+      .select("id");
+    if (error || !opened?.length) {
+      setBarToggleBusy(false);
+      toast.error(error?.message ?? "Could not set the store float");
+      return;
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: newSession } = await (supabase as any).from("store_sessions")
       .insert({ owner_id: ownerId, opened_at: now }).select("id").single();
@@ -158,9 +163,9 @@ function ManagerMain({
     await (supabase as any).from("store_sub_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from("store_sessions").update({ closed_at: now }).eq("owner_id", ownerId).is("closed_at", null);
-    const { error } = await supabase.from("profiles").update({ store_closed_at: now } as any).eq("id", ownerId);
+    const { data: closed, error } = await supabase.from("profiles").update({ store_closed_at: now } as any).eq("id", ownerId).select("id");
     setBarToggleBusy(false);
-    if (error) { toast.error("Failed to close store"); return; }
+    if (error || !closed?.length) { toast.error(error?.message ?? "Failed to close store"); return; }
     setBarClosedAt(now); toast.success("🔴 Store closed");
   };
 
@@ -357,7 +362,13 @@ function DashboardTab({
     const now = new Date().toISOString();
     if (barFloatMode === "same") {
       const newTotal = barFloatSet + val;
-      await supabase.from("profiles").update({ cashier_float: newTotal } as any).eq("id", ownerId);
+      const { data: topped, error } = await supabase.from("profiles")
+        .update({ cashier_float: newTotal } as any).eq("id", ownerId).select("id");
+      if (error || !topped?.length) {
+        setSetFloatBusy(false);
+        toast.error(error?.message ?? "Could not update the float");
+        return;
+      }
       setFloatBalance(newTotal); setBarFloatSet(newTotal);
       toast.success(`Float topped up — total $${newTotal.toFixed(2)}`);
     } else {
@@ -374,7 +385,13 @@ function DashboardTab({
           owner_id: ownerId, store_session_id: openSession.id, opened_at: now, cashier_float: val,
         });
       }
-      await supabase.from("profiles").update({ cashier_float: val, cashier_float_set_at: now } as any).eq("id", ownerId);
+      const { data: reset, error } = await supabase.from("profiles")
+        .update({ cashier_float: val, cashier_float_set_at: now } as any).eq("id", ownerId).select("id");
+      if (error || !reset?.length) {
+        setSetFloatBusy(false);
+        toast.error(error?.message ?? "Could not update the float");
+        return;
+      }
       setFloatBalance(val); setBarFloatSet(val);
       toast.success(`New session — float set to $${val.toFixed(2)}`);
     }

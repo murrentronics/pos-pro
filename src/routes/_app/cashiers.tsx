@@ -2296,10 +2296,15 @@ export default function CashiersPage() {
     }
 
     const now = new Date().toISOString();
-    const { error } = await supabase.from("profiles")
+    const { data: opened, error } = await supabase.from("profiles")
       .update({ store_session_start: now, store_closed_at: null, cashier_float: floatVal, cashier_float_set_at: now })
-      .eq("id", ownerIdForBar);
-    if (error) { setBarToggleBusy(false); toast.error("Failed to open store: " + error.message); return; }
+      .eq("id", ownerIdForBar)
+      .select("id");
+    if (error || !opened?.length) {
+      setBarToggleBusy(false);
+      toast.error(error?.message ?? "Could not set the store float");
+      return;
+    }
 
     // Insert store_sessions parent row + first sub-session
     const { data: newSession } = await supabase.from("store_sessions")

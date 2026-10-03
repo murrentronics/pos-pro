@@ -1237,6 +1237,7 @@ export type Database = {
           stock_last_expense_id: string | null
           units_per_item: number | null
           bottle_variations: Json | null
+          supplier_name: string | null
         }
         Insert: {
           category?: string
@@ -1254,6 +1255,7 @@ export type Database = {
           stock_last_expense_id?: string | null
           units_per_item?: number | null
           bottle_variations?: Json | null
+          supplier_name?: string | null
         }
         Update: {
           category?: string
@@ -1271,6 +1273,7 @@ export type Database = {
           stock_last_expense_id?: string | null
           units_per_item?: number | null
           bottle_variations?: Json | null
+          supplier_name?: string | null
         }
         Relationships: [
           {
@@ -1460,6 +1463,8 @@ export type Database = {
           description: string | null
           expense_date: string
           created_at: string
+          supplier_name: string | null
+          is_paid: boolean
         }
         Insert: {
           id?: string
@@ -1468,6 +1473,8 @@ export type Database = {
           description?: string | null
           expense_date?: string
           created_at?: string
+          supplier_name?: string | null
+          is_paid?: boolean
         }
         Update: {
           id?: string
@@ -1476,6 +1483,8 @@ export type Database = {
           description?: string | null
           expense_date?: string
           created_at?: string
+          supplier_name?: string | null
+          is_paid?: boolean
         }
         Relationships: [
           {

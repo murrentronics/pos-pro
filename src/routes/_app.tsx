@@ -73,15 +73,6 @@ function AppLayout() {
   }, [session, loading, nav]);
 
   useEffect(() => {
-    if (!loading && session && !profile) {
-      const t = setTimeout(() => {
-        signOut().then(() => nav({ to: "/login" }));
-      }, 3000);
-      return () => clearTimeout(t);
-    }
-  }, [loading, session, profile, nav, signOut]);
-
-  useEffect(() => {
     if (!loading && profile?.role === "admin" && !loc.pathname.startsWith("/admin")) {
       nav({ to: "/admin" as "/" });
     }
@@ -169,7 +160,7 @@ function AppLayout() {
     const now = new Date().toISOString();
 
     // 1. Stamp profiles
-    const { error } = await supabase
+    const { data: opened, error } = await supabase
       .from("profiles")
       .update({
         store_session_start: now,
@@ -177,8 +168,13 @@ function AppLayout() {
         cashier_float: floatVal,
         cashier_float_set_at: now,
       })
-      .eq("id", ownerId);
-    if (error) { setStoreToggleBusy(false); toast.error("Failed to open store: " + error.message); return; }
+      .eq("id", ownerId)
+      .select("id");
+    if (error || !opened?.length) {
+      setStoreToggleBusy(false);
+      toast.error(error?.message ?? "Could not set the store float");
+      return;
+    }
 
     // 2. Insert store_sessions row
     const { data: newSession } = await supabase
@@ -221,13 +217,14 @@ function AppLayout() {
       .eq("owner_id", ownerId)
       .is("closed_at", null);
 
-    const { error } = await supabase
+    const { data: closed, error } = await supabase
       .from("profiles")
       .update({ store_closed_at: now })
-      .eq("id", ownerId);
+      .eq("id", ownerId)
+      .select("id");
 
     setStoreToggleBusy(false);
-    if (error) { toast.error("Failed to close store: " + error.message); return; }
+    if (error || !closed?.length) { toast.error(error?.message ?? "Failed to close store"); return; }
     setStoreClosedAt(now);
     toast.success("🔴 Store closed");
   };

@@ -59,6 +59,18 @@ type Product = {
 };
 type CartItem = Product & { qty: number; _discount?: number; _originalPrice?: number };
 
+function withSavedUnitCost<T extends { units_consumed?: number | null; cost_price?: number; units_per_item?: number }>(
+  line: T,
+): T & { unit_cost?: number } {
+  const pack = Number(line.cost_price ?? 0);
+  if (pack <= 0) return line;
+  const unitsPer = Number(line.units_per_item ?? 0);
+  const poured = line.units_consumed != null && Number(line.units_consumed) > 0 && unitsPer > 0;
+  const unit = poured ? pack / unitsPer : pack;
+  const rounded = Math.round(unit * 100) / 100;
+  return rounded > 0 ? { ...line, unit_cost: rounded } : line;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Memoized product card — only re-renders when its own data actually changes.
 // Keeping this outside RegisterPage means category tab switches don't touch
@@ -1172,7 +1184,7 @@ export default function RegisterPage() {
     }
 
     const now = new Date().toISOString();
-    const { error } = await supabase
+    const { data: opened, error } = await supabase
       .from("profiles")
       .update({
         store_session_start: now,
@@ -1180,10 +1192,11 @@ export default function RegisterPage() {
         cashier_float: barFloatVal,
         cashier_float_set_at: now,
       })
-      .eq("id", ownerId);
-    if (error) {
+      .eq("id", ownerId)
+      .select("id");
+    if (error || !opened?.length) {
       setBarToggleBusy(false);
-      toast.error("Failed to open store: " + error.message);
+      toast.error(error?.message ?? "Could not set the store float");
       return;
     }
 
@@ -1823,6 +1836,7 @@ export default function RegisterPage() {
           name: p.name,
           price: p.price,
           cost_price: p.cost_price ?? 0,
+          units_per_item: p.units_per_item ?? 0,
           image_url: p.image_url,
           qty: 1,
         },
@@ -2536,6 +2550,15 @@ export default function RegisterPage() {
           editOrder={editOrder}
           onEditComplete={() => setEditOrder(null)}
           onSuccess={async ({ paid, change, orderDiscount, payMode, selectedCustomer, receiptOverride, orderNumber }) => {
+            // Snapshot before clearing. The modal must close on this tick, before
+            // receipt branding (which can stall after the app has been idle).
+            const soldCart = cart;
+            const priorEdit = editOrder;
+            setCart([]);
+            localStorage.removeItem(`bartap-cart-${ownerId}`);
+            setCashOpen(false);
+            setEditOrder(null);
+
             const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Port_of_Spain" });
             const savedDate = localStorage.getItem("pospro_order_date");
             const fromServer = receiptOverride?.orderNumber ?? orderNumber;
@@ -2573,7 +2596,7 @@ export default function RegisterPage() {
               locationName: "Main location",
               orderNumber: fromServer ?? seq,
               serverName: cashierName,
-              items: receiptOverride?.items ?? cart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) })),
+              items: receiptOverride?.items ?? soldCart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) })),
               subtotal: receiptOverride?.total ?? total,
               discount: receiptOverride ? undefined : (orderDiscount > 0 ? orderDiscount : undefined),
               originalTotal: receiptOverride ? undefined : (orderDiscount > 0 ? total : undefined),
@@ -2584,9 +2607,16 @@ export default function RegisterPage() {
               customerName: selectedCustomer?.full_name,
               date: dateStr,
             };
-            setLastSale(await brandReceipt(saleData));
+            setLastSale(saleData);
             setPrinterResult(null);
             setShowSaleCompleteModal(true);
+            void brandReceipt(saleData).then((branded) => {
+              setLastSale((current) =>
+                current?.orderNumber === saleData.orderNumber && current?.date === saleData.date
+                  ? branded
+                  : current,
+              );
+            });
 
             // New sale: subtract the cart. Edit: put the old units back, then subtract the new cart.
             setProducts((prev) => {
@@ -2596,13 +2626,13 @@ export default function RegisterPage() {
                 const productId = rawId.includes("__") ? rawId.split("__")[0] : rawId;
                 qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + sign * units;
               };
-              for (const old of editOrder?.originalItems ?? []) {
+              for (const old of priorEdit?.originalItems ?? []) {
                 const units = old.units_consumed != null && Number(old.units_consumed) > 0
                   ? Number(old.units_consumed)
                   : old.qty;
                 apply(old.id, units, 1);
               }
-              for (const c of cart) {
+              for (const c of soldCart) {
                 const units = (c as any)._units_consumed ?? c.qty;
                 apply(c.id, units, -1);
               }
@@ -2614,10 +2644,6 @@ export default function RegisterPage() {
                   : p,
               );
             });
-            setCart([]);
-            localStorage.removeItem(`bartap-cart-${ownerId}`);
-            setCashOpen(false);
-            setEditOrder(null);
             refreshProfile();
           }}
         />
@@ -2651,6 +2677,7 @@ export default function RegisterPage() {
                     name: line.name,
                     price: line.price,
                     cost_price: varPickerProduct.cost_price ?? 0,
+                    units_per_item: varPickerProduct.units_per_item ?? 0,
                     image_url: varPickerProduct.image_url,
                     qty: line.qty,
                     ...(uc !== undefined ? { _units_consumed: uc } : {}),
@@ -2941,6 +2968,7 @@ function CashOverlay({
   const [step, setStep] = useState<1 | 2>(1);
   const [paid, setPaid] = useState("");
   const [busy, setBusy] = useState(false);
+  const submittingRef = useRef(false);
 
   // Order-level discount
   const [orderDiscount, setOrderDiscount] = useState(0);
@@ -3048,6 +3076,7 @@ function CashOverlay({
   const enough = (Number(paid) || 0) >= discountedTotal;
 
   const submit = async () => {
+    if (submittingRef.current) return;
     if (payMode === "credit") {
       if (!selectedCustomer || !profile) {
         if (!selectedCustomer) toast.error("Please select a customer");
@@ -3056,6 +3085,7 @@ function CashOverlay({
     } else {
       if (!enough || !profile) return;
     }
+    submittingRef.current = true;
     setBusy(true);
     const paidNum = Number(paid);
     const changeNum = change;
@@ -3069,19 +3099,17 @@ function CashOverlay({
         orderDiscount > 0
           ? ` | Disc: -$${orderDiscount.toFixed(2)} (orig $${total.toFixed(2)})`
           : "";
-      const saleItems = cart.map((c) => ({
+      const saleItems = cart.map((c) => withSavedUnitCost({
         id: c.id,
         name: c.name,
         price: c.price,
-        cost_price: (c as any).cost_price ?? 0,
         qty: c.qty,
-        ...((c as any)._units_consumed != null
-          ? { units_consumed: (c as any)._units_consumed }
-          : {}),
+        units_consumed: (c as any)._units_consumed ?? null,
+        cost_price: Number(c.cost_price ?? 0),
+        units_per_item: Number(c.units_per_item ?? 0),
       }));
       const activeTabId = openTabs[selectedCustomer.id];
       const finishCredit = (message: string) => {
-        setBusy(false);
         toast.success(message);
         onSuccess({
           paid: paidNum,
@@ -3136,6 +3164,7 @@ function CashOverlay({
             p_note: itemsDesc + discountNote,
           });
       if (error) {
+        submittingRef.current = false;
         setBusy(false);
         toast.error(error.message);
         return;
@@ -3153,12 +3182,14 @@ function CashOverlay({
     const orderPayload = {
       owner_id: ownerId,
       cashier_id: profile.id,
-      items: cart.map((c) => ({
+      items: cart.map((c) => withSavedUnitCost({
         id: c.id,
         name: c.name,
         price: c.price,
         qty: c.qty,
         units_consumed: (c as any)._units_consumed ?? null,
+        cost_price: Number(c.cost_price ?? 0),
+        units_per_item: Number(c.units_per_item ?? 0),
         ...(c._discount
           ? { discount: c._discount, original_price: c._originalPrice ?? c.price }
           : {}),
@@ -3171,6 +3202,7 @@ function CashOverlay({
 
     if (!isOnline) {
       if (editOrder) {
+        submittingRef.current = false;
         setBusy(false);
         toast.error("Editing a sale needs a connection so the same order is updated");
         return;
@@ -3186,19 +3218,20 @@ function CashOverlay({
             cashier_id: profile.id,
             type: "charge",
             amount: discountedTotal,
-            items: cart.map((c) => ({
+            items: cart.map((c) => withSavedUnitCost({
               id: c.id,
               name: c.name,
               price: c.price,
               qty: c.qty,
               units_consumed: (c as any)._units_consumed ?? null,
+        cost_price: Number(c.cost_price ?? 0),
+        units_per_item: Number(c.units_per_item ?? 0),
             })),
             note: "[CASH] " + itemsDesc,
           },
           groupId,
         );
       }
-      setBusy(false);
       toast.success(`💾 Saved offline — will sync when reconnected`);
       onSuccess({
         paid: paidNum,
@@ -3235,6 +3268,7 @@ function CashOverlay({
       }
     }
     if (error) {
+      submittingRef.current = false;
       setBusy(false);
       toast.error(error.message);
       return;
@@ -3255,18 +3289,19 @@ function CashOverlay({
         cashier_id: profile.id,
         type: "charge",
         amount: discountedTotal,
-        items: cart.map((c) => ({
+        items: cart.map((c) => withSavedUnitCost({
           id: c.id,
           name: c.name,
           price: c.price,
           qty: c.qty,
           units_consumed: (c as any)._units_consumed ?? null,
+        cost_price: Number(c.cost_price ?? 0),
+        units_per_item: Number(c.units_per_item ?? 0),
         })),
         note: "[CASH] " + itemsDesc,
       });
     }
 
-    setBusy(false);
     onSuccess({
       paid: paidNum,
       change: changeNum,
@@ -3649,15 +3684,14 @@ function CashOverlay({
                             p_tab_tx_id: tabId,
                             p_cashier_id: profile.id,
                             p_amount: discountedTotal,
-                            p_items: cart.map((c) => ({
+                            p_items: cart.map((c) => withSavedUnitCost({
                               id: c.id,
                               name: c.name,
                               price: c.price,
-                              cost_price: (c as any).cost_price ?? 0,
                               qty: c.qty,
-                              ...((c as any)._units_consumed != null
-                                ? { units_consumed: (c as any)._units_consumed }
-                                : {}),
+                              units_consumed: (c as any)._units_consumed ?? null,
+        cost_price: Number(c.cost_price ?? 0),
+        units_per_item: Number(c.units_per_item ?? 0),
                             })),
                             p_note: itemsDesc + discountNote,
                           });
@@ -4186,12 +4220,14 @@ function CashCustomerOverlay({
     const orderPayload = {
       owner_id: ownerId,
       cashier_id: profile.id,
-      items: cart.map((c) => ({
+      items: cart.map((c) => withSavedUnitCost({
         id: c.id,
         name: c.name,
         price: c.price,
         qty: c.qty,
         units_consumed: (c as any)._units_consumed ?? null,
+        cost_price: Number(c.cost_price ?? 0),
+        units_per_item: Number(c.units_per_item ?? 0),
         ...(c._discount
           ? { discount: c._discount, original_price: c._originalPrice ?? c.price }
           : {}),
@@ -4210,7 +4246,7 @@ function CashCustomerOverlay({
       cashier_id: profile.id,
       type: "charge",
       amount: total,
-      items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, qty: c.qty })),
+      items: cart.map((c) => withSavedUnitCost({ id: c.id, name: c.name, price: c.price, qty: c.qty, units_consumed: (c as any)._units_consumed ?? null, cost_price: Number(c.cost_price ?? 0), units_per_item: Number(c.units_per_item ?? 0) })),
       note: "[CASH] " + itemsDesc,
     };
 
@@ -4684,12 +4720,14 @@ function CreditSaleOverlay({
       p_credit_account_id: account.id,
       p_cashier_id: profile.id,
       p_amount: total,
-      p_items: cart.map((c) => ({
+      p_items: cart.map((c) => withSavedUnitCost({
         id: c.id,
         name: c.name,
         price: c.price,
-        cost_price: c.cost_price ?? 0,
         qty: c.qty,
+        units_consumed: (c as any)._units_consumed ?? null,
+        cost_price: Number(c.cost_price ?? 0),
+        units_per_item: Number(c.units_per_item ?? 0),
       })),
       p_note: itemsDesc,
     };
@@ -4755,12 +4793,14 @@ function CreditSaleOverlay({
       p_credit_account_id: acc.id,
       p_cashier_id: profile.id,
       p_amount: total,
-      p_items: cart.map((c) => ({
+      p_items: cart.map((c) => withSavedUnitCost({
         id: c.id,
         name: c.name,
         price: c.price,
-        cost_price: c.cost_price ?? 0,
         qty: c.qty,
+        units_consumed: (c as any)._units_consumed ?? null,
+        cost_price: Number(c.cost_price ?? 0),
+        units_per_item: Number(c.units_per_item ?? 0),
       })),
       p_note: itemsDesc,
     });

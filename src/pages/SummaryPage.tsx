@@ -9,13 +9,14 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { toast } from "sonner";
 import { drawHeader, addFootersToAllPages } from "@/lib/pdfHelpers";
 import { downloadPdf } from "@/lib/download";
+import { drawSummaryReport } from "@/lib/summaryPdf";
 import { CATEGORIES } from "@/lib/categories";
 import { useTranslation } from "@/lib/i18n";
-import { barPeriodSummary, fetchAllPaged, isNonStockExpense, orderItemCollected, ttCalendarDayBounds, type SummaryProductCost } from "@/lib/salesSummary";
+import { barPeriodSummary, fetchAllPaged, isNonStockExpense, lineStockCost, orderItemCollected, ttCalendarDayBounds, type SummaryProductCost } from "@/lib/salesSummary";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type OrderItem = { id?: string; name: string; qty: number; price: number; units_consumed?: number | null; discount?: number; original_price?: number };
-type Order = { id: string; total: number; paid: number; change_given: number; discount_amount?: number | null; original_total?: number | null; items: OrderItem[]; created_at: string };
+type Order = { id: string; total: number; paid: number; change_given: number; discount_amount?: number | null; original_total?: number | null; items: OrderItem[]; created_at: string; cashier_id?: string | null };
 type Expense = { id: string; amount: number; description: string | null; expense_date: string; created_at: string };
 type ProductCost = { id: string; name: string; cost_price: number; units_per_item: number; category: string | null };
 type FilterType = "day" | "week" | "month" | "year" | "period";
@@ -101,45 +102,33 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
     loadedRef.current = true;
     setData(d => ({ ...d, loading: true }));
 
-    let ordQuery = supabase.from("orders").select("id, total, paid, change_given, discount_amount, original_total, items, created_at")
-      .eq("owner_id", ownerId)
-      .gte("created_at", startIso);
-    if (sub.closed_at) {
-      ordQuery = ordQuery.lte("created_at", sub.closed_at);
-    }
+    const orders = await fetchAllPaged<Order>((from, to) => {
+      let q = supabase.from("orders").select("id, total, paid, change_given, discount_amount, original_total, items, created_at, cashier_id")
+        .eq("owner_id", ownerId)
+        .gte("created_at", startIso);
+      if (sub.closed_at) q = q.lte("created_at", sub.closed_at);
+      return q.order("created_at", { ascending: false }).range(from, to);
+    });
+    const expenses = await fetchAllPaged<Expense>((from, to) => {
+      let q = supabase.from("owner_expenses").select("id, amount, description, expense_date, created_at")
+        .eq("owner_id", ownerId)
+        .gte("created_at", startIso);
+      if (sub.closed_at) q = q.lte("created_at", sub.closed_at);
+      return q.order("created_at", { ascending: false }).range(from, to);
+    });
 
-    let expQuery = supabase.from("owner_expenses").select("id, amount, description, expense_date, created_at")
-      .eq("owner_id", ownerId)
-      .gte("created_at", startIso);
-    if (sub.closed_at) {
-      expQuery = expQuery.lte("created_at", sub.closed_at);
-    }
-
-    let walletQuery = supabase.from("wallet_transactions").select("amount, type, created_at")
-      .eq("profile_id", ownerId)
-      .in("type", ["transfer_in", "credit_payment"]).gt("amount", 0)
-      .gte("created_at", startIso);
-    if (sub.closed_at) {
-      walletQuery = walletQuery.lte("created_at", sub.closed_at);
-    }
-
-    const [ordRes, expRes, walletRes] = await Promise.all([
-      ordQuery.order("created_at", { ascending: false }),
-      expQuery.order("created_at", { ascending: false }),
-      walletQuery,
-    ]);
-
+    // Sales come from orders. A till clear is not added on top of those sales.
     setData({
-      orders: (ordRes.data ?? []) as Order[],
-      expenses: (expRes.data ?? []) as Expense[],
-      walletIncome: (walletRes.data ?? []).reduce((s: number, t: { amount: number }) => s + Number(t.amount), 0),
+      orders,
+      expenses,
+      walletIncome: 0,
       loaded: true, loading: false,
     });
   }, [startIso, sub.closed_at, ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggle = () => { const next = !open; setOpen(next); if (next && !loadedRef.current) loadData(); };
 
-  const nameMap = new Map<string, number>(products.map(p => [p.name, p.units_per_item > 0 ? p.cost_price / p.units_per_item : p.cost_price]));
+  const costProducts = products as SummaryProductCost[];
   const period = barPeriodSummary(data.orders, data.expenses, products as SummaryProductCost[]);
   const items = categoryFilter === "all" ? period.items : period.items.filter(it => it.category === categoryFilter);
   const nonStockExpenses = data.expenses.filter(e => isNonStockExpense(e.description));
@@ -262,8 +251,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                             const collected = orderItemCollected(o);
                             return o.items.map((item, idx) => {
                             const saleTotal = collected[idx]?.collected ?? 0;
-                            const unitCost  = nameMap.get(item.name) ?? 0;
-                            const costTotal = item.qty * unitCost;
+                            const costTotal = lineStockCost(item, costProducts);
                             const profit    = saleTotal - costTotal;
                             return (
                               <span key={idx} className="text-[9px] text-slate-800 block">
@@ -411,20 +399,14 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
     let cancelled = false;
     setData(d => ({ ...d, loading: true }));
 
-    // Same TT calendar window as Wallet Today (00:00–23:59 America/Port_of_Spain).
-    const calFromUTC = ttCalendarDayBounds(fromDate).fromUTC;
-    const calToUTC   = ttCalendarDayBounds(toDate).toUTC;
-
-    // For the Day view just use the plain calendar window (00:00–23:59 TT).
-    // We no longer expand to bar session boundaries — that was pulling in orders
-    // from cross-midnight sessions on different calendar days and confusing users.
-    // All other filters (week, month, year, period) already use calFromUTC/calToUTC directly.
-    const fromUTC = calFromUTC;
-    const toUTC   = calToUTC;
+    // Calendar window for the filter the owner picked. Wallet Today is separate:
+    // it follows the open bar, not this calendar day.
+    const fromUTC = ttCalendarDayBounds(fromDate).fromUTC;
+    const toUTC   = ttCalendarDayBounds(toDate).toUTC;
 
     Promise.all([
       fetchAllPaged<Order>((from, to) =>
-        supabase.from("orders").select("id, total, paid, change_given, discount_amount, original_total, items, created_at")
+        supabase.from("orders").select("id, total, paid, change_given, discount_amount, original_total, items, created_at, cashier_id")
           .eq("owner_id", ownerId).gte("created_at", fromUTC).lte("created_at", toUTC)
           .order("created_at", { ascending: false }).range(from, to),
       ),
@@ -433,24 +415,22 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
           .eq("owner_id", ownerId).gte("created_at", fromUTC).lte("created_at", toUTC)
           .order("created_at", { ascending: false }).range(from, to),
       ),
-      fetchAllPaged<{ amount: number }>((from, to) =>
-        supabase.from("wallet_transactions").select("amount, type, created_at")
-          .eq("profile_id", ownerId).in("type", ["transfer_in", "credit_payment"]).gt("amount", 0)
-          .gte("created_at", fromUTC).lte("created_at", toUTC).range(from, to),
-      ),
-    ]).then(([orders, expenses, walletRows]) => {
+    ]).then(([orders, expenses]) => {
       if (cancelled) return;
+      // Every sale stays here. Wallet All Time counts a manager or cashier sale
+      // only after that wallet is cleared, then the two all-time totals match.
+      // A clear is not added again as a second sale.
       setData({
         orders,
         expenses,
-        walletIncome: walletRows.reduce((s, t) => s + Number(t.amount), 0),
+        walletIncome: 0,
         loading: false,
       });
     });
     return () => { cancelled = true; };
   }, [fromDate, toDate, ownerId, filter, filteredSessions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const nameMap = new Map<string, number>(products.map(p => [p.name, p.units_per_item > 0 ? p.cost_price / p.units_per_item : p.cost_price]));
+  const costProducts = products as SummaryProductCost[];
   const period = barPeriodSummary(data.orders, data.expenses, products as SummaryProductCost[]);
   const items = categoryFilter === "all" ? period.items : period.items.filter(it => it.category === categoryFilter);
   const nonStockExpenses = data.expenses.filter(e => isNonStockExpense(e.description));
@@ -558,8 +538,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
                         const collected = orderItemCollected(o);
                         return o.items.map((item, idx) => {
                         const saleTotal = collected[idx]?.collected ?? 0;
-                        const unitCost  = nameMap.get(item.name) ?? 0;
-                        const costTotal = item.qty * unitCost;
+                        const costTotal = lineStockCost(item, costProducts);
                         const profit    = saleTotal - costTotal;
                         return (
                           <span key={idx} className="text-[9px] text-slate-800 block">
@@ -750,16 +729,83 @@ export default function SummaryPage() {
   ];
 
   const handleDownloadPdf = async () => {
-    if (downloading) return;
+    if (downloading || !ownerId) return;
     setDownloading(true);
     try {
+      const fromUTC = ttCalendarDayBounds(fromDate).fromUTC;
+      const toUTC = ttCalendarDayBounds(toDate).toUTC;
+      const [orders, expenses] = await Promise.all([
+        fetchAllPaged<Order>((from, to) =>
+          supabase.from("orders").select("id, total, paid, change_given, discount_amount, original_total, items, created_at")
+            .eq("owner_id", ownerId).gte("created_at", fromUTC).lte("created_at", toUTC)
+            .order("created_at", { ascending: false }).range(from, to),
+        ),
+        fetchAllPaged<Expense>((from, to) =>
+          supabase.from("owner_expenses").select("id, amount, description, expense_date, created_at")
+            .eq("owner_id", ownerId).gte("created_at", fromUTC).lte("created_at", toUTC)
+            .order("created_at", { ascending: false }).range(from, to),
+        ),
+      ]);
+
+      const costProducts = products as SummaryProductCost[];
+      const period = barPeriodSummary(orders, expenses, costProducts);
+      const sold = categoryFilter === "all" ? period.items : period.items.filter(it => it.category === categoryFilter);
+      const totalIncome = categoryFilter === "all" ? period.sales : sold.reduce((s, it) => s + it.revenue, 0);
+      const totalItemsCost = sold.reduce((s, it) => s + it.costTotal, 0);
+      const totalExpenses = categoryFilter === "all" ? period.expenses : 0;
+      const grossProfit = totalIncome - totalItemsCost;
+      const categoryLabel = categoryFilter === "all"
+        ? "All categories"
+        : storeCategories.find(c => c.id === categoryFilter)?.name
+          ?? CATEGORIES.find(c => c.value === categoryFilter)?.label
+          ?? categoryFilter;
+
+      const when = (iso: string, withYear: boolean) => new Date(iso).toLocaleString("en-GB", {
+        day: "numeric", month: "short", ...(withYear ? { year: "numeric" as const } : {}),
+        hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ,
+      });
+
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ unit: "mm", format: "a4" });
       const periodLabel = filterLabel(filter, fromDate, toDate);
-      const generated   = new Date().toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" });
-      let y = await drawHeader(doc, profile.username ?? "Owner", "Summary Report", periodLabel, generated);
-      doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(100, 100, 100);
-      doc.text(`Sessions shown: ${filteredSessions.length}`, 14, y); y += 8;
+      const generated = new Date().toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" });
+      const y = await drawHeader(doc, profile.username ?? "Owner", "Summary Report", periodLabel, generated);
+      drawSummaryReport(doc, y, {
+        sessionCount: filteredSessions.length,
+        categoryLabel,
+        sales: totalIncome,
+        itemsCost: totalItemsCost,
+        gross: grossProfit,
+        expensesTotal: totalExpenses,
+        net: grossProfit - totalExpenses,
+        orderCount: orders.length,
+        items: sold.map(it => ({ name: it.name, qty: it.qty, revenue: it.revenue, costTotal: it.costTotal })),
+        orders: orders.map(o => {
+          const lines = Array.isArray(o.items) ? o.items : [];
+          const collected = orderItemCollected({ ...o, items: lines });
+          return {
+            when: when(o.created_at, false),
+            total: Number(o.total) || 0,
+            discount: Number(o.discount_amount) || 0,
+            lines: lines.map((item, idx) => {
+              const sale = collected[idx]?.collected ?? 0;
+              const cost = lineStockCost(item, costProducts);
+              return { qty: Number(item.qty) || 0, name: item.name, sale, cost, profit: sale - cost };
+            }),
+          };
+        }),
+        expenses: expenses.filter(e => isNonStockExpense(e.description)).map(e => {
+          const lines = (e.description ?? "").split("\n").filter(Boolean).slice(1)
+            .filter(l => !l.startsWith("[Cashier:") && !l.startsWith("[Manager:"));
+          const amount = Number(e.amount) || 0;
+          return {
+            when: when(e.created_at, true),
+            label: lines.length > 0 ? lines.map(l => l.split(" = ")[0]).join(", ") : "Expense",
+            amount,
+            refund: amount < 0,
+          };
+        }),
+      });
       addFootersToAllPages(doc);
       await downloadPdf(`summary-${periodLabel.replace(/[^a-zA-Z0-9]/g, "-")}.pdf`, doc.output("datauristring"));
       toast.success("PDF saved to Downloads folder");

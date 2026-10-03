@@ -13,6 +13,9 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { categoryIcon } from "@/lib/categories";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { SupplierNameField } from "@/components/SupplierNameField";
+import { rememberSupplier } from "@/lib/suppliers";
+import { listPurchaseOrders, savePurchaseOrder, type PurchaseOrderLine, type PurchaseOrderTemplate } from "@/lib/purchaseOrders";
 
 /** Money to the cent. Unit cost stays at 6 decimals so qty × cost rounds back to the amount paid. */
 function money(n: number): number {
@@ -54,7 +57,47 @@ type Product = {
   stock_qty_undo_saved: number | null;
   stock_last_expense_id: string | null;
   barcode?: string | null;
+  supplier_name?: string | null;
 };
+
+/** Negative stock expense. Unpaid source bills stay on the supplier list and this credit reduces amount owing. */
+async function insertRevertedStockExpense(opts: {
+  ownerId: string;
+  productName: string;
+  qty: number;
+  amount: number;
+  supplierName?: string | null;
+  expenseId?: string | null;
+  expenseDate: string;
+}): Promise<string | null> {
+  const amount = money(opts.amount);
+  if (opts.qty <= 0 || amount <= 0) return null;
+
+  let supplier = (opts.supplierName ?? "").trim();
+  let unpaid = false;
+  if (opts.expenseId) {
+    const { data } = await supabase
+      .from("owner_expenses")
+      .select("supplier_name, is_paid")
+      .eq("id", opts.expenseId)
+      .maybeSingle();
+    if (data) {
+      const fromBill = (data.supplier_name ?? "").trim();
+      if (fromBill) supplier = fromBill;
+      unpaid = data.is_paid === false;
+    }
+  }
+
+  const { error } = await supabase.from("owner_expenses").insert({
+    owner_id: opts.ownerId,
+    amount: -amount,
+    description: `Reverted Stock Expense\n${opts.productName} ×${opts.qty} reverted`,
+    expense_date: opts.expenseDate,
+    supplier_name: supplier || null,
+    is_paid: !unpaid,
+  });
+  return error ? error.message : null;
+}
 
 // ─── Revert Stock Modal ───────────────────────────────────────────────────────
 function RevertStockModal({
@@ -63,6 +106,8 @@ function RevertStockModal({
   ownerId,
   currentQty,
   costPrice,
+  supplierName,
+  expenseId,
   onClose,
   onSaved,
 }: {
@@ -71,6 +116,8 @@ function RevertStockModal({
   ownerId: string;
   currentQty: number;
   costPrice: number;
+  supplierName?: string | null;
+  expenseId?: string | null;
   onClose: () => void;
   onSaved: (newQty: number) => void;
 }) {
@@ -139,15 +186,17 @@ function RevertStockModal({
       ? money((batchPaid.total * removeQty) / batchPaid.added)
       : money(costPrice * removeQty);
 
-    // Insert a negative (refund) expense record if cost price is set
-    if (costPrice > 0) {
-      const { error: expErr } = await supabase.from("owner_expenses").insert({
-        owner_id: ownerId,
-        amount: -refundAmount,
-        description: `Reverted Stock Expense\n${productName} ×${removeQty} reverted`,
-        expense_date: today,
+    if (refundAmount > 0) {
+      const expErr = await insertRevertedStockExpense({
+        ownerId,
+        productName,
+        qty: removeQty,
+        amount: refundAmount,
+        supplierName,
+        expenseId,
+        expenseDate: today,
       });
-      if (expErr) { toast.error(expErr.message); setBusy(false); return; }
+      if (expErr) { toast.error(expErr); setBusy(false); return; }
     }
 
     // Update the product stock_qty via RPC — does NOT sync stock_check_actuals
@@ -271,9 +320,10 @@ const STOCK_BTNS = [
   { qty: 10 }, { qty: 6  }, { qty: 1  },
 ];
 
-function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, stockQtyUndo, stockQtyUndoSaved, lastExpenseId, unit, onClose, onBack, onSaved }: {
+function StockNumpad({ productId, productName, supplierName: initialSupplier, ownerId, currentQty, costPrice, stockQtyUndo, stockQtyUndoSaved, lastExpenseId, unit, onClose, onBack, onSaved }: {
   productId: string;
   productName: string;
+  supplierName?: string | null;
   ownerId: string;
   currentQty: number;
   costPrice: number;
@@ -283,11 +333,13 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
   unit?: string;
   onClose: () => void;
   onBack?: () => void;
-  onSaved: (patch: Partial<Pick<Product, "stock_qty" | "stock_qty_undo" | "stock_qty_undo_saved" | "stock_last_expense_id" | "cost_price">>) => void;
+  onSaved: (patch: Partial<Pick<Product, "stock_qty" | "stock_qty_undo" | "stock_qty_undo_saved" | "stock_last_expense_id" | "cost_price" | "supplier_name">>) => void;
 }) {
   // counts[i] = how many times button i has been tapped
   const [counts, setCounts]   = useState([0, 0, 0, 0, 0, 0]);
   const [totalCost, setTotalCost] = useState("");
+  const [supplierName, setSupplierName] = useState(initialSupplier ?? "");
+  const [markUnpaid, setMarkUnpaid] = useState(false);
   const [busy, setBusy]       = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
   const confirmDialog = useConfirm();
@@ -324,6 +376,11 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
 
   const save = async () => {
     if (addAmount <= 0) return;
+    const supplier = supplierName.trim();
+    if (batchTotal > 0 && !supplier) {
+      toast.error("Enter the supplier name for this stock add");
+      return;
+    }
     setBusy(true);
 
     // Derive per-item cost from batch total entered by user
@@ -346,6 +403,8 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
           amount: batchTotal,
           description: `${productName} ×${addAmount}${unitLabel ? " " + unitLabel : ""} total $${batchTotal.toFixed(2)} ($${finalCp.toFixed(2)} each)`,
           expense_date: today,
+          supplier_name: supplier,
+          is_paid: !markUnpaid,
         })
         .select("id")
         .single();
@@ -361,11 +420,13 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
         stock_qty_undo_saved: newTotal,
         stock_last_expense_id: newExpenseId,
         cost_price: finalCp,
+        ...(supplier ? { supplier_name: supplier } : {}),
       })
       .eq("id", productId);
     setBusy(false);
     if (error) { toast.error(error.message); return; }
-    onSaved({ stock_qty: newTotal, stock_qty_undo: currentQty, stock_qty_undo_saved: newTotal, stock_last_expense_id: newExpenseId, cost_price: finalCp });
+    if (supplier) void rememberSupplier(ownerId, supplier);
+    onSaved({ stock_qty: newTotal, stock_qty_undo: currentQty, stock_qty_undo_saved: newTotal, stock_last_expense_id: newExpenseId, cost_price: finalCp, ...(supplier ? { supplier_name: supplier } : {}) });
     reset();
     setTotalCost("");
     onClose();
@@ -555,6 +616,34 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
               >Clear</button>
             </div>
 
+            <div className="mt-4 space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Supplier Name</label>
+              <SupplierNameField ownerId={ownerId} value={supplierName} onChange={setSupplierName} />
+              {batchTotal > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setMarkUnpaid((v) => !v)}
+                  aria-pressed={markUnpaid}
+                  className="w-full rounded-2xl font-black text-base py-4 flex items-center justify-center gap-3 transition active:scale-[0.98]"
+                  style={{
+                    background: markUnpaid ? "rgba(220,38,38,0.12)" : "var(--muted)",
+                    border: `2px solid ${markUnpaid ? "#b91c1c" : "var(--border)"}`,
+                    color: markUnpaid ? "#b91c1c" : "inherit",
+                  }}
+                >
+                  <span
+                    className="h-6 w-6 rounded-md border-2 flex items-center justify-center text-sm font-black text-white shrink-0"
+                    style={{
+                      borderColor: markUnpaid ? "#b91c1c" : "var(--border)",
+                      background: markUnpaid ? "#b91c1c" : "transparent",
+                    }}
+                  >
+                    {markUnpaid ? "✓" : ""}
+                  </span>
+                  Mark this record as unpaid
+                </button>
+              )}
+            </div>
             <button
               onClick={save}
               disabled={busy || addAmount <= 0 || batchTotal <= 0}
@@ -577,6 +666,8 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
           ownerId={ownerId}
           currentQty={currentQty}
           costPrice={costPrice}
+          supplierName={initialSupplier}
+          expenseId={lastExpenseId}
           onClose={() => setRevertOpen(false)}
           onSaved={(newQty) => {
             onSaved({ stock_qty: newQty });
@@ -589,23 +680,44 @@ function StockNumpad({ productId, productName, ownerId, currentQty, costPrice, s
 }
 
 // ─── Bulk Edit Modal ──────────────────────────────────────────────────────────
-function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
+function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved, seedLines, initialSupplier, askSaveTemplate, onSaveTemplate }: {
   items: Product[];
   ownerId: string;
   storeCategories: { id: string; name: string }[];
   onClose: () => void;
-  onSaved: (patches: { id: string; stock_qty: number; stock_last_expense_id: string | null; cost_price?: number; price?: number; barcode?: string | null }[]) => void;
+  onSaved: (patches: { id: string; stock_qty: number; stock_last_expense_id: string | null; cost_price?: number; price?: number; barcode?: string | null; supplier_name?: string | null }[]) => void;
+  seedLines?: PurchaseOrderLine[] | null;
+  initialSupplier?: string;
+  askSaveTemplate?: boolean;
+  onSaveTemplate?: (name: string, supplierName: string, lines: PurchaseOrderLine[]) => Promise<void>;
 }) {
   const { t } = useTranslation();
   // newQty keyed by product id — only items with a value > 0 will be processed
-  const [newQtys, setNewQtys] = useState<Record<string, string>>({});
+  const [newQtys, setNewQtys] = useState<Record<string, string>>(() =>
+    Object.fromEntries((seedLines ?? []).map((l) => [l.productId, l.qty > 0 ? String(l.qty) : ""])),
+  );
   // costPrices stores TOTAL batch cost for added qty — starts empty until user enters it
-  const [costPrices, setCostPrices] = useState<Record<string, string>>(() =>
-    Object.fromEntries(items.map((p) => [p.id, ""]))
-  );
-  const [sellPrices, setSellPrices] = useState<Record<string, string>>(() =>
-    Object.fromEntries(items.map((p) => [p.id, String(p.price ?? "")]))
-  );
+  const [costPrices, setCostPrices] = useState<Record<string, string>>(() => {
+    const base = Object.fromEntries(items.map((p) => [p.id, ""]));
+    for (const l of seedLines ?? []) base[l.productId] = l.batchCost > 0 ? String(l.batchCost) : "";
+    return base;
+  });
+  const [sellPrices, setSellPrices] = useState<Record<string, string>>(() => {
+    const base = Object.fromEntries(items.map((p) => [p.id, String(p.price ?? "")]));
+    for (const l of seedLines ?? []) {
+      if (l.sellPrice > 0) base[l.productId] = String(l.sellPrice);
+    }
+    return base;
+  });
+  const [supplierName, setSupplierName] = useState(() => {
+    if (initialSupplier) return initialSupplier;
+    const names = [...new Set(items.map((p) => (p.supplier_name ?? "").trim()).filter(Boolean))];
+    return names.length === 1 ? names[0] : "";
+  });
+  const [markUnpaid, setMarkUnpaid] = useState(false);
+  const [namingTemplate, setNamingTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [unitsPerItems, setUnitsPerItems] = useState<Record<string, string>>(() =>
     Object.fromEntries(items.map((p) => [p.id, p.units_per_item > 0 ? String(p.units_per_item) : ""]))
   );
@@ -621,6 +733,18 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
   });
   const [busy, setBusy] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const backToEdit = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setShowPreview(false);
+    // A touch can fire a second click after this screen unmounts, on Exit underneath.
+    const shield = (ev: Event) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+    };
+    document.addEventListener("click", shield, true);
+    window.setTimeout(() => document.removeEventListener("click", shield, true), 500);
+  };
   // id + field for active numpad in the table
   const [activeNumpad, setActiveNumpad] = useState<{ id: string; field: "cp" | "sp" | "qty" | "units" | "vp" | "vu" } | null>(null);
   // Product id whose qty is being reverted via the pencil
@@ -779,7 +903,15 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
     return sum + batchTotal;
   }, 0);
 
-  const save = async () => {
+  const linesForTemplate = () =>
+    updates.map((p) => ({
+      productId: p.id,
+      qty: parseInt(newQtys[p.id], 10),
+      batchCost: parseFloat(costPrices[p.id] ?? "") || 0,
+      sellPrice: parseFloat(sellPrices[p.id] ?? "") || Number(p.price ?? 0),
+    }));
+
+  const save = async (opts?: { requireSupplier?: boolean }) => {
     if (allChanged.length === 0) return;
     setBusy(true);
 
@@ -792,7 +924,15 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
       const perItem = addQty > 0 ? batchTotal / addQty : 0;
       return `${p.name} ×${addQty} total $${batchTotal.toFixed(2)} ($${perItem.toFixed(2)} each)`;
     });
-    const description = `Bulk Stock Update\n${lines.join("\n")}`;
+    const supplier = supplierName.trim();
+    if (opts?.requireSupplier !== false && totalCost > 0 && !supplier) {
+      toast.error("Enter the supplier name for this stock add");
+      setBusy(false);
+      return;
+    }
+    const description = supplier
+      ? `Bulk Stock Update\nSupplier: ${supplier}\n${lines.join("\n")}`
+      : `Bulk Stock Update\n${lines.join("\n")}`;
 
     // Insert one combined expense record (only if there's a cost)
     let expenseId: string | null = null;
@@ -804,15 +944,18 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
           amount: totalCost,
           description,
           expense_date: today,
+          supplier_name: supplier,
+          is_paid: !markUnpaid,
         })
         .select("id")
         .single();
       if (expErr) { toast.error("Could not create expense record: " + expErr.message); setBusy(false); return; }
       expenseId = expData?.id ?? null;
+      if (supplier) void rememberSupplier(ownerId, supplier);
     }
 
     // Update each product — stock qty + WAC cost_price + any edited sell/units prices
-    const patches: { id: string; stock_qty: number; stock_last_expense_id: string | null; cost_price?: number; price?: number; units_per_item?: number; barcode?: string | null }[] = [];
+    const patches: { id: string; stock_qty: number; stock_last_expense_id: string | null; cost_price?: number; price?: number; units_per_item?: number; barcode?: string | null; supplier_name?: string | null }[] = [];
     for (const p of updates) {
       const addQty = parseInt(newQtys[p.id], 10);
       const newStockTotal = (p.stock_qty ?? 0) + addQty;
@@ -842,6 +985,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
           stock_qty_undo_saved: newStockTotal,
           stock_last_expense_id: expenseId,
           cost_price: finalCp,
+          ...(supplier ? { supplier_name: supplier } : {}),
           ...(spChanged ? { price: newSp } : {}),
           ...(unitsChanged ? { units_per_item: newUnits } : {}),
           ...(barcodeChanged ? { barcode: nextBarcode || null } : {}),
@@ -854,6 +998,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
           stock_qty: newStockTotal,
           stock_last_expense_id: expenseId,
           cost_price: finalCp,
+          ...(supplier ? { supplier_name: supplier } : {}),
           ...(spChanged ? { price: newSp } : {}),
           ...(unitsChanged ? { units_per_item: newUnits } : {}),
           ...(barcodeChanged ? { barcode: nextBarcode || null } : {}),
@@ -939,6 +1084,25 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
     onClose();
   };
 
+  const commitNamedTemplate = async () => {
+    const name = templateName.trim();
+    if (!name) { toast.error("Enter a template name"); return; }
+    const lines = linesForTemplate();
+    if (lines.length === 0) { toast.error("Add a quantity before saving a template"); return; }
+    if (!supplierName.trim()) { toast.error("Enter the supplier name"); return; }
+    setSavingTemplate(true);
+    try {
+      await onSaveTemplate?.(name, supplierName.trim(), lines);
+      toast.success("Template saved");
+      setNamingTemplate(false);
+      await save();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not save template");
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
   const SaveBar = () => (
     <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border bg-background/95 shrink-0">
       <div className="text-sm font-black">
@@ -980,7 +1144,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
 
   return (
     <>
-    <div className="fixed inset-0 z-[70] flex flex-col bg-background" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex flex-col bg-background">
       <div className="flex flex-col h-full max-w-6xl mx-auto w-full" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 pb-3 border-b border-border shrink-0"
@@ -1331,7 +1495,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
             <h2 className="text-lg font-black">Confirm Changes</h2>
             <p className="text-xs text-muted-foreground mt-0.5">{allChanged.length} item{allChanged.length !== 1 ? "s" : ""} will be updated</p>
           </div>
-          <button onClick={() => setShowPreview(false)} className="h-9 w-9 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition">
+          <button type="button" onClick={backToEdit} className="h-9 w-9 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -1407,24 +1571,100 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
         </div>
 
         {/* Action buttons */}
-        <div className="px-4 pb-6 pt-3 border-t border-border shrink-0 flex gap-3">
+        <div className="px-4 pb-6 pt-3 border-t border-border shrink-0 space-y-3">
+          {!askSaveTemplate && (
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Supplier Name</label>
+              <div className="mt-1">
+                <SupplierNameField ownerId={ownerId} value={supplierName} onChange={setSupplierName} placeholder="Supplier for this stock add" />
+              </div>
+            </div>
+          )}
+          {totalCost > 0 && (
+            <button
+              type="button"
+              onClick={() => setMarkUnpaid((v) => !v)}
+              aria-pressed={markUnpaid}
+              className="w-full min-h-12 rounded-2xl font-black text-sm py-4 flex items-center justify-center gap-3 text-center transition active:scale-[0.98]"
+              style={{
+                background: markUnpaid ? "rgba(220,38,38,0.12)" : "var(--muted)",
+                border: `2px solid ${markUnpaid ? "#b91c1c" : "var(--border)"}`,
+                color: markUnpaid ? "#b91c1c" : "inherit",
+              }}
+            >
+              <span
+                className="h-6 w-6 rounded-md border-2 flex items-center justify-center text-sm font-black text-white shrink-0"
+                style={{
+                  borderColor: markUnpaid ? "#b91c1c" : "var(--border)",
+                  background: markUnpaid ? "#b91c1c" : "transparent",
+                }}
+              >
+                {markUnpaid ? "✓" : ""}
+              </span>
+              <span>
+                Mark this record as unpaid
+                <span className="block text-xs font-semibold text-muted-foreground">
+                  {supplierName.trim() ? `${supplierName.trim()} still needs to be paid.` : "Leave unchecked if this supplier is already paid."}
+                </span>
+              </span>
+            </button>
+          )}
+          <div className="flex gap-3">
           <button
-            onClick={() => setShowPreview(false)}
+            type="button"
+            onClick={backToEdit}
             className="flex-1 h-12 rounded-2xl font-black text-sm border border-border transition active:scale-[0.98]"
             style={{ background: "rgba(255,255,255,0.04)" }}
           >
             ← Back
           </button>
           <button
-            onClick={save}
-            disabled={busy}
+            onClick={() => {
+              if (askSaveTemplate && updates.length > 0) {
+                setTemplateName("");
+                setNamingTemplate(true);
+                return;
+              }
+              void save();
+            }}
+            disabled={busy || savingTemplate}
             className="flex-[2] h-12 rounded-2xl font-black text-sm text-primary-foreground disabled:opacity-40 flex items-center justify-center gap-2 transition active:scale-[0.98]"
             style={{ background: "var(--gradient-hero)" }}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Save"}
           </button>
+          </div>
         </div>
         </div>{/* end max-w-2xl wrapper */}
+      </div>
+    )}
+
+    {namingTemplate && (
+      <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/70" onClick={() => { if (!savingTemplate) setNamingTemplate(false); }}>
+        <div className="w-full max-w-sm rounded-3xl border border-border p-5 space-y-4" style={{ background: "var(--gradient-card)" }} onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="font-black text-lg">Save as a purchase order template?</h3>
+            <button type="button" disabled={savingTemplate} onClick={() => setNamingTemplate(false)} className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center bg-muted hover:bg-muted/80 transition disabled:opacity-40" aria-label="Back">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="text-sm text-muted-foreground">Enter a template name and supplier name, then continue. Or continue without saving a template.</p>
+          <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder="Template name" className="w-full h-11 rounded-xl px-3 text-sm font-bold border border-border bg-muted" autoFocus />
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Supplier Name</label>
+            <div className="mt-1">
+              <SupplierNameField ownerId={ownerId} value={supplierName} onChange={setSupplierName} placeholder="Supplier for this stock add" />
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <button type="button" disabled={savingTemplate || busy || !templateName.trim() || !supplierName.trim()} onClick={() => void commitNamedTemplate()} className="w-full h-12 rounded-2xl font-black text-sm text-primary-foreground disabled:opacity-40 flex items-center justify-center gap-2" style={{ background: "var(--gradient-hero)" }}>
+              {savingTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save and continue"}
+            </button>
+            <button type="button" disabled={savingTemplate || busy} onClick={() => { setNamingTemplate(false); void save({ requireSupplier: false }); }} className="w-full h-12 rounded-2xl font-black text-sm border border-border" style={{ background: "rgba(255,255,255,0.04)" }}>
+              Continue without saving
+            </button>
+          </div>
+        </div>
       </div>
     )}
 
@@ -1436,6 +1676,8 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved }: {
         ownerId={ownerId}
         currentQty={liveQtys[revertItem.id] ?? revertItem.stock_qty ?? 0}
         costPrice={parseFloat(costPrices[revertItem.id] ?? "") || Number(revertItem.cost_price ?? 0)}
+        supplierName={revertItem.supplier_name}
+        expenseId={revertItem.stock_last_expense_id}
         onClose={() => setRevertItem(null)}
         onSaved={(newQty) => {
           setLiveQtys((prev) => ({ ...prev, [revertItem.id]: newQty }));
@@ -1470,6 +1712,10 @@ export default function ProductsPage() {
   // so Back can reliably restore the Edit Item dialog regardless of Radix state.
   const editItemForBackRef = useRef<Product | null>(null);
   const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkSeed, setBulkSeed] = useState<{ lines: PurchaseOrderLine[]; supplierName: string } | null>(null);
+  const [poListOpen, setPoListOpen] = useState(false);
+  const [poLoading, setPoLoading] = useState(false);
+  const [poTemplates, setPoTemplates] = useState<PurchaseOrderTemplate[]>([]);
   // Preload product images so the grid renders instantly and works offline
   useImageCache(items.map((p) => productImageUrl(p.image_url)));
 
@@ -1705,6 +1951,26 @@ export default function ProductsPage() {
             >
               <Pencil className="h-3.5 w-3.5 mr-1" /> Bulk Edit
             </Button>
+            <Button
+              size="sm"
+              className="font-bold h-8 px-3"
+              variant="outline"
+              style={{ borderColor: "var(--primary)", color: "var(--primary)" }}
+              onClick={async () => {
+                setPoListOpen(true);
+                setPoLoading(true);
+                try {
+                  setPoTemplates(await listPurchaseOrders(ownerIdForQuery));
+                } catch (e: unknown) {
+                  toast.error(e instanceof Error ? e.message : "Could not load purchase orders");
+                  setPoTemplates([]);
+                } finally {
+                  setPoLoading(false);
+                }
+              }}
+            >
+              Order Lists
+            </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="font-bold h-8" style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>
@@ -1837,14 +2103,27 @@ export default function ProductsPage() {
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>Delete {p.name}?</AlertDialogTitle>
-                          <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+                          <AlertDialogDescription>
+                            Remaining stock is reversed at cost price. Units already sold stay on the books. If that purchase is still unpaid, the supplier amount owing drops by the same amount.
+                          </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter className="flex-row gap-3 mt-2">
                           <AlertDialogCancel className="flex-1 h-14 text-base font-black m-0">Cancel</AlertDialogCancel>
                           <AlertDialogAction
                             className="flex-1 h-14 text-base font-black bg-destructive hover:bg-destructive/90"
                             onClick={async () => {
-                              await supabase.from("products").delete().eq("id", p.id);
+                              const expErr = await insertRevertedStockExpense({
+                                ownerId: ownerIdForQuery,
+                                productName: p.name,
+                                qty: p.stock_qty ?? 0,
+                                amount: money(Number(p.cost_price ?? 0) * (p.stock_qty ?? 0)),
+                                supplierName: p.supplier_name,
+                                expenseId: p.stock_last_expense_id,
+                                expenseDate: new Date().toISOString().split("T")[0],
+                              });
+                              if (expErr) { toast.error(expErr); return; }
+                              const { error } = await supabase.from("products").delete().eq("id", p.id);
+                              if (error) { toast.error(error.message); return; }
                               load();
                             }}
                           >Delete</AlertDialogAction>
@@ -1883,6 +2162,7 @@ export default function ProductsPage() {
         <StockNumpad
           productId={stockNumpadId}
           productName={stockNumpadProduct.name}
+          supplierName={stockNumpadProduct.supplier_name}
           ownerId={ownerIdForQuery}
           currentQty={stockNumpadProduct.stock_qty ?? 0}
           costPrice={stockNumpadProduct.cost_price ?? 0}
@@ -1948,10 +2228,16 @@ export default function ProductsPage() {
       {/* Bulk Edit Modal — regular */}
       {showBulkEdit && (
         <BulkEditModal
-          items={items}
+          items={bulkSeed
+            ? bulkSeed.lines.map((l) => items.find((p) => p.id === l.productId)).filter((p): p is Product => !!p)
+            : items}
           ownerId={ownerIdForQuery}
           storeCategories={storeCategories}
-          onClose={() => setShowBulkEdit(false)}
+          askSaveTemplate
+          seedLines={bulkSeed?.lines}
+          initialSupplier={bulkSeed?.supplierName}
+          onSaveTemplate={(name, supplier, lines) => savePurchaseOrder(ownerIdForQuery, name, supplier, lines)}
+          onClose={() => { setShowBulkEdit(false); setBulkSeed(null); }}
           onSaved={(patches) => {
             setItems((prev) => prev.map((p) => {
               const patch = patches.find((x) => x.id === p.id);
@@ -1962,10 +2248,58 @@ export default function ProductsPage() {
                 ...(patch.cost_price !== undefined ? { cost_price: patch.cost_price } : {}),
                 ...(patch.price !== undefined ? { price: patch.price } : {}),
                 ...(patch.barcode !== undefined ? { barcode: patch.barcode } : {}),
+                ...(patch.supplier_name !== undefined ? { supplier_name: patch.supplier_name } : {}),
               } : p;
             }));
+            setBulkSeed(null);
           }}
         />
+      )}
+
+      {poListOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70" onClick={() => setPoListOpen(false)}>
+          <div className="w-full max-w-sm max-h-[80dvh] rounded-3xl border border-border p-5 flex flex-col gap-3" style={{ background: "var(--gradient-card)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between shrink-0">
+              <h2 className="font-black text-lg">Purchase Order List</h2>
+              <button type="button" onClick={() => setPoListOpen(false)} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {poLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+              ) : poTemplates.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No templates yet. Start a bulk edit and save it as a template.</p>
+              ) : (
+                poTemplates.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      const lines = t.lines.filter((l) => items.some((p) => p.id === l.productId));
+                      if (lines.length === 0) {
+                        toast.error("None of the items in this list are still in the store");
+                        return;
+                      }
+                      if (lines.length < t.lines.length) toast.error("Some items from this list are no longer in the store");
+                      setPoListOpen(false);
+                      setBulkSeed({ lines, supplierName: t.supplierName });
+                      setShowBulkEdit(true);
+                    }}
+                    className="w-full rounded-2xl px-4 py-3 flex items-center justify-between gap-3 text-left text-primary-foreground"
+                    style={{ background: "var(--gradient-hero)" }}
+                  >
+                    <div className="min-w-0">
+                      <div className="font-black text-sm truncate">{t.name}</div>
+                      {t.supplierName && <div className="text-[11px] font-bold opacity-80 truncate">{t.supplierName}</div>}
+                    </div>
+                    <div className="text-xs font-black shrink-0">{t.lines.length} item{t.lines.length !== 1 ? "s" : ""}</div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

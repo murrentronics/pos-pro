@@ -6,7 +6,6 @@ import { useChain } from "@/lib/ChainContext";
 import { supabase } from "@/integrations/supabase/client";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import { useTranslation } from "@/lib/i18n";
-import { useOffline } from "@/lib/OfflineProvider";
 import { OfflinePageGuard } from "@/components/OfflinePageGuard";
 import { toast } from "sonner";
 import { Loader2, ShoppingCart, User, Package, Wallet, Users, ShieldAlert, Ban, Menu, X, CreditCard, Building2, UserCircle, Receipt, Globe, GitBranch, BarChart3, TrendingDown, ClipboardList, BookOpen, ShieldCheck, LayoutGrid, RotateCcw, Volume2, VolumeX, Printer } from "lucide-react";
@@ -25,7 +24,6 @@ export default function AppLayout() {
   const nav = useNavigate();
   const loc = useLocation();
   const { t } = useTranslation();
-  const { isOnline } = useOffline();
   const [menuOpen, setMenuOpen] = useState(false);
   const [tapSoundEnabled, setTapSoundEnabled] = useState(() =>
     localStorage.getItem("pos_tap_sound_enabled") !== "false"
@@ -66,15 +64,6 @@ export default function AppLayout() {
   useEffect(() => {
     if (!loading && !session) nav("/login", { replace: true });
   }, [session, loading, nav]);
-
-  useEffect(() => {
-    // Don't force sign-out if we're offline — profile may simply be unavailable
-    // from the network. The loadProfile function already preserves the cached
-    // profile on network errors, but this is a belt-and-suspenders guard.
-    if (!loading && session && !profile && isOnline) {
-      signOut().then(() => nav("/login", { replace: true }));
-    }
-  }, [loading, session, profile, isOnline]);
 
   useEffect(() => {
     if (!loading && profile?.role === "admin" && !loc.pathname.startsWith("/admin")) {

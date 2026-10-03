@@ -13,6 +13,7 @@ import {
   type PrintResult,
 } from "@/lib/printerConnection";
 import { buildCreditBillEscPos } from "@/lib/creditBillEscPos";
+import { buildSupplierStatementEscPos, type SupplierStatement } from "@/lib/supplierStatementEscPos";
 import { brandReceipt } from "@/lib/receiptSettings";
 import {
   DRAWER_PULSE_HEX,
@@ -70,12 +71,21 @@ export interface ReceiptData {
   /** Prebuilt ESC/POS raster for the logo. Set by brandReceipt before printing. */
   logoEscPos?: string;
   creditBill?: CreditBill;
+  supplierStatement?: SupplierStatement;
 }
 
 // ─── ESC/POS builder ──────────────────────────────────────────────────────────
 
 export function buildReceiptEscPos(data: ReceiptData): Uint8Array {
   if (data.creditBill) return buildCreditBillEscPos(data);
+  if (data.supplierStatement) {
+    return buildSupplierStatementEscPos({
+      storeName: data.storeName,
+      date: data.date || new Date().toLocaleString("en-GB", { timeZone: "America/Port_of_Spain" }),
+      statement: data.supplierStatement,
+      logoEscPos: data.logoEscPos,
+    });
+  }
   const lines: string[] = [];
 
   lines.push(esc(0x1b) + esc(0x40)); // reset

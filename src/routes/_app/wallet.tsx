@@ -17,7 +17,8 @@ import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
 import { printReceipt, isPrinterPaired, pairPrinter, clearPrinterPairing, openPrinterConnectDialog, type ReceiptData } from "@/lib/receiptPrinter";
 import { brandReceipt } from "@/lib/receiptSettings";
-import { aggregateItems, barPeriodSummary, fetchAllPaged, itemsCostTotal, todayDateTT, ttCalendarDayBounds, type SummaryOrder, type SummaryProductCost } from "@/lib/salesSummary";
+import { barPeriodSummary, barSalesTotal, fetchAllPaged, fetchOwnerBookContext, ordersSettledOnOwner, type SummaryOrder, type SummaryProductCost } from "@/lib/salesSummary";
+import { SupplierBills } from "@/components/SupplierBills";
 import { useNumpadKeyboard, applyMoneyKey } from "@/lib/useNumpadKeyboard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -59,6 +60,8 @@ type OwnerExpense = {
   description: string | null;
   expense_date: string;
   created_at: string;
+  supplier_name?: string | null;
+  is_paid?: boolean | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1421,20 +1424,29 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
 
   useEffect(() => {
     setLoading(true);
-    // Collect all owner IDs to fetch orders from: own profile + all chain bars
-    const allOwnerIds = [profile.id, ...(chainBarIds ?? [])];
+    // Same sales as the wallet Total Sales card. A staff sale counts only after that person is cleared.
+    // A clear is not added again as a second sale.
+    const allOwnerIds = [...new Set([profile.id, ...(chainBarIds ?? [])])];
     Promise.all([
-      // Direct sales by this owner (as cashier) across all their bars
-      supabase.from("orders").select("*")
-        .in("owner_id", allOwnerIds)
-        .eq("cashier_id", profile.id)
-        .order("created_at", { ascending: false })
-        .then(({ data }) => setOrders((data ?? []) as unknown as Order[])),
-      supabase.from("wallet_transactions").select("*").eq("profile_id", profile.id)
-        .in("type", ["transfer_in", "cashier_sale", "bottle_finished", "pack_finished", "credit_payment", "credit_charge"])
-        .order("created_at", { ascending: false })
-        .then(({ data }) => setTxs((data ?? []) as WalletTx[])),
-    ]).finally(() => setLoading(false));
+      Promise.all(allOwnerIds.map(async (ownerId) => {
+        const [rows, book] = await Promise.all([
+          fetchAllPaged<Order>((from, to) =>
+            supabase.from("orders").select("*").eq("owner_id", ownerId)
+              .order("created_at", { ascending: false }).range(from, to),
+          ),
+          fetchOwnerBookContext(ownerId),
+        ]);
+        return ordersSettledOnOwner(rows, book.staffIds, book.staffNames, book.staffRoles, book.clears);
+      })),
+      fetchAllPaged<WalletTx>((from, to) =>
+        supabase.from("wallet_transactions").select("*").eq("profile_id", profile.id)
+          .in("type", ["bottle_finished", "pack_finished", "credit_payment", "credit_charge"])
+          .order("created_at", { ascending: false }).range(from, to),
+      ),
+    ]).then(([orderGroups, txRows]) => {
+      setOrders(orderGroups.flat());
+      setTxs(txRows);
+    }).finally(() => setLoading(false));
   }, [profile.id, chainBarIds?.join(",")]);
 
   const orderIds = new Set(orders.map((o) => o.id));
@@ -1466,12 +1478,9 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
       const businessName = profile.username ?? "Owner";
       const generated = new Date().toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" });
       const ordersR = monthRecords.filter((r) => r.kind === "order");
-      const txsR = monthRecords.filter((r) => r.kind === "tx");
-      const totalSales = ordersR.reduce((s, r) => s + Number((r.data as Order).total), 0);
-      const totalTransfersIn = txsR.filter((r) => (r.data as WalletTx).type === "transfer_in")
-        .reduce((s, r) => s + Number((r.data as WalletTx).amount), 0);
+      const totalSales = barSalesTotal(ordersR.map((r) => r.data as Order));
       const openingBalance = 0;
-      const closingBalance = totalSales + totalTransfersIn;
+      const closingBalance = totalSales;
       let y = await drawHeader(doc, businessName, "Wallet Statement", month, generated);
       const boxX = LM; const boxW = RM - LM; const boxH = 28;
       doc.setFillColor(245, 240, 230);
@@ -1633,11 +1642,9 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
             <div className="space-y-4">
               {months.map((month) => {
                 const monthRecords = getRecordsForMonth(month);
-                const monthTotal = monthRecords.reduce((s, r) => {
-                  if (r.kind === "order") return s + Number((r.data as Order).total);
-                  if (r.kind === "tx" && (r.data as WalletTx).type === "transfer_in") return s + Number((r.data as WalletTx).amount);
-                  return s;
-                }, 0);
+                const monthTotal = barSalesTotal(
+                  monthRecords.filter((r) => r.kind === "order").map((r) => r.data as Order),
+                );
                 const isOpen = selectedMonth === month;
                 return (
                   <div key={month} className="rounded-2xl border border-border overflow-hidden">
@@ -1735,7 +1742,7 @@ function OwnerStatement({ profile, onClose, chainBarIds }: { profile: { id: stri
                               const discAmt     = discMatch ? Number(discMatch[1]) : 0;
                               const discOrig    = discMatch?.[2] ? Number(discMatch[2]) : null;
                               return (
-                                <div key={tx.id} className={`px-4 py-3 flex items-start gap-3 ${isPayment ? "bg-green-500/5" : "bg-orange-500/5"}`}>
+                                <div key={tx.id} className="px-4 py-3 flex items-start gap-3 bg-white">
                                   <span className="text-base shrink-0">{isPayment ? "💳" : "🪙"}</span>
                                   <div className="flex-1 min-w-0">
                                     <div className={`text-xs font-bold leading-snug ${isPayment ? "text-green-700" : "text-primary"}`}>
@@ -1994,6 +2001,7 @@ function NumPad({
 // ─── Financials Tab ───────────────────────────────────────────────────────────
 function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange, barSessionStart, barClosedAt }: { ownerId: string; ownerWalletBalance: number; totalIncome: number; onDataChange?: () => void; barSessionStart?: string | null; barClosedAt?: string | null }) {
   const [expenses, setExpenses] = useState<OwnerExpense[]>([]);
+  const [expenseView, setExpenseView] = useState<"history" | "suppliers">("history");
   const [monthlyIncome, setMonthlyIncome] = useState<Record<string, number>>({});
   const [loadingData, setLoadingData] = useState(true);
   const [downloadingMonth, setDownloadingMonth] = useState<string | null>(null);
@@ -2091,31 +2099,35 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
   // Accordion
   const [openMonth, setOpenMonth] = useState<string | null>(null);
 
+  const markExpensePaid = async (e: { id: string; supplier_name?: string | null }) => {
+    const { error } = await supabase.from("owner_expenses").update({ is_paid: true }).eq("id", e.id);
+    if (error) { toast.error(error.message); return; }
+    setExpenses((prev) => prev.map((row) => (row.id === e.id ? { ...row, is_paid: true } : row)));
+    toast.success(`${e.supplier_name || "Supplier"} marked paid`);
+  };
+
   const loadData = useCallback(async () => {
     setLoadingData(true);
-    const [expRes, ownerOrdRes, transfersRes, creditRes] = await Promise.all([
+    const [expRes, orders, ownerBook] = await Promise.all([
       supabase.from("owner_expenses").select("*").eq("owner_id", ownerId).order("created_at", { ascending: false }),
-      // Only owner's OWN direct orders (not cashier orders — cash still with cashier until cleared)
-      supabase.from("orders").select("total, created_at").eq("owner_id", ownerId).eq("cashier_id", ownerId),
-      // Transfer-in: cashier balances cleared to owner
-      supabase.from("wallet_transactions").select("amount, created_at").eq("profile_id", ownerId).eq("type", "transfer_in"),
-      // Credit payments collected directly by the owner
-      supabase.from("wallet_transactions").select("amount, created_at").eq("profile_id", ownerId).eq("type", "credit_payment").gt("amount", 0),
+      fetchAllPaged<{ total: number; created_at: string; cashier_id?: string | null }>((from, to) =>
+        supabase.from("orders").select("total, created_at, cashier_id").eq("owner_id", ownerId).range(from, to),
+      ),
+      fetchOwnerBookContext(ownerId),
     ]);
     setExpenses((expRes.data ?? []) as OwnerExpense[]);
-    // Build per-month income map: owner direct sales + transfers in + credit payments
     const incomeMap: Record<string, number> = {};
-    for (const o of (ownerOrdRes.data ?? []) as { total: number; created_at: string }[]) {
-      const mk = monthKey(o.created_at);
+    // Same gate as All Time. Uncleared manager and cashier sales stay out until cleared.
+    const countedOrders = ordersSettledOnOwner(
+      orders,
+      ownerBook.staffIds,
+      ownerBook.staffNames,
+      ownerBook.staffRoles,
+      ownerBook.clears,
+    );
+    for (const o of countedOrders) {
+      const mk = monthKey(o.created_at ?? "");
       incomeMap[mk] = (incomeMap[mk] ?? 0) + Number(o.total);
-    }
-    for (const t of (transfersRes.data ?? []) as { amount: number; created_at: string }[]) {
-      const mk = monthKey(t.created_at);
-      incomeMap[mk] = (incomeMap[mk] ?? 0) + Number(t.amount);
-    }
-    for (const t of (creditRes.data ?? []) as { amount: number; created_at: string }[]) {
-      const mk = monthKey(t.created_at);
-      incomeMap[mk] = (incomeMap[mk] ?? 0) + Number(t.amount);
     }
     setMonthlyIncome(incomeMap);
     setLoadingData(false);
@@ -2426,8 +2438,23 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
         )}
       </div>
 
-      {/* Expense history list */}
-      {expenseMonths.length > 0 ? (
+      {/* Expense history / suppliers */}
+      <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--gradient-card)" }}>
+        {(["history", "suppliers"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setExpenseView(tab)}
+            className={`flex-1 py-2 rounded-xl text-xs font-black transition ${expenseView === tab ? "text-primary-foreground" : "text-muted-foreground"}`}
+            style={expenseView === tab ? { background: "var(--gradient-hero)" } : {}}
+          >
+            {tab === "history" ? "History" : "Suppliers"}
+          </button>
+        ))}
+      </div>
+      {expenseView === "suppliers" ? (
+        <SupplierBills ownerId={ownerId} expenses={expenses} onMarkPaid={markExpensePaid} />
+      ) : expenseMonths.length > 0 ? (
         <div className="space-y-2">
           <h3 className="font-black text-sm text-muted-foreground uppercase tracking-wider px-1">Expense History</h3>
           {expenseMonths.map((mk) => {
@@ -2481,7 +2508,7 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                       if (isBulk) {
                         const lines = raw.split("\n").filter(Boolean);
                         const title = lines[0];
-                        const itemLines = lines.slice(1);
+                        const itemLines = lines.slice(1).filter((line) => !line.startsWith("Supplier:"));
                         const amt = Number(e.amount);
                         const isRefund = amt < 0;
                         return (
@@ -2490,6 +2517,9 @@ function FinancialsTab({ ownerId, ownerWalletBalance, totalIncome, onDataChange,
                             <div className="flex-1 min-w-0">
                               <div className="font-black text-sm sm:text-base lg:text-lg"
                                 style={isRefund ? { color: "#15803d" } : {}}>{title}</div>
+                              {e.supplier_name && (
+                                <div className="text-[11px] font-black text-muted-foreground">{e.supplier_name}</div>
+                              )}
                               <div className="mt-1 space-y-0.5">
                                 {itemLines.map((line, i) => {
                                   const eqIdx = line.lastIndexOf(" = ");
@@ -2822,7 +2852,7 @@ function TransactionsTab({ profile, ownerName, onDeleted, onEditOrder, onEditCre
                   <div key={tx.id} className="rounded-xl p-4 border flex items-start gap-3"
                     style={{
                       borderColor: isPayment ? "rgba(34,197,94,0.3)" : "rgba(251,146,60,0.25)",
-                      background: isPayment ? "#e0f2fe" : "#e0f2fe",
+                      background: "#ffffff",
                     }}>
                     <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 border text-base"
                       style={{
@@ -3330,53 +3360,82 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
     setLoadingSummary(true);
 
     const barSessionStart: string | null = (profile as any).store_session_start ?? null;
+    const barClosedAt: string | null = (profile as any).store_closed_at ?? null;
+    const barIsOpen = !!barSessionStart && !barClosedAt;
     const floatSessionStart: string | null = (profile as any).cashier_float_set_at ?? null;
-    const { fromUTC: todayFromUTC, toUTC: todayToUTC } = ttCalendarDayBounds(todayDateTT());
 
-    const [finRes, expRes, transfersRes, ownerOrdersRes, cashierOrdersRes, creditPaymentsRes, productsRes, openBottlesRes, todayOrdersRes, todayNonStockExpRes, sessionOrdersRes, sessionExpenseRes, allItemOrdersRes] = await Promise.all([
+    // Today is the whole time this bar stay is open. It can cross midnight.
+    // Close freezes it at store_closed_at. It goes back to zero only when the
+    // bar is opened again, which writes a new store_session_start.
+    const todayStart: string | null = barSessionStart;
+    const todayEnd: string | null = barIsOpen ? null : barClosedAt;
+
+    // Session is the cashier float window, and only while the bar is open.
+    // A stale float time from before this open cannot pull older sales in.
+    // Close shows $0. Reopen writes a new float time, so the session starts over.
+    const sessionStart: string | null = barIsOpen && floatSessionStart
+      ? (barSessionStart && floatSessionStart < barSessionStart ? barSessionStart : floatSessionStart)
+      : null;
+
+    const [finRes, expRes, productsRes, openBottlesRes, todayOrdersRes, todayNonStockExpRes, sessionOrdersRes, sessionExpenseRes, allOrdersRes, ownerBook] = await Promise.all([
       supabase.from("owner_financials").select("initial_expense").eq("owner_id", profile.id).maybeSingle(),
       supabase.from("owner_expenses").select("amount, description").eq("owner_id", profile.id),
-      supabase.from("wallet_transactions").select("amount").eq("profile_id", profile.id).eq("type", "transfer_in"),
-      supabase.from("orders").select("total").eq("owner_id", profile.id).eq("cashier_id", profile.id),
-      Promise.resolve({ data: [] as { total: number }[] }),
-      supabase.from("wallet_transactions").select("amount").eq("profile_id", profile.id).eq("type", "credit_payment").gt("amount", 0),
       supabase.from("products").select("id, name, price, cost_price, units_per_item, stock_qty, category").eq("owner_id", profile.id),
       supabase.from("opened_bottles").select("revenue, product_id, products(price)").eq("owner_id", profile.id).eq("status", "open"),
-      fetchAllPaged<{ total: number; items: unknown; discount_amount?: number }>((from, to) =>
-        supabase.from("orders").select("total, items, discount_amount").eq("owner_id", profile.id)
-          .gte("created_at", todayFromUTC).lte("created_at", todayToUTC).range(from, to),
-      ),
-      fetchAllPaged<{ amount: number; description: string | null }>((from, to) =>
-        supabase.from("owner_expenses").select("amount, description").eq("owner_id", profile.id)
-          .gt("amount", 0).gte("created_at", todayFromUTC).lte("created_at", todayToUTC).range(from, to),
-      ),
-      floatSessionStart
-        ? fetchAllPaged<{ total: number; items: unknown; discount_amount?: number }>((from, to) =>
+      todayStart
+        ? fetchAllPaged<SummaryOrder & { cashier_id?: string | null; created_at?: string }>((from, to) => {
+            let q = supabase.from("orders").select("total, items, discount_amount, cashier_id, created_at").eq("owner_id", profile.id)
+              .gte("created_at", todayStart);
+            if (todayEnd) q = q.lte("created_at", todayEnd);
+            return q.range(from, to);
+          })
+        : Promise.resolve([] as (SummaryOrder & { cashier_id?: string | null; created_at?: string })[]),
+      todayStart
+        ? fetchAllPaged<{ amount: number; description: string | null }>((from, to) => {
+            let q = supabase.from("owner_expenses").select("amount, description").eq("owner_id", profile.id)
+              .gt("amount", 0).gte("created_at", todayStart);
+            if (todayEnd) q = q.lte("created_at", todayEnd);
+            return q.range(from, to);
+          })
+        : Promise.resolve([] as { amount: number; description: string | null }[]),
+      sessionStart
+        ? fetchAllPaged<SummaryOrder>((from, to) =>
             supabase.from("orders").select("total, items, discount_amount").eq("owner_id", profile.id)
-              .gte("created_at", floatSessionStart).range(from, to),
+              .gte("created_at", sessionStart).range(from, to),
           )
-        : Promise.resolve([] as { total: number; items: unknown; discount_amount?: number }[]),
-      floatSessionStart
+        : Promise.resolve([] as SummaryOrder[]),
+      sessionStart
         ? fetchAllPaged<{ amount: number; description: string | null }>((from, to) =>
             supabase.from("owner_expenses").select("amount, description").eq("owner_id", profile.id)
-              .gt("amount", 0).gte("created_at", floatSessionStart).range(from, to),
+              .gt("amount", 0).gte("created_at", sessionStart).range(from, to),
           )
         : Promise.resolve([] as { amount: number; description: string | null }[]),
-      fetchAllPaged<{ items: unknown }>((from, to) =>
-        supabase.from("orders").select("items").eq("owner_id", profile.id).range(from, to),
+      fetchAllPaged<SummaryOrder & { cashier_id?: string | null; created_at?: string }>((from, to) =>
+        supabase.from("orders").select("total, items, discount_amount, original_total, cashier_id, created_at")
+          .eq("owner_id", profile.id).range(from, to),
       ),
+      fetchOwnerBookContext(profile.id),
     ]);
 
     const initialExpense = finRes.data ? Number(finRes.data.initial_expense) : 0;
-    // Only count manual (non-stock) expenses for Est. Total Out — stock costs are in totalStockSoldCost
-    const monthlyExpenses = (expRes.data ?? [])
-      .filter((e: { description: string | null }) => (e.description ?? "").startsWith("Non-Stock Expense"))
-      .reduce((s: number, e: { amount: number }) => s + Number(e.amount), 0);
-    const transfersIncome = (transfersRes.data ?? []).reduce((s: number, t: { amount: number }) => s + Number(t.amount), 0);
-    const ownerOrdersIncome = (ownerOrdersRes.data ?? []).reduce((s: number, o: { total: number }) => s + Number(o.total), 0);
-    const cashierOrdersIncome = (cashierOrdersRes.data ?? []).reduce((s: number, o: { total: number }) => s + Number(o.total), 0);
-    const creditPaymentsIncome = (creditPaymentsRes.data ?? []).reduce((s: number, t: { amount: number }) => s + Number(t.amount), 0);
-    const totalIncome = transfersIncome + ownerOrdersIncome + cashierOrdersIncome + creditPaymentsIncome;
+    const productsForCost = (productsRes.data ?? []) as SummaryProductCost[];
+    // Session and Today include manager and cashier sales as soon as they are rung.
+    // All Time takes those sales only after the owner clears that person.
+    const settled = ordersSettledOnOwner(
+      allOrdersRes,
+      ownerBook.staffIds,
+      ownerBook.staffNames,
+      ownerBook.staffRoles,
+      ownerBook.clears,
+    );
+    const allTime = barPeriodSummary(
+      settled,
+      (expRes.data ?? []) as { amount: number; description: string | null }[],
+      productsForCost,
+    );
+    const totalIncome = allTime.sales;
+    const monthlyExpenses = allTime.expenses;
+    const totalStockSoldCost = allTime.stockCost;
 
     const closedStockValue = (productsRes.data ?? []).reduce(
       (s: number, p: { price: number; cost_price: number; stock_qty: number }) => s + Number(p.price) * Number(p.stock_qty), 0
@@ -3392,20 +3451,18 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
     const stockResaleValue = closedStockValue + openedBottlesNetValue;
     const stockExpectedProfit = stockResaleValue - closedStockCost;
 
-    const productsForCost = (productsRes.data ?? []) as SummaryProductCost[];
-    const todayPeriod = barPeriodSummary(todayOrdersRes as SummaryOrder[], todayNonStockExpRes, productsForCost);
+    const todayPeriod = barPeriodSummary(todayOrdersRes, todayNonStockExpRes, productsForCost);
     const todayIncome = todayPeriod.sales;
     const todayCostFromItems = todayPeriod.stockCost;
     const todayNonStock = todayPeriod.expenses;
     const todayProfit = todayPeriod.net;
 
     const sessionPeriod = barSessionStart
-      ? barPeriodSummary(sessionOrdersRes as SummaryOrder[], sessionExpenseRes, productsForCost)
+      ? barPeriodSummary(sessionOrdersRes, sessionExpenseRes, productsForCost)
       : { sales: 0, expenses: 0, stockCost: 0, net: 0, gross: 0, items: [] };
     const sessionIncome = sessionPeriod.sales;
     const sessionExpense = sessionPeriod.expenses;
     const sessionStockCost = sessionPeriod.stockCost;
-    const totalStockSoldCost = itemsCostTotal(aggregateItems((allItemOrdersRes ?? []) as SummaryOrder[], productsForCost));
 
     setFinancialSummary({ initialExpense, monthlyExpenses, totalIncome, totalStockSoldCost, sessionIncome, sessionExpense, sessionStockCost, stockResaleValue, stockExpectedProfit, stockCost: closedStockCost, todayIncome, todayProfit, todayStockCost: todayCostFromItems, todayExpenses: todayNonStock });
     setLoadingSummary(false);
@@ -3573,13 +3630,13 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("session_sales", "Session\nSales")}</div>
                   <div className="font-black text-xs" style={{ color: barIsOpenWallet ? "#0ea5e9" : "rgba(15,40,80,0.35)" }}>
-                    {barIsOpenWallet ? `$${fmt(sessionIncome)}` : "—"}
+                    {barIsOpenWallet ? `$${fmt(sessionIncome)}` : "$0.00"}
                   </div>
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
                   <div className="text-[9px] font-semibold leading-tight" style={{ color: "rgba(60,60,60,0.65)" }}>{t("session_stock_cost", "Session\nStock Cost")}</div>
                   <div className="font-black text-xs" style={{ color: barIsOpenWallet ? "#b91c1c" : "rgba(15,40,80,0.35)" }}>
-                    {barIsOpenWallet ? `$${fmt(sessionStockCost)}` : "—"}
+                    {barIsOpenWallet ? `$${fmt(sessionStockCost)}` : "$0.00"}
                   </div>
                 </div>
                 <div className="rounded-2xl p-2.5 flex flex-col gap-0.5 text-center" style={{ background: "#ffffff" }}>
@@ -3588,7 +3645,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                     const sgp = sessionIncome - sessionStockCost;
                     return (
                       <div className="font-black text-xs" style={{ color: !barIsOpenWallet ? "rgba(15,40,80,0.35)" : sgp >= 0 ? "#0ea5e9" : "#e11d48" }}>
-                        {barIsOpenWallet ? `${sgp >= 0 ? "+" : ""}$${fmt(sgp)}` : "—"}
+                        {barIsOpenWallet ? `${sgp >= 0 ? "+" : ""}$${fmt(sgp)}` : "$0.00"}
                       </div>
                     );
                   })()}
@@ -3609,7 +3666,7 @@ function OwnerWallet({ profile }: { profile: { id: string; wallet_balance: numbe
                     const snp = sgp - sessionExpense;
                     return (
                       <div className="font-black text-xs" style={{ color: !barIsOpenWallet ? "rgba(15,40,80,0.35)" : snp >= 0 ? "#0ea5e9" : "#e11d48" }}>
-                        {barIsOpenWallet ? `${snp >= 0 ? "+" : ""}$${fmt(snp)}` : "—"}
+                        {barIsOpenWallet ? `${snp >= 0 ? "+" : ""}$${fmt(snp)}` : "$0.00"}
                       </div>
                     );
                   })()}

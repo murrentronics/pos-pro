@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useAuth, usernameToEmail } from "@/lib/auth";
+import { claimThisDevice } from "@/lib/authSession";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,7 @@ function SignInForm() {
     setBusy(true);
     const email = id.includes("@") ? id.trim() : usernameToEmail(id);
     const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
+    if (!error) await claimThisDevice();
     setBusy(false);
     if (error) toast.error(friendlyError(error));
   };

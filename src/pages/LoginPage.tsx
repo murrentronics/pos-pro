@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth, usernameToEmail } from "@/lib/auth";
+import { claimThisDevice } from "@/lib/authSession";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -129,6 +130,7 @@ function SignInForm({ onForgotChange }: { onForgotChange: (open: boolean) => voi
     setBusy(true);
     const email = id.includes("@") ? id.trim() : usernameToEmail(id);
     const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
+    if (!error) await claimThisDevice();
     setBusy(false);
     if (error) toast.error(friendlyError(error));
   };

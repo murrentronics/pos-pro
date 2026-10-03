@@ -2,6 +2,7 @@
  * Shared sales / cost aggregation used by Summary and Wallet session/today cards.
  * Bar sales always use the discounted order.total — never the pre-discount item list prices.
  */
+import { supabase } from "@/integrations/supabase/client";
 
 export type SummaryOrderItem = {
   id?: string;
@@ -11,6 +12,8 @@ export type SummaryOrderItem = {
   units_consumed?: number | null;
   discount?: number;
   original_price?: number;
+  /** Cost of one qty, saved at sale time so a later product delete still has a cost. */
+  unit_cost?: number | null;
 };
 
 export type SummaryOrder = {
@@ -36,8 +39,78 @@ export type AggregatedItem = {
   category: string;
 };
 
-const SYNTH = ["Shot", "2oz", "1oz", "Retail", "Pack"];
+const POUR_PREFIXES = ["shot", "2oz", "1oz", "retail", "pack", "drink", "half", "nip", "pq", "double", "quarter"];
 const isSynthId = (id: string) => id.startsWith("shot-") || id.startsWith("pack-");
+
+function normName(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** Retail sticks and bottle pours are stored as "Label: Product Name" with a shot-/pack- id. */
+export function isPourLine(id: string | undefined, name: string): boolean {
+  if (isSynthId(id ?? "")) return true;
+  const ci = name.indexOf(": ");
+  if (ci === -1) return false;
+  const prefix = name.slice(0, ci).trim().toLowerCase();
+  return POUR_PREFIXES.some((p) => prefix === p || prefix.startsWith(p));
+}
+
+/** Product name after a retail/shot prefix. Whole-bottle lines keep their own name. */
+export function resolvedProductName(name: string, id?: string): string {
+  const ci = name.indexOf(": ");
+  if (ci !== -1 && isPourLine(id, name)) return name.slice(ci + 2).trim();
+  return name.trim();
+}
+
+function findCostProduct(
+  it: SummaryOrderItem,
+  products: SummaryProductCost[],
+): SummaryProductCost | undefined {
+  const id = it.id ?? "";
+  if (id && !isSynthId(id)) {
+    const byId = products.find((p) => p.id === id);
+    if (byId) return byId;
+  }
+  const resolved = normName(resolvedProductName(it.name, id));
+  return (
+    products.find((p) => normName(p.name) === resolved) ??
+    products.find((p) => normName(p.name) === normName(it.name))
+  );
+}
+
+/**
+ * Stock cost for one order line.
+ * Whole items use the product cost price.
+ * Retail sticks and rum/shot pours use cost price ÷ units in the pack or bottle,
+ * times the units actually poured (or qty, for one-stick retail).
+ * If the product was deleted, the unit_cost saved on the line is used.
+ */
+export function lineStockCost(it: SummaryOrderItem, products: SummaryProductCost[]): number {
+  const qty = Number(it.qty) || 0;
+  const product = findCostProduct(it, products);
+  if (product) {
+    const packCost = Number(product.cost_price) || 0;
+    const unitsPer = Number(product.units_per_item) || 0;
+    if (isPourLine(it.id, it.name)) {
+      const perUnit = unitsPer > 0 ? packCost / unitsPer : packCost;
+      const units =
+        it.units_consumed != null && Number(it.units_consumed) > 0
+          ? Number(it.units_consumed)
+          : qty;
+      return units * perUnit;
+    }
+    return qty * packCost;
+  }
+  const stored = Number(it.unit_cost ?? 0);
+  return stored > 0 ? stored * qty : 0;
+}
+
+/** Cost of a single qty, for saving onto a new order line. */
+export function orderItemUnitCost(it: SummaryOrderItem, products: SummaryProductCost[]): number {
+  const qty = Number(it.qty) || 0;
+  if (qty <= 0) return 0;
+  return roundCents(lineStockCost({ ...it, unit_cost: null }, products) / qty);
+}
 
 export function roundCents(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
@@ -111,22 +184,8 @@ export function aggregateItems(
   orders: SummaryOrder[],
   products: SummaryProductCost[],
 ): AggregatedItem[] {
-  const costMap = new Map<string, number>(
-    products.map((p) => [
-      p.id,
-      p.units_per_item > 0 ? p.cost_price / p.units_per_item : p.cost_price,
-    ]),
-  );
-  const nameMap = new Map<string, number>(
-    products.map((p) => [
-      p.name,
-      p.units_per_item > 0 ? p.cost_price / p.units_per_item : p.cost_price,
-    ]),
-  );
-  const fullCostMap = new Map<string, number>(products.map((p) => [p.id, p.cost_price]));
-  const fullNameMap = new Map<string, number>(products.map((p) => [p.name, p.cost_price]));
   const categoryMap = new Map<string, string>(
-    products.map((p) => [p.name, p.category ?? "miscellaneous"]),
+    products.map((p) => [normName(p.name), p.category ?? "miscellaneous"]),
   );
 
   const map = new Map<string, { qty: number; revenue: number; costTotal: number; category: string }>();
@@ -138,52 +197,16 @@ export function aggregateItems(
     for (let idx = 0; idx < items.length; idx++) {
       const it = items[idx];
       const existing = map.get(it.name) ?? { qty: 0, revenue: 0, costTotal: 0, category: "miscellaneous" };
-      const itemId = it.id ?? "";
-      const baseId = itemId.includes("__") ? itemId.split("__")[0] : itemId;
-      const isSynth = isSynthId(itemId);
-
-      let resolvedProductName = it.name;
-      const ci = it.name.indexOf(": ");
-      if (
-        ci !== -1 &&
-        (SYNTH.some((p) => it.name.slice(0, ci).toLowerCase().startsWith(p.toLowerCase())) || isSynth)
-      ) {
-        resolvedProductName = it.name.slice(ci + 2);
-      }
-      const cat = categoryMap.get(resolvedProductName) ?? categoryMap.get(it.name) ?? existing.category;
-
-      let costEach = 0;
-      let costUnits = it.qty;
-
-      if (!isSynth && baseId && (fullCostMap.has(itemId) || fullCostMap.has(baseId))) {
-        costEach = fullCostMap.get(fullCostMap.has(itemId) ? itemId : baseId)!;
-        costUnits = it.qty;
-      } else if (
-        isSynth ||
-        (ci !== -1 && SYNTH.some((p) => it.name.slice(0, ci).toLowerCase().startsWith(p.toLowerCase())))
-      ) {
-        if (it.id && costMap.has(it.id)) {
-          costEach = costMap.get(it.id)!;
-        } else if (nameMap.has(resolvedProductName)) {
-          costEach = nameMap.get(resolvedProductName)!;
-        }
-        costUnits = it.units_consumed != null && it.units_consumed > 0 ? it.units_consumed : it.qty;
-      } else if (fullNameMap.has(it.name)) {
-        costEach = fullNameMap.get(it.name)!;
-        costUnits = it.qty;
-      } else if (nameMap.has(it.name)) {
-        costEach = nameMap.get(it.name)!;
-        costUnits = it.units_consumed != null && it.units_consumed > 0 ? it.units_consumed : it.qty;
-      }
-
-      if (it.units_consumed != null && Number(it.units_consumed) > 0) {
-        costUnits = Number(it.units_consumed);
-      }
+      const resolved = resolvedProductName(it.name, it.id);
+      const cat =
+        categoryMap.get(normName(resolved)) ??
+        categoryMap.get(normName(it.name)) ??
+        existing.category;
 
       map.set(it.name, {
         qty: existing.qty + it.qty,
         revenue: existing.revenue + (collectedRows[idx]?.collected ?? 0),
-        costTotal: existing.costTotal + costUnits * costEach,
+        costTotal: existing.costTotal + lineStockCost(it, products),
         category: cat,
       });
     }
@@ -237,6 +260,109 @@ export function nonStockExpensesTotal(
   );
 }
 
+export type OwnerBookOrder = SummaryOrder & {
+  cashier_id?: string | null;
+  created_at?: string | null;
+};
+
+export type ManagerClear = {
+  created_at: string;
+  note?: string | null;
+};
+
+export type StaffRole = "manager" | "cashier";
+
+/** Manager till handed to the owner. Cashier clears use a different note. */
+export function isManagerClearNote(note: string | null | undefined): boolean {
+  return (note ?? "").trim().toLowerCase().startsWith("cleared from manager");
+}
+
+/** Username after "Cleared from manager:". Older notes have no name. */
+export function managerNameFromClearNote(note: string | null | undefined): string | null {
+  const match = (note ?? "").trim().match(/^cleared from manager:\s*(.+)$/i);
+  const name = match?.[1]?.trim().toLowerCase();
+  return name || null;
+}
+
+export function isStaffClearNote(note: string | null | undefined): boolean {
+  const text = (note ?? "").trim().toLowerCase();
+  return text.startsWith("cleared from manager") || text.startsWith("cleared from cashier");
+}
+
+/** "manager" or "cashier" from a clear note. */
+export function staffRoleFromClearNote(note: string | null | undefined): StaffRole | null {
+  const text = (note ?? "").trim().toLowerCase();
+  if (text.startsWith("cleared from manager")) return "manager";
+  if (text.startsWith("cleared from cashier")) return "cashier";
+  return null;
+}
+
+/** Username after "Cleared from manager:" or "Cleared from cashier:". */
+export function staffNameFromClearNote(note: string | null | undefined): string | null {
+  const match = (note ?? "").trim().match(/^cleared from (?:manager|cashier):\s*(.+)$/i);
+  const name = match?.[1]?.trim().toLowerCase();
+  return name || null;
+}
+
+/**
+ * Summary keeps every sale and its amount.
+ * A till clear is not added on top. Wallet All Time waits for the clear,
+ * so Summary stays ahead until every balance is cleared, then the two match.
+ */
+export function ordersOnOwnerBooks<T extends OwnerBookOrder>(
+  orders: T[],
+  _managerIds?: Set<string>,
+  _managerNames?: Map<string, string>,
+  _clears?: ManagerClear[],
+): T[] {
+  return orders;
+}
+
+/**
+ * All Time totals. The owner's own sales count immediately.
+ * A manager or cashier sale counts only after that person has been cleared
+ * at or after the sale. The clear is the gate, not a second sale.
+ */
+export function ordersSettledOnOwner<T extends OwnerBookOrder>(
+  orders: T[],
+  staffIds: Set<string>,
+  staffNames: Map<string, string>,
+  staffRoles: Map<string, StaffRole>,
+  clears: ManagerClear[],
+): T[] {
+  if (staffIds.size === 0) return orders;
+
+  const namedClears = new Map<string, number[]>();
+  const unnamedManager: number[] = [];
+  const unnamedCashier: number[] = [];
+  for (const clear of clears) {
+    const role = staffRoleFromClearNote(clear.note);
+    if (!role) continue;
+    const at = new Date(clear.created_at).getTime();
+    if (!Number.isFinite(at)) continue;
+    const name = staffNameFromClearNote(clear.note);
+    if (!name) {
+      (role === "manager" ? unnamedManager : unnamedCashier).push(at);
+      continue;
+    }
+    const list = namedClears.get(name) ?? [];
+    list.push(at);
+    namedClears.set(name, list);
+  }
+
+  return orders.filter((order) => {
+    const cashierId = order.cashier_id ?? "";
+    if (!cashierId || !staffIds.has(cashierId)) return true;
+    const saleAt = new Date(order.created_at ?? "").getTime();
+    if (!Number.isFinite(saleAt)) return true;
+    const name = staffNames.get(cashierId) ?? "";
+    const named = name ? (namedClears.get(name) ?? []) : [];
+    if (named.some((at) => at >= saleAt)) return true;
+    const unnamed = staffRoles.get(cashierId) === "manager" ? unnamedManager : unnamedCashier;
+    return unnamed.some((at) => at >= saleAt);
+  });
+}
+
 /** One formula for Summary Day and Wallet Today / Session. */
 export function barPeriodSummary(
   orders: SummaryOrder[],
@@ -250,4 +376,55 @@ export function barPeriodSummary(
   const gross = roundCents(sales - stockCost);
   const net = roundCents(gross - expenseTotal);
   return { sales, items, stockCost, expenses: expenseTotal, gross, net };
+}
+
+export type OwnerBookContext = {
+  managerIds: Set<string>;
+  managerNames: Map<string, string>;
+  staffIds: Set<string>;
+  staffNames: Map<string, string>;
+  staffRoles: Map<string, StaffRole>;
+  clears: ManagerClear[];
+};
+
+/** Staff on this bar, and the clears that move their till onto the owner. */
+export async function fetchOwnerBookContext(ownerId: string): Promise<OwnerBookContext> {
+  const [staffRes, clears] = await Promise.all([
+    supabase.from("profiles").select("id, username, role, job_title").eq("parent_id", ownerId),
+    fetchAllPaged<{ note: string | null; created_at: string }>((from, to) =>
+      supabase
+        .from("wallet_transactions")
+        .select("note, created_at")
+        .eq("profile_id", ownerId)
+        .eq("type", "transfer_in")
+        .range(from, to),
+    ),
+  ]);
+
+  const managerIds = new Set<string>();
+  const managerNames = new Map<string, string>();
+  const staffIds = new Set<string>();
+  const staffNames = new Map<string, string>();
+  const staffRoles = new Map<string, StaffRole>();
+  for (const person of staffRes.data ?? []) {
+    const isManager = person.role === "manager" || person.job_title === "manager";
+    const isCashier = person.role === "cashier" || person.job_title === "cashier";
+    if (!isManager && !isCashier) continue;
+    const role: StaffRole = isManager ? "manager" : "cashier";
+    staffIds.add(person.id);
+    staffRoles.set(person.id, role);
+    if (person.username) staffNames.set(person.id, person.username.trim().toLowerCase());
+    if (!isManager) continue;
+    managerIds.add(person.id);
+    if (person.username) managerNames.set(person.id, person.username.trim().toLowerCase());
+  }
+
+  return {
+    managerIds,
+    managerNames,
+    staffIds,
+    staffNames,
+    staffRoles,
+    clears: clears.filter((row) => isStaffClearNote(row.note)),
+  };
 }
