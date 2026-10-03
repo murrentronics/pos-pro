@@ -2551,112 +2551,116 @@ export default function RegisterPage() {
           ownerId={ownerId}
           editOrder={editOrder}
           onEditComplete={() => setEditOrder(null)}
-          onSuccess={async ({ paid, change, orderDiscount, payMode, selectedCustomer, receiptOverride, orderNumber }) => {
-            // Snapshot before clearing. Open the receipt modal even if branding fails.
+          onSuccess={({ paid, change, orderDiscount, payMode, selectedCustomer, receiptOverride, orderNumber }) => {
+            // Snapshot before clearing. Open Sale Complete first — never skip it.
             const soldCart = cart;
             const priorEdit = editOrder;
             const cartTotal = total;
-            const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Port_of_Spain" });
-            const savedDate = localStorage.getItem("pospro_order_date");
-            const fromServer = receiptOverride?.orderNumber ?? orderNumber;
-            let seq = parseInt(localStorage.getItem("pospro_order_seq") || "0", 10);
-            if (fromServer == null) {
-              if (savedDate !== todayStr) {
-                seq = 1;
+            try {
+              const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Port_of_Spain" });
+              const savedDate = localStorage.getItem("pospro_order_date");
+              const fromServer = receiptOverride?.orderNumber ?? orderNumber;
+              let seq = parseInt(localStorage.getItem("pospro_order_seq") || "0", 10);
+              if (fromServer == null) {
+                if (savedDate !== todayStr) {
+                  seq = 1;
+                  localStorage.setItem("pospro_order_date", todayStr);
+                } else {
+                  seq += 1;
+                }
+                localStorage.setItem("pospro_order_seq", seq.toString());
+              } else if (typeof fromServer === "number") {
+                localStorage.setItem("pospro_order_seq", String(fromServer));
                 localStorage.setItem("pospro_order_date", todayStr);
-              } else {
-                seq += 1;
               }
-              localStorage.setItem("pospro_order_seq", seq.toString());
-            } else if (typeof fromServer === "number") {
-              localStorage.setItem("pospro_order_seq", String(fromServer));
-              localStorage.setItem("pospro_order_date", todayStr);
-            }
 
-            const dateStr = new Date().toLocaleString("en-US", {
-              month: "numeric",
-              day: "numeric",
-              year: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-              second: "2-digit",
-              hour12: true,
-            });
+              const dateStr = new Date().toLocaleString("en-US", {
+                month: "numeric",
+                day: "numeric",
+                year: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: true,
+              });
 
-            const cashierName = (profile?.first_name ?? "").trim() || profile?.username || "Cashier";
-            const businessName = storeBusinessName || profile?.username || "Store";
-            const receiptItems = (receiptOverride?.items
-              ?? soldCart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) })))
-              .map((i) => ({ name: i.name || "Item", qty: Number(i.qty) || 0, price: Number(i.price) || 0 }));
-            const itemsSum = receiptItems.reduce((s, i) => s + i.price * i.qty, 0);
-            const charged = Number(receiptOverride?.total ?? Math.max(0, cartTotal - (orderDiscount || 0))) || 0;
-            const disc = (orderDiscount || 0) > 0
-              ? Number(orderDiscount)
-              : (itemsSum > charged + 0.001 ? Math.round((itemsSum - charged) * 100) / 100 : 0);
-            const beforeDisc = disc > 0
-              ? ((orderDiscount || 0) > 0 ? cartTotal : itemsSum)
-              : (receiptOverride ? charged : cartTotal);
-            const saleData: ReceiptData = {
-              storeName: businessName,
-              locationName: "",
-              orderNumber: fromServer ?? seq,
-              serverName: cashierName,
-              items: receiptItems,
-              subtotal: Number(beforeDisc) || 0,
-              discount: disc > 0 ? disc : undefined,
-              originalTotal: disc > 0 ? (Number(beforeDisc) || 0) : undefined,
-              total: charged,
-              paid: Number(paid) || 0,
-              change: Number(change) || 0,
-              payMode: receiptOverride?.payMode ?? payMode ?? "cash",
-              customerName: selectedCustomer?.full_name,
-              date: dateStr,
-            };
-
-            // Show receipt first, then clear cart / close overlay (never skip the modal).
-            setLastSale(saleData);
-            setPrinterResult(null);
-            setShowSaleCompleteModal(true);
-            setCart([]);
-            localStorage.removeItem(`bartap-cart-${ownerId}`);
-            setCashOpen(false);
-            setEditOrder(null);
-
-            void brandReceipt(saleData).then((branded) => {
-              setLastSale((current) =>
-                current?.orderNumber === saleData.orderNumber && current?.date === saleData.date
-                  ? branded
-                  : current,
-              );
-            });
-
-            // New sale: subtract the cart. Edit: put the old units back, then subtract the new cart.
-            setProducts((prev) => {
-              const qtyByProduct: Record<string, number> = {};
-              const apply = (rawId: string | undefined, units: number, sign: number) => {
-                if (!rawId || rawId.startsWith("shot-") || rawId.startsWith("pack-")) return;
-                const productId = rawId.includes("__") ? rawId.split("__")[0] : rawId;
-                qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + sign * units;
+              const cashierName = (profile?.first_name ?? "").trim() || profile?.username || "Cashier";
+              const businessName = storeBusinessName || profile?.username || "Store";
+              const receiptItems = (receiptOverride?.items
+                ?? soldCart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) })))
+                .map((i) => ({ name: i.name || "Item", qty: Number(i.qty) || 0, price: Number(i.price) || 0 }));
+              const itemsSum = receiptItems.reduce((s, i) => s + i.price * i.qty, 0);
+              const charged = Number(receiptOverride?.total ?? Math.max(0, cartTotal - (orderDiscount || 0))) || 0;
+              const disc = (orderDiscount || 0) > 0
+                ? Number(orderDiscount)
+                : (itemsSum > charged + 0.001 ? Math.round((itemsSum - charged) * 100) / 100 : 0);
+              const beforeDisc = disc > 0
+                ? ((orderDiscount || 0) > 0 ? cartTotal : itemsSum)
+                : (receiptOverride ? charged : cartTotal);
+              const saleData: ReceiptData = {
+                storeName: businessName,
+                locationName: "",
+                orderNumber: fromServer ?? seq,
+                serverName: cashierName,
+                items: receiptItems,
+                subtotal: Number(beforeDisc) || 0,
+                discount: disc > 0 ? disc : undefined,
+                originalTotal: disc > 0 ? (Number(beforeDisc) || 0) : undefined,
+                total: charged,
+                paid: Number(paid) || 0,
+                change: Number(change) || 0,
+                payMode: receiptOverride?.payMode ?? payMode ?? "cash",
+                customerName: selectedCustomer?.full_name,
+                date: dateStr,
               };
-              for (const old of priorEdit?.originalItems ?? []) {
-                const units = old.units_consumed != null && Number(old.units_consumed) > 0
-                  ? Number(old.units_consumed)
-                  : old.qty;
-                apply(old.id, units, 1);
-              }
-              for (const c of soldCart) {
-                const units = (c as any)._units_consumed ?? c.qty;
-                apply(c.id, units, -1);
-              }
-              return prev.map((p) =>
-                qtyByProduct[p.id] !== undefined &&
-                p.stock_qty !== undefined &&
-                p.stock_qty !== null
-                  ? { ...p, stock_qty: Math.max(0, p.stock_qty + qtyByProduct[p.id]) }
-                  : p,
-              );
-            });
-            refreshProfile();
+
+              setLastSale(saleData);
+              setShowSaleCompleteModal(true);
+              setCashOpen(false);
+              setCart([]);
+              localStorage.removeItem(`bartap-cart-${ownerId}`);
+              setEditOrder(null);
+
+              void brandReceipt(saleData).then((branded) => {
+                setLastSale((current) =>
+                  current?.orderNumber === saleData.orderNumber && current?.date === saleData.date
+                    ? branded
+                    : current,
+                );
+              });
+
+              setProducts((prev) => {
+                const qtyByProduct: Record<string, number> = {};
+                const apply = (rawId: string | undefined, units: number, sign: number) => {
+                  if (!rawId || rawId.startsWith("shot-") || rawId.startsWith("pack-")) return;
+                  const productId = rawId.includes("__") ? rawId.split("__")[0] : rawId;
+                  qtyByProduct[productId] = (qtyByProduct[productId] ?? 0) + sign * units;
+                };
+                for (const old of priorEdit?.originalItems ?? []) {
+                  const units = old.units_consumed != null && Number(old.units_consumed) > 0
+                    ? Number(old.units_consumed)
+                    : old.qty;
+                  apply(old.id, units, 1);
+                }
+                for (const c of soldCart) {
+                  const units = (c as any)._units_consumed ?? c.qty;
+                  apply(c.id, units, -1);
+                }
+                return prev.map((p) =>
+                  qtyByProduct[p.id] !== undefined &&
+                  p.stock_qty !== undefined &&
+                  p.stock_qty !== null
+                    ? { ...p, stock_qty: Math.max(0, p.stock_qty + qtyByProduct[p.id]) }
+                    : p,
+                );
+              });
+            } catch (err) {
+              console.error("[SaleComplete] failed to open receipt modal", err);
+              setCashOpen(false);
+              setCart([]);
+              toast.error("Sale saved — could not open receipt");
+            }
+            void refreshProfile();
           }}
         />
       )}
@@ -2705,7 +2709,7 @@ export default function RegisterPage() {
 
       {/* ── Sale Complete modal (matches Bartendaz ReceiptModal) ── */}
       {showSaleCompleteModal && lastSale && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div
             className="relative w-full max-w-sm rounded-3xl overflow-hidden border border-border shadow-2xl flex flex-col"
             style={{ background: "var(--gradient-card)", maxHeight: "90dvh" }}
@@ -3012,17 +3016,27 @@ function CashOverlay({
     if (payMode === "credit") {
       if (!selectedCustomer || !profile) {
         if (!selectedCustomer) toast.error("Please select a customer");
+        else toast.error("Session expired — sign in again");
         return;
       }
     } else {
-      if (!enough || !profile) return;
+      if (!profile) {
+        toast.error("Session expired — sign in again");
+        return;
+      }
+      if (!enough) {
+        toast.error("Amount received is short");
+        return;
+      }
     }
     submittingRef.current = true;
     setBusy(true);
-    const paidNum = Number(paid);
+    const paidNum = Number(paid) || 0;
     const changeNum = change;
     // Unique id to group all ops from this checkout together
     const groupId = `order-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    try {
 
     if (payMode === "credit" && selectedCustomer && !editOrder) {
       // Credit charge, or append onto an open tab. Stock is decremented inside the RPC.
@@ -3041,17 +3055,15 @@ function CashOverlay({
         units_per_item: Number(c.units_per_item ?? 0),
       }));
       const activeTabId = openTabs[selectedCustomer.id];
-      const finishCredit = (message: string) => {
+      const finishCredit = async (message: string) => {
         toast.success(message);
-        onSuccess({
+        await Promise.resolve(onSuccess({
           paid: paidNum,
           change: changeNum,
           orderDiscount,
           payMode: "credit",
           selectedCustomer,
-        });
-        submittingRef.current = false;
-        setBusy(false);
+        }));
       };
       if (!isOnline) {
         if (activeTabId) {
@@ -3079,7 +3091,7 @@ function CashOverlay({
             groupId,
           );
         }
-        finishCredit("💾 Saved offline — will sync when reconnected");
+        await finishCredit("💾 Saved offline — will sync when reconnected");
         return;
       }
       const { error } = activeTabId
@@ -3098,12 +3110,10 @@ function CashOverlay({
             p_note: itemsDesc + discountNote,
           });
       if (error) {
-        submittingRef.current = false;
-        setBusy(false);
         toast.error(error.message);
         return;
       }
-      finishCredit(
+      await finishCredit(
         activeTabId
           ? `Added $${discountedTotal.toFixed(2)} to ${selectedCustomer.full_name}'s tab`
           : `Charged $${discountedTotal.toFixed(2)} to ${selectedCustomer.full_name}`,
@@ -3136,8 +3146,6 @@ function CashOverlay({
 
     if (!isOnline) {
       if (editOrder) {
-        submittingRef.current = false;
-        setBusy(false);
         toast.error("Editing a sale needs a connection so the same order is updated");
         return;
       }
@@ -3167,20 +3175,17 @@ function CashOverlay({
         );
       }
       toast.success(`💾 Saved offline — will sync when reconnected`);
-      onSuccess({
+      await Promise.resolve(onSuccess({
         paid: paidNum,
         change: changeNum,
         orderDiscount,
         payMode: "cash",
         selectedCustomer: selectedCustomer,
-      });
-      submittingRef.current = false;
-      setBusy(false);
+      }));
       return;
     }
 
     let savedOrderNumber: number | undefined = editOrder?.orderNumber;
-    let error: { message: string } | null = null;
     if (editOrder) {
       const res = await (supabase.rpc as any)("edit_order", {
         p_order_id: editOrder.orderId,
@@ -3191,26 +3196,34 @@ function CashOverlay({
         p_discount_amount: orderDiscount > 0 ? orderDiscount : null,
         p_original_total: orderDiscount > 0 ? total : null,
       });
-      error = res.error;
+      if (res.error) {
+        toast.error(res.error.message);
+        return;
+      }
+      onEditComplete?.();
     } else {
-      const withNum = await supabase.from("orders").insert(orderPayload).select("id, order_number").single();
+      // Insert once. Prefer returning order_number; if SELECT/RETURNING is blocked,
+      // retry insert without select — never insert twice on a select-only failure.
+      const withNum = await supabase
+        .from("orders")
+        .insert(orderPayload)
+        .select("id, order_number")
+        .maybeSingle();
       if (!withNum.error) {
         savedOrderNumber = withNum.data?.order_number ?? undefined;
       } else if (/order_number/i.test(withNum.error.message)) {
         const plain = await supabase.from("orders").insert(orderPayload);
-        error = plain.error;
+        if (plain.error) {
+          toast.error(plain.error.message);
+          return;
+        }
+      } else if (/0 rows|PGRST116|multiple \(or no\) rows/i.test(withNum.error.message)) {
+        // Row landed but RETURNING was empty — sale still succeeded.
+        savedOrderNumber = undefined;
       } else {
-        error = withNum.error;
+        toast.error(withNum.error.message);
+        return;
       }
-    }
-    if (error) {
-      submittingRef.current = false;
-      setBusy(false);
-      toast.error(error.message);
-      return;
-    }
-    if (editOrder) {
-      onEditComplete?.();
     }
     // edit_order updates this same row (id and time stay put) and moves stock and wallet by the difference.
     // A new sale is handled by the handle_order_insert trigger.
@@ -3238,16 +3251,21 @@ function CashOverlay({
       });
     }
 
-    onSuccess({
+    await Promise.resolve(onSuccess({
       paid: paidNum,
       change: changeNum,
       orderDiscount,
       payMode: "cash",
       selectedCustomer: selectedCustomer,
       orderNumber: savedOrderNumber,
-    });
-    submittingRef.current = false;
-    setBusy(false);
+    }));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Sale failed";
+      toast.error(msg);
+    } finally {
+      submittingRef.current = false;
+      setBusy(false);
+    }
   };
 
   const applyDiscount = () => {
@@ -3721,9 +3739,7 @@ function CashOverlay({
                   <Button
                     className="flex-1 h-12 font-black text-base"
                     disabled={(payMode === "credit" ? false : !enough) || busy || tabBusy}
-                    onClick={() => {
-                      submit();
-                    }}
+                    onClick={() => { void submit(); }}
                     style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
                   >
                     {busy ? (
