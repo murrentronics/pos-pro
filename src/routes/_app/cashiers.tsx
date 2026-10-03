@@ -3,7 +3,7 @@ import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { useTranslation } from "@/lib/i18n";
 import { supabase } from "@/integrations/supabase/client";
-import { createCashier, deleteCashier, resetCashierPassword } from "@/lib/cashiers.functions";
+import { createCashier, deleteCashier, isUsernameAvailable, resetCashierPassword } from "@/lib/cashiers.functions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -2098,6 +2098,8 @@ export default function CashiersPage() {
   const [customTitle, setCustomTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid">("idle");
+  const usernameCheckSeq = useRef(0);
   const [statementCashier, setStatementCashier] = useState<Cashier | null>(null);
   const [resetPwCashier, setResetPwCashier] = useState<Cashier | null>(null);
   const [newPw, setNewPw] = useState("");
@@ -2164,6 +2166,56 @@ export default function CashiersPage() {
 
   useEffect(() => { load(); }, [profile?.id]);
 
+  // Debounced live username availability (cashier / manager create form)
+  useEffect(() => {
+    if (selectedRole !== "cashier" && selectedRole !== "manager") return;
+    const val = u.trim().toLowerCase();
+    if (!val) {
+      setUsernameError(null);
+      setUsernameStatus("idle");
+      return;
+    }
+    if (/\s/.test(u) || !/^[a-z0-9_]+$/.test(val)) {
+      setUsernameError(/\s/.test(u) ? "No spaces allowed" : "Only lowercase letters, numbers, and underscores");
+      setUsernameStatus("invalid");
+      return;
+    }
+    if (val.length < 3) {
+      setUsernameError("At least 3 characters");
+      setUsernameStatus("invalid");
+      return;
+    }
+    if (list.some((c) => c.username.toLowerCase() === val)) {
+      setUsernameError("Username is already taken");
+      setUsernameStatus("taken");
+      return;
+    }
+
+    setUsernameError(null);
+    setUsernameStatus("checking");
+    const seq = ++usernameCheckSeq.current;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const ok = await isUsernameAvailable(val);
+          if (seq !== usernameCheckSeq.current) return;
+          if (ok) {
+            setUsernameError(null);
+            setUsernameStatus("available");
+          } else {
+            setUsernameError("Username is already taken");
+            setUsernameStatus("taken");
+          }
+        } catch {
+          if (seq !== usernameCheckSeq.current) return;
+          setUsernameError("Could not check username");
+          setUsernameStatus("invalid");
+        }
+      })();
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [u, selectedRole, list]);
+
   useEffect(() => {
     if (!profile?.id) return;
     if (channelRef.current) supabase.removeChannel(channelRef.current);
@@ -2188,14 +2240,15 @@ export default function CashiersPage() {
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session?.access_token) { toast.error("Not authenticated"); return; }
-    if (/\s/.test(u)) { const m = "Username cannot contain spaces"; setUsernameError(m); toast.error(m); return; }
-    if (!/^[a-z0-9_]+$/.test(u)) { const m = "Lowercase letters, numbers and underscores only"; setUsernameError(m); toast.error(m); return; }
+    if (usernameStatus !== "available") {
+      toast.error(usernameError || "Wait until the username shows as available");
+      return;
+    }
     if (!firstName.trim()) { toast.error("Enter a first name"); return; }
-    setUsernameError(null);
     setBusy(true);
     try {
       const created = await create({
-        username: u,
+        username: u.trim().toLowerCase(),
         password: p,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
@@ -2210,6 +2263,7 @@ export default function CashiersPage() {
         }).eq("id", created.id);
       }
       setU(""); setFirstName(""); setLastName(""); setP(""); setSelectedRole(null);
+      setUsernameError(null); setUsernameStatus("idle");
       setManageTab(selectedRole === "manager" ? "managers" : "cashiers");
       setTab("manage");
       load();
@@ -2523,7 +2577,7 @@ export default function CashiersPage() {
                 <span className="font-black text-sm">
                   {selectedRole === "manager" ? "👔 New Manager" : "💰 New Cashier"}
                 </span>
-                <button type="button" onClick={() => { setSelectedRole(null); setU(""); setFirstName(""); setLastName(""); setP(""); setUsernameError(null); }}
+                <button type="button" onClick={() => { setSelectedRole(null); setU(""); setFirstName(""); setLastName(""); setP(""); setUsernameError(null); setUsernameStatus("idle"); }}
                   className="text-xs font-bold text-muted-foreground hover:text-foreground transition">← Back</button>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -2538,23 +2592,34 @@ export default function CashiersPage() {
               </div>
               <div>
                 <Label>{t("username", "Username")}</Label>
-                <Input value={u}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setU(val);
-                    if (val.length > 0) {
-                      if (/\s/.test(val)) setUsernameError("No spaces allowed");
-                      else if (!/^[a-z0-9_]+$/.test(val)) setUsernameError("Only lowercase letters, numbers, and underscores");
-                      else setUsernameError(null);
-                    } else setUsernameError(null);
-                  }}
-                  placeholder={selectedRole === "manager" ? "manager1" : "cashier1"}
-                  required minLength={3} autoComplete="off"
-                  className={usernameError ? "border-red-500 focus-visible:ring-red-500" : ""}
-                />
-                {usernameError
-                  ? <p className="text-xs text-red-500 mt-1 font-medium">{usernameError}</p>
-                  : <p className="text-xs text-muted-foreground mt-1">Single word only. Lowercase letters, numbers or underscores.</p>}
+                <div className="relative mt-1">
+                  <Input value={u}
+                    onChange={(e) => setU(e.target.value.toLowerCase())}
+                    placeholder={selectedRole === "manager" ? "manager1" : "cashier1"}
+                    required minLength={3} autoComplete="off"
+                    className={
+                      usernameStatus === "taken" || usernameStatus === "invalid"
+                        ? "border-red-500 focus-visible:ring-red-500 pr-10"
+                        : usernameStatus === "available"
+                        ? "border-emerald-500 focus-visible:ring-emerald-500 pr-10"
+                        : "pr-10"
+                    }
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    {usernameStatus === "checking" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    {usernameStatus === "available" && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+                    {(usernameStatus === "taken" || usernameStatus === "invalid") && <X className="h-4 w-4 text-red-500" />}
+                  </span>
+                </div>
+                {usernameStatus === "available" ? (
+                  <p className="text-xs text-emerald-700 mt-1 font-medium flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Username available
+                  </p>
+                ) : usernameError ? (
+                  <p className="text-xs text-red-500 mt-1 font-medium">{usernameError}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-1">Single word only. Lowercase letters, numbers or underscores.</p>
+                )}
               </div>
               <div>
                 <Label>{t("cashier_password", "Password")}</Label>
@@ -2567,8 +2632,12 @@ export default function CashiersPage() {
                   </button>
                 </div>
               </div>
-              <Button type="submit" disabled={busy || !!usernameError} className="w-full h-12 font-black"
-                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>
+              <Button
+                type="submit"
+                disabled={busy || usernameStatus !== "available" || !firstName.trim() || p.length < 6}
+                className="w-full h-12 font-black"
+                style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+              >
                 {busy ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</> : <><UserPlus className="h-4 w-4 mr-2" /> Create {selectedRole === "manager" ? "Manager" : "Cashier"}</>}
               </Button>
             </form>

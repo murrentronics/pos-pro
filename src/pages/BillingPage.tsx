@@ -21,8 +21,9 @@ import {
 } from "lucide-react";
 import type { BillingPlan, BillingPayment, AdminBankDetails } from "@/types/billing";
 
+import { isDemoEmail } from "@/lib/demoAccounts";
+
 const SPECIAL_EMAIL    = "renard.sankersingh@gmail.com";
-const DEMO_EMAILS      = ["isabel@gmail.com"];
 const MASTER_EMAILS    = [SPECIAL_EMAIL];
 const PRICE_BASE       = 1800;   // main plan /yr
 const PRICE_STORE      = 1200;   // additional store /yr (full year)
@@ -229,7 +230,7 @@ export default function BillingPage() {
     : isRenewal ? "Subscription renewal" : "P.O.S. Pro — Annual Plan";
 
   // ── Free / master accounts ─────────────────────────────────────────────
-  if (DEMO_EMAILS.includes(userEmail)) return (
+  if (isDemoEmail(userEmail) && !MASTER_EMAILS.includes(userEmail)) return (
     <div className="pb-24 max-w-2xl mx-auto">
       <div className="-mx-3 px-3 pt-2 pb-2 bg-background border-b border-border mb-6">
         <div className="flex items-center gap-3"><CreditCard className="h-5 w-5 text-primary" /><h1 className="text-lg font-black">Billing</h1></div>

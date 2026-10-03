@@ -4,15 +4,14 @@ import { useChain } from "@/lib/ChainContext";
 import { Wine, Plus, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
-
-const DEMO_EMAILS = ["isabel@gmail.com"];
+import { isDemoEmail } from "@/lib/demoAccounts";
 
 export default function SwitchBarPage() {
   const { profile, user } = useAuth();
   const { chainBars, activeBarId, setActiveBarId, barsLoading, isChainOwner, isMultiBarOwner } = useChain();
   const nav = useNavigate();
   const { t } = useTranslation();
-  const isDemoAccount = DEMO_EMAILS.includes(user?.email ?? "");
+  const isDemoAccount = isDemoEmail(user?.email);
 
   // Guard: only chain owners or multi-bar addon owners can access this page
   const hasLocalBars = chainBars.length > 0;

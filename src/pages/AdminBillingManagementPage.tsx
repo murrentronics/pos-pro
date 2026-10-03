@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 import { CheckCircle, XCircle, Clock, Search, DollarSign, Trash2, AlertCircle } from "lucide-react";
 import type { BillingPayment } from "@/types/billing";
+import { isDemoEmail } from "@/lib/demoAccounts";
 
 type PaymentWithOwner = BillingPayment & {
   profiles: { username: string } | null;
@@ -133,16 +134,24 @@ export default function AdminBillingManagementPage() {
     const now = new Date().toISOString();
     const soon = sevenDaysFromNow.toISOString();
 
-    // Fetch all approved owners — all P.O.S. Pro plans use subscription_end_date
-    const { data: allOwners } = await supabase
-      .from("profiles")
-      .select("id, username, plan_type, subscription_end_date")
-      .eq("status", "approved")
-      .eq("role", "owner");
+    const [{ data: allOwners }, { data: listed }] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("id, username, plan_type, subscription_end_date")
+        .eq("status", "approved")
+        .eq("role", "owner"),
+      supabase.rpc("admin_list_profiles"),
+    ]);
+    const demoIds = new Set(
+      ((listed ?? []) as { id: string; email: string }[])
+        .filter((r) => isDemoEmail(r.email))
+        .map((r) => r.id),
+    );
 
     type DueRow = { id: string; username: string; endDate: Date };
     const dueRows: DueRow[] = [];
     for (const owner of allOwners ?? []) {
+      if (demoIds.has(owner.id)) continue;
       const endDateStr = owner.subscription_end_date ?? null;
       if (!endDateStr) continue;
       if (endDateStr >= now && endDateStr <= soon) {

@@ -2,6 +2,23 @@
 import { supabase } from "@/integrations/supabase/client";
 import { friendlyError } from "@/lib/network-error";
 
+/** True when username is free globally (staff login name). */
+export async function isUsernameAvailable(username: string): Promise<boolean> {
+  const name = username.trim().toLowerCase();
+  if (name.length < 3 || !/^[a-z0-9_]+$/.test(name)) return false;
+
+  const { data, error } = await supabase.rpc("is_username_available", { p_username: name });
+  if (!error) return !!data;
+
+  // Fallback if RPC not migrated yet — only sees rows RLS allows
+  const { data: row } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("username", name)
+    .maybeSingle();
+  return !row;
+}
+
 export const createCashier = async (data: { username: string; password: string; firstName?: string; lastName?: string; barOwnerId?: string; role?: string; jobTitle?: string }) => {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error("Not authenticated");

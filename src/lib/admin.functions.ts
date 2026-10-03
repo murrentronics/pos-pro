@@ -149,6 +149,28 @@ export async function adminSetPlan(
 
 // ── Admin create owner account ───────────────────────────────────────────────
 
+/** Create / refresh non-billable demo1 + demo2 accounts (admin only). */
+export async function ensureDemoAccounts(): Promise<{ email: string; id: string; created: boolean }[]> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  const { data: { session } } = await supabase.auth.getSession();
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/ensure-demo-accounts`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session?.access_token}`,
+      "apikey": supabaseKey,
+    },
+    body: "{}",
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Failed to ensure demo accounts");
+  return json.results ?? [];
+}
+
 export async function adminCreateOwner(params: {
   username: string;
   email: string;

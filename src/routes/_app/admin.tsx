@@ -22,11 +22,12 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { confirm } from "@/components/ui/confirm-dialog";
+import { isDemoEmail } from "@/lib/demoAccounts";
 
 // ─── Shareholder Config ───────────────────────────────────────────────────────
 const SHAREHOLDERS = [
   { name: "Renard Sankersingh", share: 0.7, color: "text-emerald-700", bg: "border-emerald-500/30", gradient: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.04))" },
-  { name: "Theron Murren",      share: 0.3, color: "text-blue-400",    bg: "border-blue-500/30",    gradient: "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(59,130,246,0.04))" },
+  { name: "Murrentech LTD",     share: 0.3, color: "text-blue-400",    bg: "border-blue-500/30",    gradient: "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(59,130,246,0.04))" },
 ] as const;
 
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -318,28 +319,21 @@ export default function AdminPage() {
   const loadShareholderIncome = useCallback(async () => {
     setIncomeLoading(true);
     try {
-      // Exclude demo account from income calculations
-      const { data: demoProfile } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("email", "isabel@gmail.com")
-        .maybeSingle();
-      const demoId = demoProfile?.id;
+      // Exclude demo / free accounts from income calculations
+      const { data: allOwners } = await supabase.rpc("admin_list_profiles");
+      const demoIds = new Set(
+        ((allOwners ?? []) as { id: string; email: string }[])
+          .filter((r) => isDemoEmail(r.email))
+          .map((r) => r.id),
+      );
 
-      // Master account (renard.sankersingh@gmail.com) has no billing payments — no filtering needed
-      const masterId: string | undefined = undefined;
-
-      let query = supabase
+      const { data } = await supabase
         .from("billing_payments")
-        .select("amount, approved_at")
+        .select("amount, approved_at, owner_id")
         .eq("status", "paid")
         .not("approved_at", "is", null);
-
-      if (demoId) query = query.neq("owner_id", demoId);
-      if (masterId) query = query.neq("owner_id", masterId);
-
-      const { data } = await query;
-      const payments = (data ?? []) as { amount: number; approved_at: string }[];
+      const payments = ((data ?? []) as { amount: number; approved_at: string; owner_id: string }[])
+        .filter((p) => !demoIds.has(p.owner_id));
 
       const now = new Date();
       const curYear = now.getFullYear();
@@ -416,7 +410,6 @@ export default function AdminPage() {
 
   const buckets = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const MASTER_ACCOUNT_EMAILS = ["renard.sankersingh@gmail.com", "isabel@gmail.com"];
     const filtered = needle
       ? rows.filter((r) =>
           r.username.toLowerCase().includes(needle) ||
@@ -425,14 +418,14 @@ export default function AdminPage() {
           (r.address ?? "").toLowerCase().includes(needle)
         )
       : rows;
+    // Demo / free accounts are never billable — hide from admin owner lists
+    const billable = filtered.filter((r) => !isDemoEmail(r.email));
     return {
-      // Never show master account in pending — treat as approved regardless of DB status
-      pending: filtered.filter((r) => r.status === "pending" && !MASTER_ACCOUNT_EMAILS.includes(r.email)),
-      // Approved: hide bar sub-accounts (chain bars) — only show real account owners
-      // Master account always appears in approved list
-      approved: filtered.filter((r) => (r.status === "approved" || MASTER_ACCOUNT_EMAILS.includes(r.email)) && !r.is_bar_account),
-      suspended: filtered.filter((r) => r.status === "suspended" && !r.is_bar_account && !MASTER_ACCOUNT_EMAILS.includes(r.email)),
-      rejected: filtered.filter((r) => r.status === "rejected"),
+      pending: billable.filter((r) => r.status === "pending"),
+      // Hide bar sub-accounts (chain bars) — only show real account owners
+      approved: billable.filter((r) => r.status === "approved" && !r.is_bar_account),
+      suspended: billable.filter((r) => r.status === "suspended" && !r.is_bar_account),
+      rejected: billable.filter((r) => r.status === "rejected"),
     };
   }, [rows, q]);
 
@@ -531,7 +524,7 @@ export default function AdminPage() {
                 </div>
                 <div className="rounded-xl border border-border p-2.5 space-y-0.5" style={{ background: "var(--gradient-card)" }}>
                   <p className="text-[10px] text-muted-foreground font-medium">Total Registered</p>
-                  <p className="text-2xl font-black">{rows.filter(r => !r.is_bar_account && !["renard.sankersingh@gmail.com", "isabel@gmail.com"].includes(r.email)).length}</p>
+                  <p className="text-2xl font-black">{rows.filter(r => !r.is_bar_account && !isDemoEmail(r.email)).length}</p>
                 </div>
               </div>
 

@@ -9,18 +9,20 @@ import { useChain } from "@/lib/ChainContext";
 import { openCashDrawer, type CashDrawerResult } from "@/lib/cashDrawer";
 import { BarcodeScannerModal } from "@/components/BarcodeScannerModal";
 import { useNumpadKeyboard, applyIntKey } from "@/lib/useNumpadKeyboard";
+import { isDemoEmail } from "@/lib/demoAccounts";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
 });
 
 function AppLayout() {
-  const { session, profile, loading, signOut } = useAuth();
+  const { session, profile, loading, signOut, user } = useAuth();
   const { effectiveOwnerId } = useChain();
   const nav = useNavigate();
   const loc = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const isDemo = isDemoEmail(user?.email);
 
   // ── Store session state (owner/manager — for the open/close toggle) ─────────
   const [storeSessionStart, setStoreSessionStart] = useState<string | null>(null);
@@ -241,7 +243,7 @@ function AppLayout() {
   const isAdmin   = profile.role === "admin";
   const isManager = profile.role === "manager" || (profile as { job_title?: string }).job_title === "manager";
 
-  if (!isAdmin) {
+  if (!isAdmin && !isDemo) {
     if (profile.status === "rejected") {
       return <FullScreenStatus icon={Ban} title="Account rejected"
         message="Your payment was rejected by admin. Contact admin to have your account reinstated."

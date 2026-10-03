@@ -14,8 +14,7 @@ import { openCashDrawer, type CashDrawerResult } from "@/lib/cashDrawer";
 import { isPrinterConnected } from "@/lib/printerConnection";
 import { openPrinterConnectDialog } from "@/lib/receiptPrinter";
 import { PrinterConnectDialog } from "@/components/PrinterConnectDialog";
-
-const DEMO_EMAILS = ["isabel@gmail.com", "renard.sankersingh@gmail.com"];
+import { isDemoEmail } from "@/lib/demoAccounts";
 
 export default function AppLayout() {
   const { session, profile, loading, signOut } = useAuth();
@@ -75,7 +74,7 @@ export default function AppLayout() {
     if (!loading && (profile?.role === "manager" || profile?.job_title === "manager") && loc.pathname === "/") {
       nav("/register", { replace: true });
     }
-    if (!loading && profile && profile.role === "owner" && profile.status === "pending" && loc.pathname !== "/billing" && !DEMO_EMAILS.includes(ownerEmail)) {
+    if (!loading && profile && profile.role === "owner" && profile.status === "pending" && loc.pathname !== "/billing" && !isDemoEmail(ownerEmail)) {
       nav("/billing", { replace: true });
     }
     // Multi-bar owner or chain owner with no bar selected → force them to pick a bar first
@@ -135,7 +134,7 @@ export default function AppLayout() {
   const isAdmin    = profile.role === "admin";
   const isCashier  = profile.role === "cashier";
   const isManager  = profile.role === "manager" || (profile as any).job_title === "manager";
-  const isDemo     = DEMO_EMAILS.includes(ownerEmail);
+  const isDemo     = isDemoEmail(ownerEmail);
   const isPending  = !isAdmin && !isCashier && !isManager && !isDemo && profile.status === "pending";
   const isSuspended = !isAdmin && !isCashier && !isManager && !isDemo && profile.status === "suspended";
   const isRejected  = !isAdmin && !isCashier && !isManager && !isDemo && profile.status === "rejected";

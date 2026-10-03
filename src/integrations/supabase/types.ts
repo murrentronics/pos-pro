@@ -1578,6 +1578,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      is_username_available: { Args: { p_username: string }; Returns: boolean }
       admin_delete_user: { Args: { _user_id: string }; Returns: undefined }
       record_credit_charge: {
         Args: {

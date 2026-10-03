@@ -11,7 +11,7 @@
 //  │ App shell (HTML, manifest, icons, sw.js)        │ Network-first, stale fallback    │
 //  └─────────────────────────────────────────────────┴──────────────────────────────────┘
 
-const VERSION      = "1.1.124";
+const VERSION      = "1.1.125";
 const SHELL_CACHE  = `pospro-shell-${VERSION}`;
 const ASSET_CACHE  = `pospro-assets-${VERSION}`;
 const IMAGE_CACHE  = `pospro-images-${VERSION}`;
