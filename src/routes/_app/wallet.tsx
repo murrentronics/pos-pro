@@ -18,6 +18,7 @@ import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/
 import { printReceipt, isPrinterPaired, pairPrinter, clearPrinterPairing, openPrinterConnectDialog, type ReceiptData } from "@/lib/receiptPrinter";
 import { brandReceipt } from "@/lib/receiptSettings";
 import { barPeriodSummary, barSalesTotal, fetchAllPaged, fetchOwnerBookContext, ordersSettledOnOwner, type SummaryOrder, type SummaryProductCost } from "@/lib/salesSummary";
+import { ReceiptPaper } from "@/components/ReceiptPaper";
 import { SupplierBills } from "@/components/SupplierBills";
 import { useNumpadKeyboard, applyMoneyKey } from "@/lib/useNumpadKeyboard";
 
@@ -179,23 +180,42 @@ function ExpenseRow({ expense: e }: { expense: OwnerExpense }) {
   );
 }
 
+function saleFigures(order: { total: number; discount_amount?: number | null; original_total?: number | null; items?: { qty: number; price: number }[] }) {
+  const charged = Number(order.total);
+  const itemsSum = (order.items || []).reduce((s, i) => s + Number(i.price) * Number(i.qty), 0);
+  const storedDisc = Number(order.discount_amount) || 0;
+  // Infer when discount_amount wasn't saved but items clear a cut (e.g. $10 items → $0 total).
+  const discount = storedDisc > 0
+    ? storedDisc
+    : (itemsSum > charged + 0.001 ? Math.round((itemsSum - charged) * 100) / 100 : 0);
+  const before = discount > 0
+    ? (Number(order.original_total) || (itemsSum > charged ? itemsSum : charged + discount))
+    : (itemsSum > 0 ? itemsSum : charged);
+  return {
+    subtotal: before,
+    total: charged,
+    discount: discount > 0 ? discount : undefined,
+    originalTotal: discount > 0 ? before : undefined,
+  };
+}
+
 function orderToReceipt(order: Order, ownerName: string, serverName: string): ReceiptData {
   const items = (order.items || []).map((i) => ({
     name: i.name,
     qty: Number(i.qty),
     price: Number(i.price),
   }));
-  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const money = saleFigures(order);
   return {
     storeName: ownerName || "Store",
     locationName: "",
     orderNumber: order.order_number != null ? String(order.order_number) : "",
     serverName,
     items,
-    subtotal,
-    discount: order.discount_amount && Number(order.discount_amount) > 0 ? Number(order.discount_amount) : undefined,
-    originalTotal: order.original_total != null ? Number(order.original_total) : undefined,
-    total: Number(order.total),
+    subtotal: money.subtotal,
+    discount: money.discount,
+    originalTotal: money.originalTotal,
+    total: money.total,
     paid: Number(order.paid),
     change: Number(order.change_given),
     payMode: "cash",
@@ -279,13 +299,19 @@ function OrderReceiptModal({ order, ownerName, onClose }: {
         cy += 6;
       });
       cy += 4;
+      doc.setFont("helvetica", "normal");
+      doc.text(`Subtotal: $${bill.subtotal.toFixed(2)}`, LM, cy); cy += 6;
+      if (bill.discount != null && bill.discount > 0) {
+        doc.text(`Discount: -$${bill.discount.toFixed(2)}`, LM, cy); cy += 6;
+      }
       doc.setFont("helvetica", "bold");
       doc.text(`Total: $${bill.total.toFixed(2)}`, LM, cy); cy += 6;
       doc.setFont("helvetica", "normal");
       doc.text(`Paid: $${bill.paid.toFixed(2)}`, LM, cy); cy += 6;
       doc.text(`Change: $${bill.change.toFixed(2)}`, LM, cy);
       await downloadPdf(`receipt-${bill.orderNumber}.pdf`, doc.output("datauristring"));
-      const text = `Receipt: ${bill.storeName}\nORDER #${bill.orderNumber}\nDate: ${bill.date}\nTotal: $${bill.total.toFixed(2)}\nPaid: $${bill.paid.toFixed(2)}\nChange: $${bill.change.toFixed(2)}`;
+      const discLine = bill.discount != null && bill.discount > 0 ? `\nDiscount: -$${bill.discount.toFixed(2)}` : "";
+      const text = `Receipt: ${bill.storeName}\nORDER #${bill.orderNumber}\nDate: ${bill.date}\nSubtotal: $${bill.subtotal.toFixed(2)}${discLine}\nTotal: $${bill.total.toFixed(2)}\nPaid: $${bill.paid.toFixed(2)}\nChange: $${bill.change.toFixed(2)}`;
       window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank");
       toast.success("Receipt PDF downloaded");
     } catch {
@@ -304,35 +330,9 @@ function OrderReceiptModal({ order, ownerName, onClose }: {
           </button>
         </div>
         <div className="px-5 py-2">
-          <div className="bg-white text-zinc-900 rounded-xl p-4 shadow-inner text-left font-mono text-xs leading-tight border border-zinc-300">
-            {bill?.logoUrl && <img src={bill.logoUrl} alt="" className="mx-auto mb-1 max-h-16 object-contain" />}
-            <div className="text-center font-black text-zinc-950 text-base font-sans tracking-tight uppercase mb-0.5">
-              {bill?.storeName || ownerName || "Store"}
-            </div>
-            <div className="text-center text-[10px] text-zinc-600">{bill?.date || ""}</div>
-            {bill?.serverName && (
-              <div className="text-center text-[10px] text-zinc-600">Served by {bill.serverName}</div>
-            )}
-            <div className="border-t border-dashed border-zinc-400 my-2" />
-            {bill?.orderNumber ? (
-              <div className="text-center text-[10px] text-zinc-600">ORDER #{bill.orderNumber}</div>
-            ) : null}
-            <div className="space-y-1 my-2">
-              {(bill?.items || order.items || []).map((it, idx) => (
-                <div key={idx} className="flex justify-between items-start">
-                  <span className="font-semibold text-zinc-900 pr-2 break-all">{it.qty}x {it.name}</span>
-                  <span className="font-bold text-zinc-950 whitespace-nowrap">${(Number(it.qty) * Number(it.price)).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-            <div className="border-t border-dashed border-zinc-400 my-2" />
-            <div className="space-y-1">
-              <div className="flex justify-between text-zinc-700"><span>Total</span><span>${Number(order.total).toFixed(2)}</span></div>
-              <div className="flex justify-between text-zinc-700"><span>Cash Tendered</span><span>${Number(order.paid).toFixed(2)}</span></div>
-              <div className="flex justify-between font-bold text-zinc-900"><span>Change</span><span>${Number(order.change_given).toFixed(2)}</span></div>
-            </div>
-            <div className="text-center text-[10px] text-zinc-500 mt-2">{bill?.footerTagline || "Thank you for your purchase!"}</div>
-          </div>
+          {bill ? <ReceiptPaper sale={bill} /> : (
+            <div className="bg-white rounded-xl p-6 text-center text-xs text-zinc-500">Loading receipt…</div>
+          )}
         </div>
         <div className="px-6 pb-5 pt-2 flex flex-col gap-2">
           <div className="flex gap-2">

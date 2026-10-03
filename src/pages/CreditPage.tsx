@@ -15,8 +15,9 @@ import { downloadPdf } from "@/lib/download";
 import { useNumpadKeyboard } from "@/lib/useNumpadKeyboard";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
 import { printReceipt, pairPrinter, isPrinterPaired, clearPrinterPairing, openPrinterConnectDialog, type CreditBill, type ReceiptData } from "@/lib/receiptPrinter";
-import { loadReceiptSettings } from "@/lib/receiptSettings";
+import { brandReceipt, loadReceiptSettings } from "@/lib/receiptSettings";
 import { ReceiptSettingsTab } from "@/components/ReceiptSettingsTab";
+import { ReceiptPaper } from "@/components/ReceiptPaper";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export type CreditAccount = {
@@ -39,6 +40,7 @@ type CreditTx = {
   amount: number;
   note: string | null;
   items?: any[] | null;
+  cashier_id?: string | null;
   created_at: string;
   tab_status?: string | null;
 };
@@ -651,12 +653,23 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
   const dt = new Date(tx.created_at);
   const dateStr = dt.toLocaleString("en-US", {
     month: "numeric", day: "numeric", year: "numeric",
-    hour: "numeric", minute: "2-digit", hour12: true,
+    hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true,
   });
   const items: { name: string; qty: number; price: number }[] =
     isCharge && tx.items && Array.isArray(tx.items) && tx.items.length > 0
       ? tx.items.map((i: any) => ({ name: i.name ?? "Item", qty: i.qty ?? 1, price: Number(i.price) || 0 }))
       : [{ name: tx.note || (isCharge ? "Charge" : "Payment"), qty: 1, price: Number(tx.amount) }];
+  const lineDiscount = (tx.items ?? []).reduce((sum: number, it: any) => {
+    const qty = Number(it?.qty ?? 1);
+    const per = Number(it?.discount ?? 0);
+    if (per > 0) return sum + per * qty;
+    const orig = Number(it?.original_price ?? 0);
+    const price = Number(it?.price ?? 0);
+    if (orig > price) return sum + (orig - price) * qty;
+    return sum;
+  }, 0);
+  const charged = Number(tx.amount);
+  const [shown, setShown] = useState<ReceiptData | null>(null);
 
   useEffect(() => {
     const refresh = () => { isPrinterPaired().then(setPrinterPaired); };
@@ -671,12 +684,28 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
     orderNumber: isCharge ? "CHARGE" : "PAYMENT",
     date: dateStr,
     items,
-    subtotal: Number(tx.amount),
-    total: Number(tx.amount),
-    paid: isCharge ? 0 : Number(tx.amount),
+    subtotal: lineDiscount > 0 ? charged + lineDiscount : charged,
+    discount: lineDiscount > 0 ? lineDiscount : undefined,
+    originalTotal: lineDiscount > 0 ? charged + lineDiscount : undefined,
+    total: charged,
+    paid: isCharge ? 0 : charged,
     change: 0,
     payMode: "credit",
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let serverName = "";
+      if (tx.cashier_id) {
+        const { data } = await supabase.from("profiles").select("username, first_name").eq("id", tx.cashier_id).maybeSingle();
+        serverName = (data?.first_name ?? "").trim() || data?.username || "";
+      }
+      const branded = await brandReceipt({ ...receiptData(), serverName: serverName || undefined });
+      if (!cancelled) setShown(branded);
+    })();
+    return () => { cancelled = true; };
+  }, [tx, account.full_name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePrint = async () => {
     setBusy("print");
@@ -688,7 +717,7 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
         if (!paired) { setBusy(null); return; }
         setPrinterPaired(true);
       }
-      const result = await printReceipt(receiptData());
+      const result = await printReceipt(shown ?? receiptData());
       if (result.error) toast.error(result.error);
       else toast.success("Receipt sent to printer");
     } catch (e: any) {
@@ -733,32 +762,10 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
           </button>
         </div>
 
-        {/* Receipt paper */}
         <div className="px-5 py-2">
-          <div className="bg-white text-zinc-900 rounded-xl p-4 shadow-inner text-left font-mono text-xs leading-tight border border-zinc-300 select-none">
-            <div className="text-center font-black text-zinc-950 text-base font-sans tracking-tight uppercase mb-0.5">
-              {ownerName}
-            </div>
-            <div className="text-center text-[10px] text-zinc-600">{dateStr}</div>
-            <div className="text-center text-[10px] text-zinc-600">Customer: {account.full_name}</div>
-            <div className="text-center text-[10px] text-zinc-600">{isCharge ? "CHARGE" : "PAYMENT"}</div>
-            <div className="border-t border-dashed border-zinc-400 my-2" />
-            <div className="space-y-1 my-2">
-              {items.map((it, idx) => (
-                <div key={idx} className="flex justify-between items-start">
-                  <span className="font-semibold text-zinc-900 pr-2 break-all">{it.qty}x {it.name}</span>
-                  <span className="font-bold text-zinc-950 whitespace-nowrap">${(it.qty * it.price).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-            <div className="border-t border-dashed border-zinc-400 my-2" />
-            <div className="space-y-1">
-              <div className="flex justify-between font-bold text-zinc-900">
-                <span>Total</span>
-                <span>${Number(tx.amount).toFixed(2)}</span>
-              </div>
-            </div>
-          </div>
+          {shown ? <ReceiptPaper sale={shown} /> : (
+            <div className="bg-white rounded-xl p-6 text-center text-xs text-zinc-500">Loading receipt…</div>
+          )}
         </div>
 
         {/* Actions */}
@@ -1027,7 +1034,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
     setTxLoading(true);
     const { data } = await supabase
       .from("credit_transactions")
-      .select("id, credit_account_id, type, amount, note, items, created_at, tab_status")
+      .select("id, credit_account_id, type, amount, note, items, created_at, tab_status, cashier_id")
       .eq("credit_account_id", accountId)
       .order("created_at", { ascending: false });
     setTxs((data ?? []) as CreditTx[]);
@@ -1537,7 +1544,7 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
     setTxLoading(true);
     const { data } = await supabase
       .from("credit_transactions")
-      .select("id, credit_account_id, type, amount, note, items, created_at")
+      .select("id, credit_account_id, type, amount, note, items, created_at, cashier_id")
       .eq("credit_account_id", accountId)
       .order("created_at", { ascending: false });
     setTxs((data ?? []) as CreditTx[]);

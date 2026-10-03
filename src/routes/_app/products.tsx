@@ -916,6 +916,20 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved, seed
       sellPrice: parseFloat(sellPrices[p.id] ?? "") || Number(p.price ?? 0),
     }));
 
+  // Template prompt only when the product+qty list changed — ignore cost/price-only diffs.
+  const templateListChanged = (() => {
+    const current = updates
+      .map((p) => ({ id: p.id, qty: parseInt(newQtys[p.id], 10) }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const seed = (seedLines ?? [])
+      .filter((l) => l.qty > 0)
+      .map((l) => ({ id: l.productId, qty: l.qty }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    if (seed.length === 0) return current.length > 0;
+    if (seed.length !== current.length) return true;
+    return seed.some((l, i) => l.id !== current[i].id || l.qty !== current[i].qty);
+  })();
+
   const save = async (opts?: { requireSupplier?: boolean }) => {
     if (allChanged.length === 0) return;
     setBusy(true);
@@ -1629,7 +1643,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved, seed
             type="button"
             onMouseDown={(e) => {
               e.preventDefault();
-              if (askSaveTemplate && updates.length > 0) {
+              if (askSaveTemplate && templateListChanged) {
                 setTemplateName("");
                 setNamingTemplate(true);
                 return;

@@ -178,7 +178,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                   { label: "Items Cost", value: totalItemsCost, color: "#b91c1c" },
                 ].map((s, i, arr) => (
                   <div key={i} className="px-2 py-2 text-center" style={i < arr.length - 1 ? { borderRight: "1px solid #e2e8f0" } : {}}>
-                    <p className="text-[8px] font-black text-slate-800 uppercase tracking-widest mb-0.5">{s.label}</p>
+                    <p className="text-xs font-black text-slate-800 uppercase tracking-widest mb-0.5">{s.label}</p>
                     <p className="font-black text-xs" style={{ color: s.value !== 0 ? s.color : "var(--muted-foreground)" }}>
                       {s.value !== 0 ? `$${fmt(Math.abs(s.value))}` : "—"}
                     </p>
@@ -197,7 +197,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                       { label: "Net Profit",   value: netProfit,   color: netProfit >= 0 ? "#15803d" : "#b91c1c", sign: true },
                     ].map((s, i, arr) => (
                       <div key={i} className="px-2 py-2 text-center" style={i < arr.length - 1 ? { borderRight: "1px solid #e2e8f0" } : {}}>
-                        <p className="text-[8px] font-black text-slate-800 uppercase tracking-widest mb-0.5">{s.label}</p>
+                        <p className="text-xs font-black text-slate-800 uppercase tracking-widest mb-0.5">{s.label}</p>
                         <p className="font-black text-xs" style={{ color: s.value !== 0 ? s.color : "var(--muted-foreground)" }}>
                           {s.value !== 0 ? `${s.sign ? (s.value > 0 ? "+" : "-") : ""}$${fmt(Math.abs(s.value))}` : "—"}
                         </p>
@@ -211,9 +211,9 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                 ? <div className="py-6 text-center text-slate-800 text-xs">No sales in this shift</div>
                 : <div>
                     <div className="px-3 py-1.5 flex items-center gap-2" style={{ borderBottom: "1px solid #e2e8f0" }}>
-                      <ShoppingBag className="h-3 w-3 text-primary" />
-                      <span className="text-[10px] font-black">Items Sold</span>
-                      <span className="text-[9px] text-slate-800 ml-auto">{data.orders.length} orders</span>
+                      <ShoppingBag className="h-3.5 w-3.5 text-primary" />
+                      <span className="text-xs font-black">Items Sold</span>
+                      <span className="text-xs text-slate-800 ml-auto">{data.orders.length} orders</span>
                     </div>
                     <div className="divide-y" style={{ "--tw-divide-opacity": 1 } as React.CSSProperties}>
                       {items.map(it => {
@@ -222,7 +222,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                           <div key={it.name} className="px-3 py-2 space-y-0.5" style={{ borderColor: "#e2e8f0" }}>
                             <div className="flex items-center justify-between gap-2">
                               <p className="font-bold text-xs flex-1">{it.name}</p>
-                              <p className="text-[10px] text-slate-800">{it.qty} sold</p>
+                              <p className="text-xs text-slate-800">{it.qty} sold</p>
                             </div>
                             <div className="grid grid-cols-3 gap-1">
                               <p className="text-right font-semibold text-xs" style={{ color: "#15803d" }}>${fmt(it.revenue)}</p>
@@ -239,13 +239,13 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
               {data.orders.length > 0 && (
                 <div style={{ borderTop: "1px solid #e2e8f0" }}>
                   <div className="px-3 py-1.5 flex items-center justify-between">
-                    <span className="text-[10px] font-black">Orders</span>
-                    <span className="text-[9px] text-slate-800">{data.orders.length}</span>
+                    <span className="text-xs font-black">Orders</span>
+                    <span className="text-xs text-slate-800">{data.orders.length}</span>
                   </div>
                   {data.orders.map(o => (
                     <div key={o.id} className="px-3 py-2 flex items-start justify-between gap-2" style={{ borderTop: "1px solid #e2e8f0" }}>
                       <div className="min-w-0 flex-1">
-                        <span className="text-[10px] text-slate-800 block">{new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}</span>
+                        <span className="text-xs text-slate-800 block">{new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}</span>
                         <div className="mt-0.5 space-y-0.5">
                           {(() => {
                             const collected = orderItemCollected(o);
@@ -254,7 +254,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                             const costTotal = lineStockCost(item, costProducts);
                             const profit    = saleTotal - costTotal;
                             return (
-                              <span key={idx} className="text-[9px] text-slate-800 block">
+                              <span key={idx} className="text-xs text-slate-800 block">
                                 {item.qty}× {item.name}
                                 {" · "}
                                 <span style={{ color: "#15803d" }}>${fmt(saleTotal)}</span>
@@ -268,7 +268,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                       <span className="font-black text-xs shrink-0" style={{ color: "#15803d" }}>
                         ${fmt(Number(o.total))}
                         {o.discount_amount != null && Number(o.discount_amount) > 0 && (
-                          <span className="block text-[8px] font-black text-right" style={{ color: "#a16207" }}>
+                          <span className="block text-xs font-black text-right" style={{ color: "#a16207" }}>
                             -${fmt(Number(o.discount_amount))} off
                           </span>
                         )}
@@ -281,8 +281,8 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
               {nonStockExpenses.length > 0 && (
                 <div style={{ borderTop: "1px solid #e2e8f0" }}>
                   <div className="px-3 py-1.5 flex items-center gap-2">
-                    <TrendingDown className="h-3 w-3 text-red-700" />
-                    <span className="text-[10px] font-black">Expenses</span>
+                    <TrendingDown className="h-3.5 w-3.5 text-red-700" />
+                    <span className="text-xs font-black">Expenses</span>
                   </div>
                   {nonStockExpenses.map(e => {
                     const lines = (e.description ?? "").split("\n").filter(Boolean).slice(1).filter(l => !l.startsWith("[Cashier:") && !l.startsWith("[Manager:"));
@@ -292,7 +292,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                       <div key={e.id} className="px-3 py-2 flex items-start justify-between gap-2" style={{ borderTop: "1px solid #e2e8f0" }}>
                         <div className="flex-1 min-w-0">
                           {lines.length > 0 ? lines.map((l, i) => <p key={i} className="text-xs font-semibold">{l.split(" = ")[0]}</p>) : <p className="text-xs font-semibold">Expense</p>}
-                          <p className="text-[10px] text-slate-800 mt-0.5">{dateTime}</p>
+                          <p className="text-xs text-slate-800 mt-0.5">{dateTime}</p>
                         </div>
                         <p className="font-black text-xs shrink-0" style={{ color: isRefund ? "#15803d" : "#b91c1c" }}>
                           {isRefund ? `+$${fmt(Math.abs(Number(e.amount)))}` : `$${fmt(Number(e.amount))}`}
@@ -460,7 +460,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
               { label: "Items Cost", value: totalItemsCost },
             ].map((s, i, arr) => (
               <div key={i} className="px-3 py-2.5 text-center" style={i < arr.length - 1 ? { borderRight: "1px solid rgba(255,255,255,0.25)" } : {}}>
-                <p className="text-[8px] font-black uppercase tracking-widest mb-0.5" style={{ color: "rgba(255,255,255,0.85)" }}>{s.label}</p>
+                <p className="text-xs font-black uppercase tracking-widest mb-0.5" style={{ color: "rgba(255,255,255,0.85)" }}>{s.label}</p>
                 <p className="font-black text-xs text-white">
                   {s.value !== 0 ? `$${fmt(Math.abs(s.value))}` : "—"}
                 </p>
@@ -479,7 +479,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
                   { label: "Net Profit",   value: netProfit, sign: true },
                 ].map((s, i, arr) => (
                   <div key={i} className="px-3 py-2.5 text-center" style={i < arr.length - 1 ? { borderRight: "1px solid rgba(255,255,255,0.25)" } : {}}>
-                    <p className="text-[8px] font-black uppercase tracking-widest mb-0.5" style={{ color: "rgba(255,255,255,0.85)" }}>{s.label}</p>
+                    <p className="text-xs font-black uppercase tracking-widest mb-0.5" style={{ color: "rgba(255,255,255,0.85)" }}>{s.label}</p>
                     <p className="font-black text-xs text-white">
                       {s.value !== 0 ? `${s.sign ? (s.value > 0 ? "+" : "-") : ""}$${fmt(Math.abs(s.value))}` : "—"}
                     </p>
@@ -498,9 +498,9 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
             ? <div className="py-6 text-center text-slate-800 text-xs">No sales in this period</div>
             : <div>
                 <div className="px-3 py-1.5 flex items-center gap-2" style={{ borderBottom: "1px solid #e2e8f0" }}>
-                  <ShoppingBag className="h-3 w-3 text-primary" />
-                  <span className="text-[10px] font-black">Items Sold</span>
-                  <span className="text-[9px] text-slate-800 ml-auto">{data.orders.length} orders</span>
+                  <ShoppingBag className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-xs font-black">Items Sold</span>
+                  <span className="text-xs text-slate-800 ml-auto">{data.orders.length} orders</span>
                 </div>
                 <div className="divide-y" style={{ "--tw-divide-opacity": 1 } as React.CSSProperties}>
                   {items.map(it => {
@@ -509,7 +509,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
                       <div key={it.name} className="px-3 py-2 space-y-0.5" style={{ borderColor: "#e2e8f0" }}>
                         <div className="flex items-center justify-between gap-2">
                           <p className="font-bold text-xs flex-1">{it.name}</p>
-                          <p className="text-[10px] text-slate-800">{it.qty} sold</p>
+                          <p className="text-xs text-slate-800">{it.qty} sold</p>
                         </div>
                         <div className="grid grid-cols-3 gap-1">
                           <p className="text-right font-semibold text-xs" style={{ color: "#15803d" }}>${fmt(it.revenue)}</p>
@@ -526,13 +526,13 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
           {data.orders.length > 0 && (
             <div style={{ borderTop: "1px solid #e2e8f0" }}>
               <div className="px-3 py-1.5 flex items-center justify-between">
-                <span className="text-[10px] font-black">Orders</span>
-                <span className="text-[9px] text-slate-800">{data.orders.length}</span>
+                <span className="text-xs font-black">Orders</span>
+                <span className="text-xs text-slate-800">{data.orders.length}</span>
               </div>
               {data.orders.map(o => (
                 <div key={o.id} className="px-3 py-2 flex items-start justify-between gap-2" style={{ borderTop: "1px solid #e2e8f0" }}>
                   <div className="min-w-0 flex-1">
-                    <span className="text-[10px] text-slate-800 block">{new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}</span>
+                    <span className="text-xs text-slate-800 block">{new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}</span>
                     <div className="mt-0.5 space-y-0.5">
                       {(() => {
                         const collected = orderItemCollected(o);
@@ -541,7 +541,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
                         const costTotal = lineStockCost(item, costProducts);
                         const profit    = saleTotal - costTotal;
                         return (
-                          <span key={idx} className="text-[9px] text-slate-800 block">
+                          <span key={idx} className="text-xs text-slate-800 block">
                             {item.qty}× {item.name}
                             {" · "}
                             <span style={{ color: "#15803d" }}>${fmt(saleTotal)}</span>
@@ -555,7 +555,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
                   <span className="font-black text-xs shrink-0" style={{ color: "#15803d" }}>
                     ${fmt(Number(o.total))}
                     {o.discount_amount != null && Number(o.discount_amount) > 0 && (
-                      <span className="block text-[8px] font-black text-right" style={{ color: "#a16207" }}>
+                      <span className="block text-xs font-black text-right" style={{ color: "#a16207" }}>
                         -${fmt(Number(o.discount_amount))} off
                       </span>
                     )}
@@ -568,8 +568,8 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
           {nonStockExpenses.length > 0 && (
             <div style={{ borderTop: "1px solid #e2e8f0" }}>
               <div className="px-3 py-1.5 flex items-center gap-2">
-                <TrendingDown className="h-3 w-3 text-red-700" />
-                <span className="text-[10px] font-black">Expenses</span>
+                <TrendingDown className="h-3.5 w-3.5 text-red-700" />
+                <span className="text-xs font-black">Expenses</span>
               </div>
               {nonStockExpenses.map(e => {
                 const lines = (e.description ?? "").split("\n").filter(Boolean).slice(1).filter(l => !l.startsWith("[Cashier:") && !l.startsWith("[Manager:"));
@@ -579,7 +579,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
                   <div key={e.id} className="px-3 py-2 flex items-start justify-between gap-2" style={{ borderTop: "1px solid #e2e8f0" }}>
                     <div className="flex-1 min-w-0">
                       {lines.length > 0 ? lines.map((l, i) => <p key={i} className="text-xs font-semibold">{l.split(" = ")[0]}</p>) : <p className="text-xs font-semibold">Expense</p>}
-                      <p className="text-[10px] text-slate-800 mt-0.5">{dateTime}</p>
+                      <p className="text-xs text-slate-800 mt-0.5">{dateTime}</p>
                     </div>
                     <p className="font-black text-xs shrink-0" style={{ color: isRefund ? "#15803d" : "#b91c1c" }}>
                       {isRefund ? `+$${fmt(Math.abs(Number(e.amount)))}` : `$${fmt(Number(e.amount))}`}

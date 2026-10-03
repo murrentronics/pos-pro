@@ -29,6 +29,7 @@ import {
   type PrinterConnectionType,
 } from "@/lib/receiptPrinter";
 import { brandReceipt } from "@/lib/receiptSettings";
+import { ReceiptPaper } from "@/components/ReceiptPaper";
 import { playBeep } from "@/lib/playBeep";
 import { useNumpadKeyboard, applyMoneyKey, applyIntKey } from "@/lib/useNumpadKeyboard";
 import {
@@ -2592,16 +2593,27 @@ export default function RegisterPage() {
             // Store / Business Name = storeBusinessName or profile username
             const businessName = storeBusinessName || profile?.username || "Store";
 
+            // Match Bartendaz: subtotal = pre-discount cart, then Discount (was $X), then Total.
+            const receiptItems = receiptOverride?.items
+              ?? soldCart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) }));
+            const itemsSum = receiptItems.reduce((s, i) => s + Number(i.price) * Number(i.qty), 0);
+            const charged = receiptOverride?.total ?? Math.max(0, total - orderDiscount);
+            const disc = orderDiscount > 0
+              ? orderDiscount
+              : (itemsSum > charged + 0.001 ? Math.round((itemsSum - charged) * 100) / 100 : 0);
+            const beforeDisc = disc > 0
+              ? (orderDiscount > 0 ? total : itemsSum)
+              : (receiptOverride ? charged : total);
             const saleData: ReceiptData = {
               storeName: businessName,
-              locationName: "Main location",
+              locationName: "",
               orderNumber: fromServer ?? seq,
               serverName: cashierName,
-              items: receiptOverride?.items ?? soldCart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) })),
-              subtotal: receiptOverride?.total ?? total,
-              discount: receiptOverride ? undefined : (orderDiscount > 0 ? orderDiscount : undefined),
-              originalTotal: receiptOverride ? undefined : (orderDiscount > 0 ? total : undefined),
-              total: receiptOverride?.total ?? Math.max(0, total - orderDiscount),
+              items: receiptItems,
+              subtotal: beforeDisc,
+              discount: disc > 0 ? disc : undefined,
+              originalTotal: disc > 0 ? beforeDisc : undefined,
+              total: charged,
               paid,
               change,
               payMode: receiptOverride?.payMode ?? payMode ?? "cash",
@@ -2709,90 +2721,9 @@ export default function RegisterPage() {
               <h2 className="font-black text-lg">Sale Complete</h2>
             </div>
 
-            {/* Thermal Receipt Paper Card */}
+            {/* Thermal Receipt Paper Card — same layout as Bartendaz */}
             <div className="px-5 py-2 overflow-y-auto flex-1">
-              <div className="bg-white text-zinc-900 rounded-xl p-4 shadow-inner text-left font-mono text-xs leading-tight border border-zinc-300 select-none">
-                {/* Store Header */}
-                {lastSale.logoUrl && <img src={lastSale.logoUrl} alt="" className="mx-auto mb-1 max-h-16 object-contain" />}
-                <div className="text-center font-black text-zinc-950 text-base font-sans tracking-tight uppercase mb-0.5">
-                  {lastSale.storeName || "My Business"}
-                </div>
-                {lastSale.locationName && (
-                  <div className="text-center text-[11px] text-zinc-700">{lastSale.locationName}</div>
-                )}
-                <div className="text-center text-[10px] text-zinc-600">{lastSale.date || ""}</div>
-                <div className="text-center text-[10px] text-zinc-600">Served by {lastSale.serverName || "Staff"}</div>
-                {lastSale.customerName && (
-                  <div className="text-center text-[10px] text-zinc-700">Customer: {lastSale.customerName}</div>
-                )}
-
-                <div className="border-t border-dashed border-zinc-400 my-2" />
-
-                {/* Order Header */}
-                <div className="text-center font-black text-base tracking-wide text-zinc-950 my-1">
-                  ORDER #{lastSale.orderNumber || 1}
-                </div>
-
-                <div className="border-t border-dashed border-zinc-400 my-2" />
-
-                {/* Items */}
-                <div className="space-y-1 my-2">
-                  {lastSale.items.map((it, idx) => (
-                    <div key={idx} className="flex justify-between items-start">
-                      <span className="font-semibold text-zinc-900 pr-2 break-all">
-                        {it.qty}x {it.name}
-                      </span>
-                      <span className="font-bold text-zinc-950 whitespace-nowrap">
-                        ${(it.qty * it.price).toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="border-t border-dashed border-zinc-400 my-2" />
-
-                {/* Subtotal & Total */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-zinc-700">
-                    <span>Subtotal</span>
-                    <span>${lastSale.subtotal.toFixed(2)}</span>
-                  </div>
-                  {lastSale.discount != null && lastSale.discount > 0 && (
-                    <div className="flex justify-between font-black" style={{ color: "#d97706" }}>
-                      <span>Discount{lastSale.originalTotal != null ? ` (was $${lastSale.originalTotal.toFixed(2)})` : ""}</span>
-                      <span>-${lastSale.discount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {lastSale.tax != null && lastSale.tax > 0 && (
-                    <div className="flex justify-between text-zinc-700">
-                      <span>Tax</span>
-                      <span>${lastSale.tax.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between font-black text-sm text-zinc-950 pt-0.5">
-                    <span>Total</span>
-                    <span>${lastSale.total.toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <div className="border-t border-dashed border-zinc-400 my-2" />
-
-                {/* Payment Breakdown */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-zinc-700">
-                    <span>{lastSale.payMode === "credit" ? "Credit" : "Cash Tendered"}</span>
-                    <span>${lastSale.paid.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-zinc-900">
-                    <span>Change</span>
-                    <span>${lastSale.change.toFixed(2)}</span>
-                  </div>
-                </div>
-                <div className="text-center text-[10px] text-zinc-500 mt-2">
-                  {lastSale.footerTagline || "Thank you for your purchase!"}
-                </div>
-              </div>
-
+              <ReceiptPaper sale={lastSale} />
             </div>
 
             {/* Actions — Print & Done and Done. Both kick the drawer through the printer. */}
@@ -3442,9 +3373,9 @@ function CashOverlay({
                                 color: "#15803d",
                               }
                             : {
-                                background: "rgba(250,204,21,0.1)",
-                                border: "1px solid rgba(250,204,21,0.25)",
-                                color: "#facc15",
+                                background: "#ca8a04",
+                                border: "1px solid #a16207",
+                                color: "#422006",
                               }
                         }
                       >
