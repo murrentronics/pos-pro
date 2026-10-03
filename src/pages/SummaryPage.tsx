@@ -138,7 +138,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
   const totalExpenses  = totalNonStockExpenses;
 
   return (
-    <div className="desk-2x rounded-xl border border-slate-200 overflow-hidden bg-white">
+    <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
       {/* Sub-session header */}
       <button onClick={handleToggle} className="w-full px-3 py-2.5 flex items-center justify-between gap-3 text-left transition active:bg-white/5">
         <div className="flex flex-col gap-0.5 min-w-0 flex-1">
@@ -440,7 +440,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
   const totalExpenses  = totalNonStockExpenses;
 
   return (
-    <div className="desk-2x rounded-2xl border border-sky-200 overflow-hidden bg-white">
+    <div className="rounded-2xl border border-sky-200 overflow-hidden bg-white">
       <div style={{ background: "var(--gradient-hero)", color: "#ffffff" }}>
       <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(255,255,255,0.25)" }}>
         <span className="text-xs font-black text-white">

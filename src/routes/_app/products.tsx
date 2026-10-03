@@ -27,7 +27,7 @@ function unitCost(n: number): number {
 import { playBeep } from "@/lib/playBeep";
 import { useNumpadKeyboard } from "@/lib/useNumpadKeyboard";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -552,9 +552,9 @@ function StockNumpad({ productId, productName, supplierName: initialSupplier, ow
                     className="relative flex items-center justify-center rounded-2xl border-2 overflow-hidden transition active:scale-95"
                     style={{
                       height: "110px",
-                      background: active ? "oklch(0.22 0.06 50 / 0.6)" : "rgba(255,255,255,0.05)",
-                      borderColor: active ? "var(--primary)" : "rgba(255,255,255,0.1)",
-                      boxShadow: active ? "0 4px 18px rgba(251,146,60,0.3)" : "none",
+                      background: active ? "#1e293b" : "#e0f2fe",
+                      borderColor: active ? "var(--primary)" : "#7dd3fc",
+                      boxShadow: active ? "0 4px 18px rgba(14,165,233,0.35)" : "none",
                       paddingBottom: active ? "36px" : "0",
                     }}
                   >
@@ -562,13 +562,18 @@ function StockNumpad({ productId, productName, supplierName: initialSupplier, ow
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setCounts((c) => c.map((v, j) => j === i ? 0 : v)); }}
-                        className="absolute top-1.5 right-1.5 h-7 w-7 rounded-full flex items-center justify-center text-black shadow z-10 active:scale-90 transition"
+                        className="absolute top-1.5 right-1.5 h-7 w-7 rounded-full flex items-center justify-center text-white shadow z-10 active:scale-90 transition"
                         style={{ background: "#dc2626" }}
                       >
                         <span className="text-xs font-black">×</span>
                       </button>
                     )}
-                    <span className="text-3xl font-black text-white leading-none">{b.qty}</span>
+                    <span
+                      className="text-3xl font-black leading-none"
+                      style={{ color: active ? "#ffffff" : "#0c4a6e" }}
+                    >
+                      {b.qty}
+                    </span>
                     {active && (
                       <div
                         className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-3 py-1.5"
@@ -1117,8 +1122,10 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved, seed
       </div>
       <div className="flex items-center gap-2">
       <button
-        onClick={() => {
-          // Block if any item has qty > 0 but sell price is $0
+        type="button"
+        onMouseDown={(e) => {
+          // Use mousedown so the active numpad blur cannot swallow the click.
+          e.preventDefault();
           const invalid = updates.find((p) => {
             const sp = parseFloat(sellPrices[p.id] ?? "") || Number(p.price ?? 0);
             return sp === 0;
@@ -1619,7 +1626,9 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved, seed
             ← Back
           </button>
           <button
-            onClick={() => {
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
               if (askSaveTemplate && updates.length > 0) {
                 setTemplateName("");
                 setNamingTemplate(true);
@@ -1627,7 +1636,7 @@ function BulkEditModal({ items, ownerId, storeCategories, onClose, onSaved, seed
               }
               void save();
             }}
-            disabled={busy || savingTemplate}
+            disabled={busy || savingTemplate || allChanged.length === 0}
             className="flex-[2] h-12 rounded-2xl font-black text-sm text-primary-foreground disabled:opacity-40 flex items-center justify-center gap-2 transition active:scale-[0.98]"
             style={{ background: "var(--gradient-hero)" }}
           >
@@ -1713,6 +1722,7 @@ export default function ProductsPage() {
   const editItemForBackRef = useRef<Product | null>(null);
   const [showBulkEdit, setShowBulkEdit] = useState(false);
   const [bulkSeed, setBulkSeed] = useState<{ lines: PurchaseOrderLine[]; supplierName: string } | null>(null);
+  const [addChooser, setAddChooser] = useState(false);
   const [poListOpen, setPoListOpen] = useState(false);
   const [poLoading, setPoLoading] = useState(false);
   const [poTemplates, setPoTemplates] = useState<PurchaseOrderTemplate[]>([]);
@@ -1953,30 +1963,13 @@ export default function ProductsPage() {
             </Button>
             <Button
               size="sm"
-              className="font-bold h-8 px-3"
-              variant="outline"
-              style={{ borderColor: "var(--primary)", color: "var(--primary)" }}
-              onClick={async () => {
-                setPoListOpen(true);
-                setPoLoading(true);
-                try {
-                  setPoTemplates(await listPurchaseOrders(ownerIdForQuery));
-                } catch (e: unknown) {
-                  toast.error(e instanceof Error ? e.message : "Could not load purchase orders");
-                  setPoTemplates([]);
-                } finally {
-                  setPoLoading(false);
-                }
-              }}
+              className="font-bold h-8"
+              style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+              onClick={() => setAddChooser(true)}
             >
-              Order Lists
+              + Add Items
             </Button>
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="font-bold h-8" style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}>
-                + Add Items
-              </Button>
-            </DialogTrigger>
             <AddItemDialog
                 key={open ? "open" : "closed"}
                 ownerId={ownerIdForQuery}
@@ -2029,7 +2022,7 @@ export default function ProductsPage() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 text-muted-foreground">No {storeCategories.find(c => c.id === category)?.name ?? "items"} yet — tap Add Item.</div>
         ) : (
-          <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2">
+          <div className="grid grid-cols-4 min-[500px]:grid-cols-5 min-[640px]:grid-cols-6 min-[780px]:grid-cols-7 gap-2">
             {filtered.map((p) => (
               <div key={p.id} className="flex flex-col rounded-2xl overflow-hidden border border-border" style={{ background: "var(--gradient-card)" }}>
                 <div className="aspect-[3/4] relative w-full">
@@ -2254,6 +2247,54 @@ export default function ProductsPage() {
             setBulkSeed(null);
           }}
         />
+      )}
+
+      {addChooser && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70" onClick={() => setAddChooser(false)}>
+          <div
+            className="w-full max-w-sm rounded-3xl border border-border p-5 flex flex-col gap-3"
+            style={{ background: "var(--gradient-card)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="font-black text-lg">To add from where?</h2>
+              <button type="button" onClick={() => setAddChooser(false)} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                setAddChooser(false);
+                setPoListOpen(true);
+                setPoLoading(true);
+                try {
+                  setPoTemplates(await listPurchaseOrders(ownerIdForQuery));
+                } catch (e: unknown) {
+                  toast.error(e instanceof Error ? e.message : "Could not load purchase orders");
+                  setPoTemplates([]);
+                } finally {
+                  setPoLoading(false);
+                }
+              }}
+              className="w-full h-14 rounded-2xl font-black text-sm text-primary-foreground"
+              style={{ background: "var(--gradient-hero)" }}
+            >
+              Purchase Order List
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAddChooser(false);
+                setOpen(true);
+              }}
+              className="w-full h-14 rounded-2xl font-black text-sm border border-border"
+              style={{ background: "#e0f2fe", color: "#0c4a6e" }}
+            >
+              New List
+            </button>
+          </div>
+        </div>
       )}
 
       {poListOpen && (

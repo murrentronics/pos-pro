@@ -65,8 +65,9 @@ function withSavedUnitCost<T extends { units_consumed?: number | null; cost_pric
   const pack = Number(line.cost_price ?? 0);
   if (pack <= 0) return line;
   const unitsPer = Number(line.units_per_item ?? 0);
-  const poured = line.units_consumed != null && Number(line.units_consumed) > 0 && unitsPer > 0;
-  const unit = poured ? pack / unitsPer : pack;
+  // Cost of one stock unit. Pack specials store units_consumed separately so
+  // Summary can multiply unit_cost × units_consumed for the line total.
+  const unit = unitsPer > 1 ? pack / unitsPer : pack;
   const rounded = Math.round(unit * 100) / 100;
   return rounded > 0 ? { ...line, unit_cost: rounded } : line;
 }
@@ -896,7 +897,7 @@ const ProductGrid = React.memo(function ProductGrid({
   return (
     <>
       <div
-        className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-6 gap-2"
+        className="grid grid-cols-4 min-[500px]:grid-cols-5 min-[640px]:grid-cols-6 min-[780px]:grid-cols-7 gap-2"
         onContextMenu={(e) => e.preventDefault()}
       >
         {barOrdered.map((p) => (
@@ -2221,7 +2222,7 @@ export default function RegisterPage() {
                     <div>
                       {barEditMode ? (
                         <div>
-                          <div ref={barEditGridRef} className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-6 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
+                          <div ref={barEditGridRef} className="grid grid-cols-4 min-[500px]:grid-cols-5 min-[640px]:grid-cols-6 min-[780px]:grid-cols-7 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
                             {barOrdered.map((p) => {
                               const inCart = cart.find((i) => i.id === p.id);
                               const outOfStock = (p.stock_qty ?? 1) === 0;

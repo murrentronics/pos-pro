@@ -67,42 +67,52 @@ function findCostProduct(
   products: SummaryProductCost[],
 ): SummaryProductCost | undefined {
   const id = it.id ?? "";
-  if (id && !isSynthId(id)) {
-    const byId = products.find((p) => p.id === id);
+  // Pack specials and option lines store "{productId}__pv__{varId}" (or similar).
+  const baseId = id.includes("__") ? id.split("__")[0] : id;
+  if (baseId && !isSynthId(id)) {
+    const byId = products.find((p) => p.id === baseId || p.id === id);
     if (byId) return byId;
   }
   const resolved = normName(resolvedProductName(it.name, id));
+  // "LM (3 pack)" → match product "LM"
+  const bare = resolved.replace(/\s*\([^)]*\)\s*$/, "").trim();
   return (
     products.find((p) => normName(p.name) === resolved) ??
-    products.find((p) => normName(p.name) === normName(it.name))
+    products.find((p) => normName(p.name) === normName(it.name)) ??
+    (bare ? products.find((p) => normName(p.name) === bare) : undefined)
   );
 }
 
 /**
  * Stock cost for one order line.
  * Whole items use the product cost price.
- * Retail sticks and rum/shot pours use cost price ÷ units in the pack or bottle,
- * times the units actually poured (or qty, for one-stick retail).
+ * Retail sticks, rum/shot pours, and pack specials use cost price ÷ units in the
+ * pack or bottle, times the units actually consumed (units_consumed), not the
+ * deal qty. A "3 pack" special that takes 3 units must cost 3× the unit cost.
  * If the product was deleted, the unit_cost saved on the line is used.
  */
 export function lineStockCost(it: SummaryOrderItem, products: SummaryProductCost[]): number {
   const qty = Number(it.qty) || 0;
+  const consumed =
+    it.units_consumed != null && Number(it.units_consumed) > 0
+      ? Number(it.units_consumed)
+      : null;
   const product = findCostProduct(it, products);
   if (product) {
     const packCost = Number(product.cost_price) || 0;
     const unitsPer = Number(product.units_per_item) || 0;
-    if (isPourLine(it.id, it.name)) {
-      const perUnit = unitsPer > 0 ? packCost / unitsPer : packCost;
-      const units =
-        it.units_consumed != null && Number(it.units_consumed) > 0
-          ? Number(it.units_consumed)
-          : qty;
-      return units * perUnit;
+    // Pours / retail, or pack specials where stock units ≠ deal taps.
+    if (isPourLine(it.id, it.name) || (consumed != null && consumed !== qty)) {
+      const perUnit = unitsPer > 1 ? packCost / unitsPer : packCost;
+      return (consumed ?? qty) * perUnit;
     }
     return qty * packCost;
   }
   const stored = Number(it.unit_cost ?? 0);
-  return stored > 0 ? stored * qty : 0;
+  if (stored <= 0) return 0;
+  // Saved unit_cost is per stock unit when units_consumed was set at sale time.
+  if (consumed != null && consumed !== qty) return stored * consumed;
+  return stored * qty;
 }
 
 /** Cost of a single qty, for saving onto a new order line. */
