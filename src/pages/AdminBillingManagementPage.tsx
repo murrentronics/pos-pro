@@ -199,6 +199,9 @@ export default function AdminBillingManagementPage() {
       approved_at: new Date().toISOString(),
     };
 
+    // Written after the payment update so the billing trigger cannot stack years.
+    let postApproveProfile: Record<string, unknown> | null = null;
+
     if (status === "paid") {
       updates.payment_date = new Date().toISOString();
       
@@ -220,11 +223,10 @@ export default function AdminBillingManagementPage() {
         const isBarOnlyAddon = (plan as any).plan_type === "bar_only_addon";
 
         if (isChainPlan) {
-          // Chain plan: set plan_type = "chain", chain_addon_active = true
           const chainEnd = new Date(startDate);
           chainEnd.setMonth(chainEnd.getMonth() + Math.min(plan.duration_months, 12));
-
-          await supabase.from("profiles").update({
+          updates.next_due_date = chainEnd.toISOString();
+          postApproveProfile = {
             status: "approved",
             billing_status: "active",
             plan_type: "chain",
@@ -232,9 +234,7 @@ export default function AdminBillingManagementPage() {
             chain_bar_count: 1,
             subscription_start_date: startDate.toISOString(),
             subscription_end_date: chainEnd.toISOString(),
-          }).eq("id", selectedPayment.owner_id);
-
-          updates.next_due_date = chainEnd.toISOString();
+          };
 
         } else if (isBarOnlyAddon) {
           // Extra Store addon: call create-addon-bars edge function
@@ -279,9 +279,15 @@ export default function AdminBillingManagementPage() {
             ? new Date(ownerFinal.subscription_end_date)
             : (() => { const d = new Date(); d.setMonth(d.getMonth() + Math.min(plan.duration_months, 12)); return d; })();
           updates.next_due_date = addonEnd.toISOString();
+          // Never extend the main plan date for an extra-store payment.
+          if (ownerFinal?.subscription_end_date) {
+            postApproveProfile = {
+              subscription_end_date: ownerFinal.subscription_end_date,
+            };
+          }
 
         } else {
-          // Basic (P.O.S. Pro Annual Plan): extend subscription_end_date
+          // Basic (P.O.S. Pro Annual Plan): extend subscription_end_date by 1 year
           const isActiveRenewal =
             ownerProfile?.subscription_end_date &&
             ownerProfile?.billing_status === "active" &&
@@ -291,15 +297,14 @@ export default function AdminBillingManagementPage() {
             ? (() => { const d = new Date(ownerProfile!.subscription_end_date!); d.setMonth(d.getMonth() + Math.min(plan.duration_months, 12)); return d; })()
             : (() => { const d = new Date(); d.setMonth(d.getMonth() + Math.min(plan.duration_months, 12)); return d; })();
 
-          await supabase.from("profiles").update({
+          updates.next_due_date = endDate.toISOString();
+          postApproveProfile = {
             status: "approved",
             billing_status: "active",
             plan_type: "basic",
             ...(isActiveRenewal ? {} : { subscription_start_date: startDate.toISOString() }),
             subscription_end_date: endDate.toISOString(),
-          }).eq("id", selectedPayment.owner_id);
-
-          updates.next_due_date = endDate.toISOString();
+          };
         }
       }
     } else if (status === "rejected") {
@@ -324,6 +329,11 @@ export default function AdminBillingManagementPage() {
       .from("billing_payments")
       .update(updates)
       .eq("id", selectedPayment.id);
+
+    // Re-assert correct dates after the approval trigger (prevents stacked years).
+    if (!error && status === "paid" && postApproveProfile) {
+      await supabase.from("profiles").update(postApproveProfile).eq("id", selectedPayment.owner_id);
+    }
 
     setLoading(false);
 

@@ -6,6 +6,7 @@ import { Pencil, Trash2, Plus, Loader2, Check, X, GripVertical } from "lucide-re
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTranslation } from "@/lib/i18n";
 
 type Category = {
   id: string;
@@ -18,6 +19,7 @@ type Category = {
 
 export default function CategoriesPage() {
   const { profile } = useAuth();
+  const { t } = useTranslation();
   const { effectiveOwnerId } = useChain();
   const ownerId = effectiveOwnerId(profile?.id ?? "");
 
@@ -201,7 +203,7 @@ export default function CategoriesPage() {
       <div className="sticky top-0 z-20 -mx-3 px-3 pt-2 pb-2 bg-background/95 backdrop-blur border-b border-border">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-black leading-tight">Categories</h1>
+            <h1 className="text-xl font-black leading-tight">{t("categories", "Categories")}</h1>
             {savingOrder && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
           </div>
           <Button
@@ -210,7 +212,7 @@ export default function CategoriesPage() {
             className="gap-1.5 font-black"
             style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
           >
-            <Plus className="h-4 w-4" /> Create Category
+            <Plus className="h-4 w-4" /> {t("create_category", "Create Category")}
           </Button>
         </div>
       </div>
@@ -219,9 +221,9 @@ export default function CategoriesPage() {
       {showForm && (
         <div className="rounded-2xl border border-border p-4 space-y-4"
           style={{ background: "var(--gradient-card)" }}>
-          <p className="font-black text-sm">{editId ? "Edit Category" : "New Category"}</p>
+          <p className="font-black text-sm">{editId ? t("edit_category", "Edit Category") : t("new_category", "New Category")}</p>
           <div className="space-y-1.5">
-            <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">Name</label>
+            <label className="text-xs font-black text-muted-foreground uppercase tracking-wider">{t("col_name", "Name")}</label>
             <Input
               value={formName}
               onChange={(e) => setFormName(e.target.value)}
@@ -233,7 +235,7 @@ export default function CategoriesPage() {
           </div>
           <div className="flex gap-2 pt-1">
             <Button variant="outline" size="sm" onClick={cancelForm} className="gap-1.5">
-              <X className="h-4 w-4" /> Cancel
+              <X className="h-4 w-4" /> {t("cancel", "Cancel")}
             </Button>
             <Button
               size="sm"
@@ -243,7 +245,7 @@ export default function CategoriesPage() {
               style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              {editId ? "Save Changes" : "Create"}
+              {editId ? t("save_changes", "Save Changes") : t("create", "Create")}
             </Button>
           </div>
         </div>
@@ -252,7 +254,7 @@ export default function CategoriesPage() {
       {/* Hint */}
       {!loading && categories.length > 1 && (
         <p className="text-xs text-muted-foreground px-1">
-          Hold and drag the <GripVertical className="inline h-3 w-3 mb-0.5" /> handle to reorder. Order here is the tab order on the register.
+          {t("categories_drag_hint_pre", "Hold and drag the")} <GripVertical className="inline h-3 w-3 mb-0.5" /> {t("categories_drag_hint_post", "handle to reorder. Order here is the tab order on the register.")}
         </p>
       )}
 

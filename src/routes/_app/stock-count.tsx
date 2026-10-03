@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { CATEGORIES, categoryIcon, categoryLabel } from "@/lib/categories";
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
+import { useTranslation } from "@/lib/i18n";
 
 export default StockCountPage;
 
@@ -26,6 +27,7 @@ type Table = {
 
 function StockCountPage() {
   const { profile } = useAuth();
+  const { t } = useTranslation();
   const [tables, setTables] = useState<Table[]>([]);
   const [newTableName, setNewTableName] = useState("");
   const [activeCell, setActiveCell] = useState<string | null>(null);
@@ -523,7 +525,7 @@ function StockCountPage() {
               type="text"
               value={newTableName}
               onChange={(e) => setNewTableName(e.target.value)}
-              placeholder="New table name..."
+              placeholder={t("new_table_name", "New table name...")}
               className="flex-1 min-w-0 h-10 px-3 rounded-xl border border-border bg-background text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary"
             />
             <button
@@ -532,7 +534,7 @@ function StockCountPage() {
               className="h-10 px-3 rounded-xl font-black text-xs sm:text-sm text-primary-foreground transition active:scale-95 disabled:opacity-40 shrink-0"
               style={{ background: "var(--gradient-hero)" }}
             >
-              Create Table
+              {t("create_table", "Create Table")}
             </button>
             {!splitView && profile?.role === "owner" && tables.length > 0 && (
               <button
@@ -549,7 +551,7 @@ function StockCountPage() {
                 className="h-10 px-3 rounded-xl font-black text-xs sm:text-sm border border-border bg-muted hover:bg-muted/70 transition active:scale-95 flex items-center gap-2 shrink-0"
               >
                 <LayoutPanelLeft className="h-4 w-4" />
-                <span className="hidden sm:inline">Split View</span>
+                <span className="hidden sm:inline">{t("split_view", "Split View")}</span>
               </button>
             )}
            </div>
@@ -751,14 +753,14 @@ function StockCountPage() {
         {tables.length === 0 && (
           <div className="text-center text-muted-foreground py-12">
             <ClipboardList className="h-10 w-10 mx-auto mb-3 opacity-30" />
-            <p className="font-bold text-sm">No stock count tables yet</p>
-            <p className="text-xs mt-1">Create a table above to start your personal stock count.</p>
+            <p className="font-bold text-sm">{t("no_stock_tables", "No stock count tables yet")}</p>
+            <p className="text-xs mt-1">{t("no_stock_tables_hint", "Create a table above to start your personal stock count.")}</p>
             <button
               onClick={() => loadTables()}
               className="mt-4 h-9 px-4 rounded-lg text-xs font-black border border-border hover:bg-muted/50 transition active:scale-95 inline-flex items-center gap-2"
             >
               <RefreshCw className="h-3.5 w-3.5" />
-              Refresh
+              {t("refresh", "Refresh")}
             </button>
           </div>
         )}

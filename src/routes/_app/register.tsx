@@ -2137,7 +2137,7 @@ export default function RegisterPage() {
             {showScannerPanel ? (
               <>
                 <div className="px-4 py-3 border-b border-sky-200 flex items-center justify-between shrink-0">
-                  <h2 className="font-black text-sm text-slate-800">Scanner</h2>
+                  <h2 className="font-black text-sm text-slate-800">{t("scanner", "Scanner")}</h2>
                   <button onClick={() => setShowScannerPanel(false)} className="h-7 w-7 rounded-md bg-sky-200 flex items-center justify-center text-slate-700 hover:bg-sky-300 transition">
                     <X className="h-4 w-4" />
                   </button>
@@ -2148,15 +2148,15 @@ export default function RegisterPage() {
                       <div className="h-12 w-12 rounded-full bg-green-100 border-2 border-green-400 flex items-center justify-center mx-auto">
                         <CheckCircle2 className="h-6 w-6 text-green-900" />
                       </div>
-                      <p className="text-xs font-black text-green-700">Scanner Connected</p>
-                      <p className="text-[10px] text-slate-500">Ready to scan — items appear in Current Order</p>
+                      <p className="text-xs font-black text-green-700">{t("scanner_connected", "Scanner Connected")}</p>
+                      <p className="text-[10px] text-slate-500">{t("ready_to_scan", "Ready to scan — items appear in Current Order")}</p>
                     </div>
                   ) : (
                     <div className="text-center space-y-2">
                       <div className="h-12 w-12 rounded-full bg-amber-100 border-2 border-amber-400 flex items-center justify-center mx-auto">
                         <Loader2 className="h-6 w-6 text-amber-600 animate-spin" />
                       </div>
-                      <p className="text-xs font-black text-amber-700">No Scanner</p>
+                      <p className="text-xs font-black text-amber-700">{t("no_scanner", "No Scanner")}</p>
                       <p className="text-[10px] text-slate-500">Connect a scanner or scan a barcode to auto-connect</p>
                     </div>
                   )}
@@ -2165,7 +2165,7 @@ export default function RegisterPage() {
                       Scanned: {scannerLastScanned}
                     </div>
                   )}
-                  <p className="text-[10px] text-slate-500 text-center pt-2">Scanned items appear in the Current Order panel</p>
+                  <p className="text-[10px] text-slate-500 text-center pt-2">{t("scanned_items_hint", "Scanned items appear in the Current Order panel")}</p>
                 </div>
                 <div className="p-3 border-t border-sky-200 space-y-2 shrink-0">
                   {scannerExternalDetected && (
@@ -2174,7 +2174,7 @@ export default function RegisterPage() {
                     </button>
                   )}
                   <button onClick={() => setShowScannerPanel(false)} className="w-full h-10 rounded-xl font-black text-xs text-primary-foreground shadow-lg active:scale-[0.98] transition" style={{ background: "var(--gradient-hero)" }}>
-                    Done
+                    {t("done", "Done")}
                   </button>
                 </div>
               </>
@@ -2187,9 +2187,9 @@ export default function RegisterPage() {
                   style={{ background: "var(--gradient-hero)" }}
                 >
                   <ScanLine className="h-4 w-4 shrink-0" />
-                  Scan
+                  {t("scan", "Scan")}
                 </button>
-                <p className="text-[10px] text-slate-500 text-center leading-snug">Connect a barcode scanner</p>
+                <p className="text-[10px] text-slate-500 text-center leading-snug">{t("connect_barcode_scanner", "Connect a barcode scanner")}</p>
               </div>
             )}
             </div>
@@ -2425,7 +2425,7 @@ export default function RegisterPage() {
                 style={{ background: "var(--gradient-hero)" }}
               >
                 <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">{cartCount}</span>
-                <span>Save Edit</span>
+                <span>{t("save_edit", "Save Edit")}</span>
                 <span className="text-primary-foreground/80 text-base font-bold">${total.toFixed(2)}</span>
               </button>
             </div>
@@ -2437,7 +2437,7 @@ export default function RegisterPage() {
               style={{ background: "var(--gradient-hero)" }}
             >
               <span className="flex items-center justify-center h-8 w-8 rounded-full bg-white/20 text-sm font-black">{cartCount}</span>
-              <span>Place Order</span>
+              <span>{t("place_order", "Place Order")}</span>
               <span className="text-primary-foreground/80 text-base font-bold">${total.toFixed(2)}</span>
             </button>
           )
@@ -2461,21 +2461,21 @@ export default function RegisterPage() {
             style={{ background: "#e0f2fe" }}>
             <div className="px-4 py-3 border-b border-sky-200 shrink-0 flex items-center justify-between gap-2">
               <div>
-                <h2 className="font-black text-sm text-slate-800">Current Order</h2>
-                <p className="text-[11px] text-slate-500">{cartCount} items · ${total.toFixed(2)}</p>
+                <h2 className="font-black text-sm text-slate-800">{t("current_order", "Current Order")}</h2>
+                <p className="text-[11px] text-slate-500">{cartCount} {cartCount === 1 ? t("item_1", "item") : t("items_n", "items")} · ${total.toFixed(2)}</p>
               </div>
               {cart.length > 0 && (
                 <button
                   onClick={() => setCart([])}
                   className="px-2.5 py-1 rounded-lg text-[11px] font-black text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 active:scale-95 transition shrink-0"
                 >
-                  Clear All
+                  {t("clear_all", "Clear All")}
                 </button>
               )}
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
               {cart.length === 0 ? (
-                <p className="text-center text-slate-400 text-xs py-8">Cart is empty</p>
+                <p className="text-center text-slate-400 text-xs py-8">{t("cart_empty", "Cart is empty")}</p>
               ) : (
                 cart.map((item) => (
                   <div key={item.id} className="p-2 rounded-xl border border-sky-200 bg-white/60">
@@ -2508,14 +2508,14 @@ export default function RegisterPage() {
                       className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"
                       style={{ background: "var(--gradient-hero)" }}
                     >
-                      Save Edit · ${total.toFixed(2)}
+                      {t("save_edit", "Save Edit")} · ${total.toFixed(2)}
                     </button>
                     <button
                       onClick={() => { setEditOrder(null); setCart([]); }}
                       className="w-full h-9 rounded-2xl font-black text-sm border border-border active:scale-[0.98] transition"
                       style={{ background: "var(--background)", color: "var(--foreground)" }}
                     >
-                      Cancel Edit
+                      {t("cancel_edit", "Cancel Edit")}
                     </button>
                   </div>
                 ) : (
@@ -2524,7 +2524,7 @@ export default function RegisterPage() {
                     className="w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-black text-sm text-primary-foreground shadow-lg active:scale-[0.98] transition"
                     style={{ background: "var(--gradient-hero)" }}
                   >
-                    Place Order · ${total.toFixed(2)}
+                    {t("place_order", "Place Order")} · ${total.toFixed(2)}
                   </button>
                 )}
               </div>
@@ -2552,15 +2552,10 @@ export default function RegisterPage() {
           editOrder={editOrder}
           onEditComplete={() => setEditOrder(null)}
           onSuccess={async ({ paid, change, orderDiscount, payMode, selectedCustomer, receiptOverride, orderNumber }) => {
-            // Snapshot before clearing. The modal must close on this tick, before
-            // receipt branding (which can stall after the app has been idle).
+            // Snapshot before clearing. Open the receipt modal even if branding fails.
             const soldCart = cart;
             const priorEdit = editOrder;
-            setCart([]);
-            localStorage.removeItem(`bartap-cart-${ownerId}`);
-            setCashOpen(false);
-            setEditOrder(null);
-
+            const cartTotal = total;
             const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Port_of_Spain" });
             const savedDate = localStorage.getItem("pospro_order_date");
             const fromServer = receiptOverride?.orderNumber ?? orderNumber;
@@ -2588,41 +2583,45 @@ export default function RegisterPage() {
               hour12: true,
             });
 
-            // Cashier Name = active logged-in user username (e.g. Dasie)
             const cashierName = (profile?.first_name ?? "").trim() || profile?.username || "Cashier";
-            // Store / Business Name = storeBusinessName or profile username
             const businessName = storeBusinessName || profile?.username || "Store";
-
-            // Match Bartendaz: subtotal = pre-discount cart, then Discount (was $X), then Total.
-            const receiptItems = receiptOverride?.items
-              ?? soldCart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) }));
-            const itemsSum = receiptItems.reduce((s, i) => s + Number(i.price) * Number(i.qty), 0);
-            const charged = receiptOverride?.total ?? Math.max(0, total - orderDiscount);
-            const disc = orderDiscount > 0
-              ? orderDiscount
+            const receiptItems = (receiptOverride?.items
+              ?? soldCart.map((c) => ({ name: c.name, qty: c.qty, price: Number(c.price) })))
+              .map((i) => ({ name: i.name || "Item", qty: Number(i.qty) || 0, price: Number(i.price) || 0 }));
+            const itemsSum = receiptItems.reduce((s, i) => s + i.price * i.qty, 0);
+            const charged = Number(receiptOverride?.total ?? Math.max(0, cartTotal - (orderDiscount || 0))) || 0;
+            const disc = (orderDiscount || 0) > 0
+              ? Number(orderDiscount)
               : (itemsSum > charged + 0.001 ? Math.round((itemsSum - charged) * 100) / 100 : 0);
             const beforeDisc = disc > 0
-              ? (orderDiscount > 0 ? total : itemsSum)
-              : (receiptOverride ? charged : total);
+              ? ((orderDiscount || 0) > 0 ? cartTotal : itemsSum)
+              : (receiptOverride ? charged : cartTotal);
             const saleData: ReceiptData = {
               storeName: businessName,
               locationName: "",
               orderNumber: fromServer ?? seq,
               serverName: cashierName,
               items: receiptItems,
-              subtotal: beforeDisc,
+              subtotal: Number(beforeDisc) || 0,
               discount: disc > 0 ? disc : undefined,
-              originalTotal: disc > 0 ? beforeDisc : undefined,
+              originalTotal: disc > 0 ? (Number(beforeDisc) || 0) : undefined,
               total: charged,
-              paid,
-              change,
+              paid: Number(paid) || 0,
+              change: Number(change) || 0,
               payMode: receiptOverride?.payMode ?? payMode ?? "cash",
               customerName: selectedCustomer?.full_name,
               date: dateStr,
             };
+
+            // Show receipt first, then clear cart / close overlay (never skip the modal).
             setLastSale(saleData);
             setPrinterResult(null);
             setShowSaleCompleteModal(true);
+            setCart([]);
+            localStorage.removeItem(`bartap-cart-${ownerId}`);
+            setCashOpen(false);
+            setEditOrder(null);
+
             void brandReceipt(saleData).then((branded) => {
               setLastSale((current) =>
                 current?.orderNumber === saleData.orderNumber && current?.date === saleData.date
@@ -2704,29 +2703,26 @@ export default function RegisterPage() {
         />
       )}
 
-      {/* ── Sale Complete modal ── */}
+      {/* ── Sale Complete modal (matches Bartendaz ReceiptModal) ── */}
       {showSaleCompleteModal && lastSale && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div
-            className="w-full max-w-sm rounded-3xl border border-border shadow-2xl overflow-hidden text-center flex flex-col"
+            className="relative w-full max-w-sm rounded-3xl overflow-hidden border border-border shadow-2xl flex flex-col"
             style={{ background: "var(--gradient-card)", maxHeight: "90dvh" }}
           >
-            {/* Header banner */}
-            <div className="px-6 pt-5 pb-2 shrink-0 space-y-1">
+            <div className="px-5 pt-5 pb-2 shrink-0 space-y-1">
               <div className="flex justify-center">
                 <div className="h-10 w-10 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
-                  <CheckCircle2 className="h-6 w-6 text-green-700" strokeWidth={1.5} />
+                  <CheckCircle2 className="h-6 w-6 text-green-400" strokeWidth={1.5} />
                 </div>
               </div>
-              <h2 className="font-black text-lg">Sale Complete</h2>
+              <h2 className="font-black text-lg text-center">Sale Complete</h2>
             </div>
 
-            {/* Thermal Receipt Paper Card — same layout as Bartendaz */}
             <div className="px-5 py-2 overflow-y-auto flex-1">
               <ReceiptPaper sale={lastSale} />
             </div>
 
-            {/* Actions — Print & Done and Done. Both kick the drawer through the printer. */}
             <div className="px-6 pb-5 pt-3 flex flex-col gap-2 shrink-0">
               {printerPaired === false && (
                 <div className="space-y-2">
@@ -2738,7 +2734,7 @@ export default function RegisterPage() {
                       onClick={() => { void handlePairUsb(); }}
                       disabled={pairingPrinter}
                       className="h-11 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 border-2"
-                      style={{ background: "rgba(99,102,241,0.10)", color: "#1e3a8a", borderColor: "rgba(99,102,241,0.35)" }}
+                      style={{ background: "rgba(99,102,241,0.10)", color: "#a5b4fc", borderColor: "rgba(99,102,241,0.35)" }}
                     >
                       {pairingPrinter ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Usb className="h-4 w-4" />USB</>}
                     </button>
@@ -2746,13 +2742,13 @@ export default function RegisterPage() {
                       onClick={() => { void handlePairBluetooth(); }}
                       disabled={pairingPrinter}
                       className="h-11 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 border-2"
-                      style={{ background: "rgba(59,130,246,0.10)", color: "#1e3a8a", borderColor: "rgba(59,130,246,0.35)" }}
+                      style={{ background: "rgba(59,130,246,0.10)", color: "#93c5fd", borderColor: "rgba(59,130,246,0.35)" }}
                     >
                       {pairingPrinter ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Bluetooth className="h-4 w-4" />Bluetooth</>}
                     </button>
                   </div>
-                  <p className="text-[10px] text-slate-600 text-center leading-relaxed">
-                    The cash drawer is plugged into the printer. USB connects to the printer on this PC.
+                  <p className="text-[10px] text-muted-foreground/50 text-center leading-relaxed">
+                    USB connects to any printer installed on this device.
                     For Bluetooth, pair the printer in your device settings first.
                   </p>
                 </div>
@@ -2777,7 +2773,11 @@ export default function RegisterPage() {
                 <button
                   onClick={() => { void handleSaleDone(); }}
                   className={`h-14 rounded-2xl font-black text-sm flex items-center justify-center transition active:scale-95 border-2 ${printerPaired === true || printerPaired === null ? "flex-1" : "w-full"}`}
-                  style={{ background: "#ffffff", color: "#14532d", borderColor: "#166534" }}
+                  style={{
+                    background: "rgba(37,211,102,0.10)",
+                    color: "#25D366",
+                    borderColor: "rgba(37,211,102,0.4)",
+                  }}
                 >
                   Done
                 </button>
@@ -2785,14 +2785,14 @@ export default function RegisterPage() {
 
               {printerPaired === true && (
                 <div className="flex items-center justify-center gap-2 pt-0.5">
-                  <span className="text-[10px] text-slate-600">
+                  <span className="text-[10px] text-muted-foreground/60">
                     {printerConnType === "bt"
                       ? "Bluetooth"
                       : (getSavedPrinterLabel() || "USB")}
                   </span>
                   <button
                     onClick={() => { void handleChangePrinter(); }}
-                    className="text-[11px] text-slate-700 underline"
+                    className="text-[11px] text-muted-foreground underline active:opacity-70"
                   >
                     Change printer
                   </button>
@@ -3050,6 +3050,8 @@ function CashOverlay({
           payMode: "credit",
           selectedCustomer,
         });
+        submittingRef.current = false;
+        setBusy(false);
       };
       if (!isOnline) {
         if (activeTabId) {
@@ -3172,6 +3174,8 @@ function CashOverlay({
         payMode: "cash",
         selectedCustomer: selectedCustomer,
       });
+      submittingRef.current = false;
+      setBusy(false);
       return;
     }
 
@@ -3242,6 +3246,8 @@ function CashOverlay({
       selectedCustomer: selectedCustomer,
       orderNumber: savedOrderNumber,
     });
+    submittingRef.current = false;
+    setBusy(false);
   };
 
   const applyDiscount = () => {

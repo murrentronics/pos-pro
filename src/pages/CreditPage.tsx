@@ -18,6 +18,7 @@ import { printReceipt, pairPrinter, isPrinterPaired, clearPrinterPairing, openPr
 import { brandReceipt, loadReceiptSettings } from "@/lib/receiptSettings";
 import { ReceiptSettingsTab } from "@/components/ReceiptSettingsTab";
 import { ReceiptPaper } from "@/components/ReceiptPaper";
+import { useTranslation } from "@/lib/i18n";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export type CreditAccount = {
@@ -811,6 +812,7 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function CreditPage() {
   const { profile } = useAuth();
+  const { t } = useTranslation();
   const { effectiveOwnerId, activeBar } = useChain();
   const ownerId = effectiveOwnerId(profile?.role === "owner" ? (profile?.id ?? "") : (profile?.parent_id ?? ""));
   const ownerIdRef = useRef(ownerId);
@@ -853,22 +855,22 @@ export default function CreditPage() {
 
   return (
     <div className="py-3 space-y-4">
-      <h1 className="text-2xl font-black">Customers</h1>
+      <h1 className="text-2xl font-black">{t("customers_title", "Customers")}</h1>
 
       {/* Tab bar */}
       <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--gradient-card)" }}>
-        {(["opened", "closed", "create", "receipt"] as const).filter((t) => t !== "receipt" || canEditReceipt).map((t) => (
+        {(["opened", "closed", "create", "receipt"] as const).filter((tabKey) => tabKey !== "receipt" || canEditReceipt).map((tabKey) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            title={t === "receipt" ? "Receipt settings" : undefined}
+            key={tabKey}
+            onClick={() => setTab(tabKey)}
+            title={tabKey === "receipt" ? t("receipt_settings", "Receipt settings") : undefined}
             className={`flex-1 py-2.5 rounded-xl text-sm font-black capitalize transition flex items-center justify-center gap-1.5 ${
-              tab === t ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              tab === tabKey ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
-            style={tab === t ? { background: "var(--gradient-hero)" } : {}}
+            style={tab === tabKey ? { background: "var(--gradient-hero)" } : {}}
           >
-            {t === "receipt" ? <><Receipt className="h-4 w-4" /> Receipt</> : t === "opened" ? "Opened" : t === "closed" ? "Closed" : "Create"}
-            {t === "opened" && opened.length > 0 && (
+            {tabKey === "receipt" ? <><Receipt className="h-4 w-4" /> {t("receipt_tab", "Receipt")}</> : tabKey === "opened" ? t("opened_tab", "Opened") : tabKey === "closed" ? t("closed_tab", "Closed") : t("create_tab", "Create")}
+            {tabKey === "opened" && opened.length > 0 && (
               <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[11px] font-black leading-none"
                 style={tab === "opened"
                   ? { background: "#7c2d12", color: "#ffffff" }
@@ -877,7 +879,7 @@ export default function CreditPage() {
                 {opened.length}
               </span>
             )}
-            {t === "closed" && closed.length > 0 && (
+            {tabKey === "closed" && closed.length > 0 && (
               <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[11px] font-black leading-none"
                 style={tab === "closed"
                   ? { background: "#7c2d12", color: "#ffffff" }
@@ -931,6 +933,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
   onEdit: (a: CreditAccount) => void;
 }) {
   const { profile } = useAuth();
+  const { t } = useTranslation();
   const { effectiveOwnerId } = useChain();
   const ownerId = effectiveOwnerId(profile?.role === "owner" ? (profile?.id ?? "") : (profile?.parent_id ?? ""));
   const ownerName = profile?.username ?? "Bar";
@@ -1254,7 +1257,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
                     style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.3)" }}
                   >
                     <FileDown className="h-5 w-5" style={{ color: "var(--primary)" }} />
-                    <span className="text-xs font-black" style={{ color: "var(--primary)" }}>Bill</span>
+                    <span className="text-xs font-black" style={{ color: "var(--primary)" }}>{t("bill", "Bill")}</span>
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); onEdit(a); }}
@@ -1262,7 +1265,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
                     style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.3)" }}
                   >
                     <Pencil className="h-5 w-5" style={{ color: "var(--primary)" }} />
-                    <span className="text-xs font-black" style={{ color: "var(--primary)" }}>Edit</span>
+                    <span className="text-xs font-black" style={{ color: "var(--primary)" }}>{t("edit", "Edit")}</span>
                   </button>
                 </div>
               </div>
@@ -1281,7 +1284,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
               {/* ── Inline payment input ── */}
               <div className="py-3 border-b border-border/40 mb-2">
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">
-                  {editingPaymentId ? "Update Payment" : "Record Payment"}
+                  {editingPaymentId ? t("update_payment_lbl", "Update Payment") : t("record_payment_lbl", "Record Payment")}
                 </p>
                  <div className="flex gap-2">
                    {/* Tappable amount display — opens numpad */}
@@ -1303,7 +1306,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
                       placeholder="0.00"
                       className="flex-1 bg-transparent outline-none text-xl font-black min-w-0"
                     />
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">max ${Number(a.balance_owed).toFixed(2)}</span>
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">{t("max_lbl", "max")} ${Number(a.balance_owed).toFixed(2)}</span>
                   </div>
                   <Button
                     className="h-14 px-6 font-black text-base shrink-0 rounded-xl"
@@ -1311,7 +1314,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
                     onClick={() => { setPadOpen(false); submitPayment(a); }}
                     style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
                   >
-                    {paying ? <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" /> : (editingPaymentId ? "Update" : "Pay")}
+                    {paying ? <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" /> : (editingPaymentId ? t("update", "Update") : t("pay_btn", "Pay"))}
                   </Button>
                 </div>
 
@@ -1505,6 +1508,7 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
 // ── Closed Tab ─────────────────────────────────────────────────────────────────
 function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditAccount[]; loading: boolean; onRefresh: () => void; onEdit: (a: CreditAccount) => void }) {
   const { profile } = useAuth();
+  const { t } = useTranslation();
   const ownerName = profile?.username ?? "Bar";
   const [expanded, setExpanded]   = useState<string | null>(null);
   const [txs, setTxs]             = useState<CreditTx[]>([]);
@@ -1603,7 +1607,7 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
                     style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.3)" }}
                   >
                     <FileDown className="h-5 w-5" style={{ color: "var(--primary)" }} />
-                    <span className="text-xs font-black" style={{ color: "var(--primary)" }}>Bill</span>
+                    <span className="text-xs font-black" style={{ color: "var(--primary)" }}>{t("bill", "Bill")}</span>
                   </button>
                 )}
 
@@ -1615,7 +1619,7 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
                     style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
-                    <span className="text-[11px] font-black text-destructive">Delete</span>
+                    <span className="text-[11px] font-black text-destructive">{t("delete", "Delete")}</span>
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); onEdit(a); }}
@@ -1623,7 +1627,7 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
                     style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.3)" }}
                   >
                     <Pencil className="h-4 w-4" style={{ color: "var(--primary)" }} />
-                    <span className="text-[11px] font-black" style={{ color: "var(--primary)" }}>Edit</span>
+                    <span className="text-[11px] font-black" style={{ color: "var(--primary)" }}>{t("edit", "Edit")}</span>
                   </button>
                 </div>
               </div>

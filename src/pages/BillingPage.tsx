@@ -22,6 +22,7 @@ import {
 import type { BillingPlan, BillingPayment, AdminBankDetails } from "@/types/billing";
 
 import { isDemoEmail } from "@/lib/demoAccounts";
+import { useTranslation } from "@/lib/i18n";
 
 const SPECIAL_EMAIL    = "renard.sankersingh@gmail.com";
 const MASTER_EMAILS    = [SPECIAL_EMAIL];
@@ -33,6 +34,7 @@ type StoreEntry = { name: string; location: string };
 
 export default function BillingPage() {
   const { profile, refreshProfile } = useAuth();
+  const { t } = useTranslation();
 
   const [plans, setPlans]         = useState<BillingPlan[]>([]);
   const [payments, setPayments]   = useState<BillingPayment[]>([]);
@@ -272,7 +274,7 @@ export default function BillingPage() {
           )}
           <CreditCard className="h-5 w-5 text-primary" />
           <h1 className="text-lg font-black">
-            {step === "status"       ? "Billing"
+            {step === "status"       ? t("billing_title", "Billing")
             : step === "choose"      ? "Choose Your Plan"
             : step === "addon-stores"? "Add Extra Store"
             : step === "payment"     ? "Payment Method"
@@ -342,26 +344,26 @@ export default function BillingPage() {
                   <div>
                     <p className="font-black text-foreground text-sm">P.O.S. Pro</p>
                     <p className="font-black text-base" style={{ color: "var(--primary)" }}>
-                      ${totalRenewal.toLocaleString()} TT / year
+                      ${totalRenewal.toLocaleString()} TT {t("per_year", "/ year")}
                     </p>
                     {extraStores > 0 && (
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        ${PRICE_BASE.toLocaleString()} plan + {extraStores}×${PRICE_STORE.toLocaleString()} store{extraStores !== 1 ? "s" : ""}
+                        ${PRICE_BASE.toLocaleString()} plan + {extraStores}×${PRICE_STORE.toLocaleString()} {extraStores !== 1 ? t("each_extra_stores", "stores") : t("each_extra_store", "store")}
                       </p>
                     )}
                   </div>
                 </div>
                 <span className={`text-xs font-black px-2.5 py-1 rounded-full ${isOverdue ? "bg-red-100 text-red-600" : "bg-green-100 text-green-900"}`}>
-                  {isOverdue ? "OVERDUE" : "ACTIVE"}
+                  {isOverdue ? t("overdue_badge", "OVERDUE") : t("active_badge2", "ACTIVE")}
                 </span>
               </div>
               {extraStores > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  {extraStores + 1} store{extraStores + 1 !== 1 ? "s" : ""} total
+                  {extraStores + 1} {extraStores + 1 !== 1 ? t("stores_total", "stores total") : t("store_1_total", "store total")}
                 </p>
               )}
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Renews</span>
+                <span className="text-muted-foreground">{t("renews_lbl", "Renews")}</span>
                 <span className={`font-bold ${isOverdue ? "text-red-500" : daysLeft !== null && daysLeft <= 30 ? "text-yellow-500" : "text-foreground"}`}>
                   {subEnd ? subEnd.toLocaleDateString("en-GB") : "—"}
                   {daysLeft !== null && !isOverdue && daysLeft <= 30 && ` (${daysLeft}d)`}
@@ -375,10 +377,10 @@ export default function BillingPage() {
                     className="w-full h-11 rounded-xl font-black text-sm text-white active:scale-[0.98] transition disabled:opacity-50"
                     style={{ background: isOverdue ? "#ef4444" : "var(--gradient-hero)" }}
                   >
-                    {isOverdue ? `⚠️ Renew Now — $${totalRenewal.toLocaleString()} TT` : `Renew — $${totalRenewal.toLocaleString()} TT`}
+                    {isOverdue ? `⚠️ ${t("renew", "Renew")} — $${totalRenewal.toLocaleString()} TT` : `${t("renew", "Renew")} — $${totalRenewal.toLocaleString()} TT`}
                   </button>
                 ) : (
-                  <p className="text-xs text-center text-muted-foreground">Renewal available 7 days before due date</p>
+                  <p className="text-xs text-center text-muted-foreground">{t("renewal_7_days", "Renewal available 7 days before due date")}</p>
                 )
               )}
             </div>
@@ -392,15 +394,17 @@ export default function BillingPage() {
                   <Store className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-black text-foreground text-sm">Add New Store</p>
+                  <p className="font-black text-foreground text-sm">{t("add_new_store", "Add New Store")}</p>
                   <p className="text-xs text-muted-foreground">
                     ${proRataStorePrice.toLocaleString()} TT
-                    {daysRemaining < 365 ? ` (pro-rated — ${daysRemaining}d remaining)` : " / yr"}
+                    {daysRemaining < 365
+                      ? ` (${t("pro_rated_remaining", "pro-rated — {d}d remaining").replace("{d}", String(daysRemaining))})`
+                      : ` ${t("per_year", "/ year")}`}
                   </p>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Each additional store gets its own inventory, cashiers, and wallet. All stores appear in Switch Store from the menu. Full price ${PRICE_STORE.toLocaleString()} TT/yr per store, renews together with your main plan.
+                {t("add_store_desc", "Each additional store gets its own inventory, cashiers, and wallet. All stores appear in Switch Store from the menu. Full price $1,200 TT/yr per store, renews together with your main plan.").replace("$1,200", `$${PRICE_STORE.toLocaleString()}`)}
               </p>
               <button
                 onClick={() => {
@@ -413,7 +417,7 @@ export default function BillingPage() {
                 style={{ background: "var(--gradient-hero)" }}
               >
                 <Plus className="inline h-4 w-4 mr-1" />
-                Add Store — ${proRataStorePrice.toLocaleString()} TT
+                + {t("add_store_btn", "Add Store")} — ${proRataStorePrice.toLocaleString()} TT
               </button>
             </div>
           )}
@@ -443,10 +447,10 @@ export default function BillingPage() {
           {/* Payment history */}
           <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-border">
-              <h3 className="font-black text-foreground">Payment History</h3>
+              <h3 className="font-black text-foreground">{t("payment_history_lbl", "Payment History")}</h3>
             </div>
             {payments.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8 text-sm">No payments yet</p>
+              <p className="text-center text-muted-foreground py-8 text-sm">{t("no_payments_history", "No payments yet")}</p>
             ) : (
               <div className="divide-y divide-border">
                 {payments.map(p => {
@@ -462,7 +466,7 @@ export default function BillingPage() {
                       <div className="text-right shrink-0">
                         <p className="font-black text-foreground">${p.amount.toFixed(0)} TT</p>
                         <span className={`text-xs font-bold ${p.status === "paid" ? "text-green-900" : p.status === "pending" ? "text-yellow-500" : "text-red-500"}`}>
-                          {p.status.toUpperCase()}
+                          {p.status === "paid" ? t("paid", "PAID") : p.status === "pending" ? t("pending", "PENDING") : p.status === "rejected" ? t("rejected", "REJECTED") : p.status.toUpperCase()}
                         </span>
                       </div>
                     </div>
@@ -668,7 +672,7 @@ export default function BillingPage() {
                   <span>{s.location}</span>
                 </div>
               ))}
-              <p className="pt-1 text-primary">Stores will appear after admin approval. Renews with your main plan.</p>
+              <p className="pt-1 text-primary">{t("stores_after_approval", "Stores will appear after admin approval. Renews with your main plan.")}</p>
             </div>
           )}
 

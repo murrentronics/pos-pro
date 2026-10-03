@@ -90,6 +90,7 @@ function CalendarPopover({ value, onChange, minDate, maxDate, label }: {
 function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId }: {
   sub: SubSession; products: ProductCost[]; categoryFilter: string; isActive: boolean; ownerId: string;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<SessionData>({ orders: [], expenses: [], walletIncome: 0, loaded: false, loading: false });
   const loadedRef = useRef(false);
@@ -174,8 +175,8 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
               {/* Mini stats — top row: Bar Sales, Items Cost */}
               <div className="grid grid-cols-2 border-b" style={{ borderColor: "#e2e8f0" }}>
                 {[
-                  { label: "Bar Sales",  value: totalIncome,    color: "#15803d" },
-                  { label: "Items Cost", value: totalItemsCost, color: "#b91c1c" },
+                  { label: t("bar_sales", "Bar Sales"),  value: totalIncome,    color: "#15803d" },
+                  { label: t("items_cost", "Items Cost"), value: totalItemsCost, color: "#b91c1c" },
                 ].map((s, i, arr) => (
                   <div key={i} className="px-2 py-2 text-center" style={i < arr.length - 1 ? { borderRight: "1px solid #e2e8f0" } : {}}>
                     <p className="text-xs font-black text-slate-800 uppercase tracking-widest mb-0.5">{s.label}</p>
@@ -192,9 +193,9 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                 return (
                   <div className="grid grid-cols-3 border-b" style={{ borderColor: "#e2e8f0" }}>
                     {[
-                      { label: "Gross Profit", value: grossProfit, color: grossProfit >= 0 ? "#15803d" : "#b91c1c", sign: true },
-                      { label: "Expenses",     value: totalExpenses, color: "#a16207", sign: false },
-                      { label: "Net Profit",   value: netProfit,   color: netProfit >= 0 ? "#15803d" : "#b91c1c", sign: true },
+                      { label: t("gross_profit", "Gross Profit"), value: grossProfit, color: grossProfit >= 0 ? "#15803d" : "#b91c1c", sign: true },
+                      { label: t("expenses", "Expenses"),     value: totalExpenses, color: "#a16207", sign: false },
+                      { label: t("net_profit", "Net Profit"),   value: netProfit,   color: netProfit >= 0 ? "#15803d" : "#b91c1c", sign: true },
                     ].map((s, i, arr) => (
                       <div key={i} className="px-2 py-2 text-center" style={i < arr.length - 1 ? { borderRight: "1px solid #e2e8f0" } : {}}>
                         <p className="text-xs font-black text-slate-800 uppercase tracking-widest mb-0.5">{s.label}</p>
@@ -212,8 +213,8 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                 : <div>
                     <div className="px-3 py-1.5 flex items-center gap-2" style={{ borderBottom: "1px solid #e2e8f0" }}>
                       <ShoppingBag className="h-3.5 w-3.5 text-primary" />
-                      <span className="text-xs font-black">Items Sold</span>
-                      <span className="text-xs text-slate-800 ml-auto">{data.orders.length} orders</span>
+                      <span className="text-xs font-black">{t("items_sold", "Items Sold")}</span>
+                      <span className="text-xs text-slate-800 ml-auto">{data.orders.length} {data.orders.length === 1 ? t("order_1", "order") : t("orders_n", "orders")}</span>
                     </div>
                     <div className="divide-y" style={{ "--tw-divide-opacity": 1 } as React.CSSProperties}>
                       {items.map(it => {
@@ -222,7 +223,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                           <div key={it.name} className="px-3 py-2 space-y-0.5" style={{ borderColor: "#e2e8f0" }}>
                             <div className="flex items-center justify-between gap-2">
                               <p className="font-bold text-xs flex-1">{it.name}</p>
-                              <p className="text-xs text-slate-800">{it.qty} sold</p>
+                              <p className="text-xs text-slate-800">{it.qty} {t("sold_lbl", "sold")}</p>
                             </div>
                             <div className="grid grid-cols-3 gap-1">
                               <p className="text-right font-semibold text-xs" style={{ color: "#15803d" }}>${fmt(it.revenue)}</p>
@@ -393,6 +394,7 @@ function BarSessionAccordion({ session, subSessions, products, categoryFilter, a
 function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, ownerId, filter, filteredSessions }: {
   fromDate: string; toDate: string; products: ProductCost[]; categoryFilter: string; ownerId: string; filter?: FilterType; filteredSessions?: BarSession[];
 }) {
+  const { t } = useTranslation();
   const [data, setData] = useState<{ orders: Order[]; expenses: Expense[]; walletIncome: number; loading: boolean }>({ orders: [], expenses: [], walletIncome: 0, loading: true });
 
   useEffect(() => {
@@ -444,7 +446,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
       <div style={{ background: "var(--gradient-hero)", color: "#ffffff" }}>
       <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(255,255,255,0.25)" }}>
         <span className="text-xs font-black text-white">
-          {filterLabel(filter ?? "period", fromDate, toDate)} · Combined Summary
+          {filterLabel(filter ?? "period", fromDate, toDate)} · {t("combined_summary", "Combined Summary")}
         </span>
         {data.loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />}
       </div>
@@ -456,8 +458,8 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
           {/* Mini stats — top row: Bar Sales, Items Cost */}
           <div className="grid grid-cols-2 border-b" style={{ borderColor: "rgba(255,255,255,0.25)" }}>
             {[
-              { label: "Bar Sales",  value: totalIncome },
-              { label: "Items Cost", value: totalItemsCost },
+              { label: t("bar_sales", "Bar Sales"),  value: totalIncome },
+              { label: t("items_cost", "Items Cost"), value: totalItemsCost },
             ].map((s, i, arr) => (
               <div key={i} className="px-3 py-2.5 text-center" style={i < arr.length - 1 ? { borderRight: "1px solid rgba(255,255,255,0.25)" } : {}}>
                 <p className="text-xs font-black uppercase tracking-widest mb-0.5" style={{ color: "rgba(255,255,255,0.85)" }}>{s.label}</p>
@@ -474,9 +476,9 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
             return (
               <div className="grid grid-cols-3" style={{ borderColor: "rgba(255,255,255,0.25)" }}>
                 {[
-                  { label: "Gross Profit", value: grossProfit, sign: true },
-                  { label: "Expenses",     value: totalExpenses, sign: false },
-                  { label: "Net Profit",   value: netProfit, sign: true },
+                  { label: t("gross_profit", "Gross Profit"), value: grossProfit, sign: true },
+                  { label: t("expenses", "Expenses"),     value: totalExpenses, sign: false },
+                  { label: t("net_profit", "Net Profit"),   value: netProfit, sign: true },
                 ].map((s, i, arr) => (
                   <div key={i} className="px-3 py-2.5 text-center" style={i < arr.length - 1 ? { borderRight: "1px solid rgba(255,255,255,0.25)" } : {}}>
                     <p className="text-xs font-black uppercase tracking-widest mb-0.5" style={{ color: "rgba(255,255,255,0.85)" }}>{s.label}</p>
@@ -495,12 +497,12 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
       <div className="bg-white text-slate-900">
           {/* Items */}
           {items.length === 0
-            ? <div className="py-6 text-center text-slate-800 text-xs">No sales in this period</div>
+            ? <div className="py-6 text-center text-slate-800 text-xs">{t("no_sales_period", "No sales in this period")}</div>
             : <div>
                 <div className="px-3 py-1.5 flex items-center gap-2" style={{ borderBottom: "1px solid #e2e8f0" }}>
                   <ShoppingBag className="h-3.5 w-3.5 text-primary" />
-                  <span className="text-xs font-black">Items Sold</span>
-                  <span className="text-xs text-slate-800 ml-auto">{data.orders.length} orders</span>
+                  <span className="text-xs font-black">{t("items_sold", "Items Sold")}</span>
+                  <span className="text-xs text-slate-800 ml-auto">{data.orders.length} {data.orders.length === 1 ? t("order_1", "order") : t("orders_n", "orders")}</span>
                 </div>
                 <div className="divide-y" style={{ "--tw-divide-opacity": 1 } as React.CSSProperties}>
                   {items.map(it => {
@@ -509,7 +511,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
                       <div key={it.name} className="px-3 py-2 space-y-0.5" style={{ borderColor: "#e2e8f0" }}>
                         <div className="flex items-center justify-between gap-2">
                           <p className="font-bold text-xs flex-1">{it.name}</p>
-                          <p className="text-xs text-slate-800">{it.qty} sold</p>
+                          <p className="text-xs text-slate-800">{it.qty} {t("sold_lbl", "sold")}</p>
                         </div>
                         <div className="grid grid-cols-3 gap-1">
                           <p className="text-right font-semibold text-xs" style={{ color: "#15803d" }}>${fmt(it.revenue)}</p>
@@ -819,14 +821,14 @@ export default function SummaryPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-black">Summary</h1>
+          <h1 className="text-xl font-black">{t("summary_title", "Summary")}</h1>
           <p className="text-xs text-slate-800 mt-0.5">{filterLabel(filter, fromDate, toDate)}</p>
         </div>
         <div className="flex items-center gap-2">
           <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}
             className="h-7 rounded-lg border border-border bg-background px-1.5 text-[10px] font-bold outline-none focus:ring-1 focus:ring-primary max-w-[90px]"
             style={{ color: "var(--foreground)" }}>
-            <option value="all">All</option>
+            <option value="all">{t("all", "All")}</option>
             {storeCategories.length > 0
               ? storeCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)
               : CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
@@ -835,7 +837,7 @@ export default function SummaryPage() {
             disabled={downloading || loadingSessions} onClick={handleDownloadPdf}
             style={downloaded ? { background: "#16a34a", color: "#fff", borderColor: "#16a34a" } : {}}>
             {downloading ? <Loader2 className="h-3 w-3 animate-spin" /> : downloaded ? <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : <Download className="h-3 w-3" />}
-            {downloading ? "…" : downloaded ? "Done" : "PDF"}
+            {downloading ? "…" : downloaded ? t("done", "Done") : t("pdf", "PDF")}
           </Button>
         </div>
       </div>
@@ -857,7 +859,7 @@ export default function SummaryPage() {
           <span className="text-sm shrink-0">{barIsOpen ? "🟢" : "🔴"}</span>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: barIsOpen ? "#15803d" : "var(--muted-foreground)" }}>
-              {barIsOpen ? "Bar Open" : "Bar Closed"}
+              {barIsOpen ? t("bar_open", "Bar Open") : t("bar_closed", "Bar Closed")}
             </p>
             <p className="text-[11px] text-slate-800">
               {filter === "week" && <><span className="font-bold text-foreground">{new Date(fromDate + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>{" → "}<span className="font-bold text-foreground">{new Date(toDate + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span></>}
@@ -875,7 +877,9 @@ export default function SummaryPage() {
           <CalendarPopover label={t("select_day", "Select Day")} value={fromDate} maxDate={today} minDate={earliestDate} onChange={v => { setFromDate(v); setToDate(v); }} />
           {!loadingSessions && (
             <p className="text-xs text-slate-800 pt-1">
-              {filteredSessions.length === 0 ? t("bar_not_open_day", "Bar was not opened this day.") : `${filteredSessions.length} session${filteredSessions.length !== 1 ? "s" : ""} this day`}
+              {filteredSessions.length === 0
+                ? t("bar_not_open_day", "Bar was not opened this day.")
+                : `${filteredSessions.length} ${filteredSessions.length !== 1 ? t("sessions_this_day", "sessions this day") : t("session_this_day", "session this day")}`}
             </p>
           )}
         </div>
@@ -891,7 +895,9 @@ export default function SummaryPage() {
           <label className="text-[10px] font-black text-slate-800 uppercase tracking-widest">{t("select_month", "Select Month")}</label>
           <div className="flex gap-3">
             <select value={selMonth} onChange={e => setSelMonth(Number(e.target.value))} className="flex-1 h-11 rounded-xl border border-border bg-background px-3 text-sm font-bold outline-none">
-              {["January","February","March","April","May","June","July","August","September","October","November","December"].map((m, i) => <option key={i} value={i}>{m}</option>)}
+              {(["january","february","march","april","may","june","july","august","september","october","november","december"] as const).map((m, i) => (
+                <option key={i} value={i}>{t(m, ["January","February","March","April","May","June","July","August","September","October","November","December"][i])}</option>
+              ))}
             </select>
             <select value={selYear} onChange={e => setSelYear(Number(e.target.value))} className="w-28 h-11 rounded-xl border border-border bg-background px-3 text-sm font-bold outline-none">
               {availableYears.map(y => <option key={y} value={y}>{y}</option>)}

@@ -227,7 +227,7 @@ export default function AppLayout() {
         { to: "/manager",     label: t("manage", "Manage"),              icon: TrendingDown },
         { to: "/products",    label: t("products_title", "Items"),       icon: Package      },
         { to: "/stock-check", label: t("stock_check", "Stock Check"),    icon: ClipboardList },
-        { to: "/stock-count", label: "Stock Count",                      icon: ClipboardList },
+        { to: "/stock-count", label: t("stock_count", "Stock Count"),    icon: ClipboardList },
         { to: "/categories",  label: t("categories", "Categories"),      icon: LayoutGrid   },
       ]
     : [
@@ -235,7 +235,7 @@ export default function AppLayout() {
         { to: "/credit",    label: t("customers_title", "Customers"),  icon: User         },
         ...(isOwner ? [{ to: "/products",    label: t("products_title", "Items"),    icon: Package      }] : []),
         ...(isOwner ? [{ to: "/stock-check", label: t("stock_check", "Stock Check"), icon: ClipboardList }] : []),
-        { to: "/stock-count", label: "Stock Count", icon: ClipboardList },
+        { to: "/stock-count", label: t("stock_count", "Stock Count"), icon: ClipboardList },
         ...(isOwner ? [{ to: "/categories",  label: t("categories", "Categories"),   icon: LayoutGrid   }] : []),
         ...(isOwner ? [{ to: "/cashiers",    label: t("cashiers", "Staff"),           icon: Users        }] : []),
         { to: "/wallet",    label: t("wallet", "Wallet"),               icon: Wallet     },
@@ -279,7 +279,7 @@ export default function AppLayout() {
                   ? <Loader2 className="h-4 w-4 animate-spin" />
                   : <>
                       <Printer className="h-4 w-4 sm:mr-1.5" />
-                      <span className="hidden sm:inline">Drawer</span>
+                      <span className="hidden sm:inline">{t("drawer", "Drawer")}</span>
                     </>}
               </button>
             ) : (
@@ -287,10 +287,10 @@ export default function AppLayout() {
                 type="button"
                 onClick={() => { void openPrinterConnectDialog(); }}
                 className="h-10 px-3 sm:px-4 rounded-lg flex items-center justify-center font-black text-sm transition active:scale-95 border border-border"
-                title="Connect printer"
+                title={t("printer", "Printer")}
               >
                 <Printer className="h-4 w-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">Printer</span>
+                <span className="hidden sm:inline">{t("printer", "Printer")}</span>
               </button>
             )}
           </div>
@@ -456,7 +456,7 @@ export default function AppLayout() {
                       style={{ background: loc.pathname === "/privacy" ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.06)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
                       <ShieldCheck className={`h-6 w-6 ${loc.pathname === "/privacy" ? "text-white" : "text-primary"}`} />
                     </div>
-                    <span className={`text-xs font-black text-center leading-tight ${loc.pathname === "/privacy" ? "text-white" : "text-foreground"}`}>Privacy</span>
+                    <span className={`text-xs font-black text-center leading-tight ${loc.pathname === "/privacy" ? "text-white" : "text-foreground"}`}>{t("privacy", "Privacy")}</span>
                   </button>
                 )}
                 {(isOwner || isManager) && (
@@ -467,7 +467,7 @@ export default function AppLayout() {
                       style={{ background: loc.pathname === "/manual" ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.06)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
                       <BookOpen className={`h-6 w-6 ${loc.pathname === "/manual" ? "text-white" : "text-primary"}`} />
                     </div>
-                    <span className={`text-xs font-black text-center leading-tight ${loc.pathname === "/manual" ? "text-white" : "text-foreground"}`}>Manual</span>
+                    <span className={`text-xs font-black text-center leading-tight ${loc.pathname === "/manual" ? "text-white" : "text-foreground"}`}>{t("manual", "Manual")}</span>
                   </button>
                 )}
                 {isOwner && (
@@ -478,7 +478,7 @@ export default function AppLayout() {
                       style={{ background: loc.pathname === "/factory-reset" ? "rgba(239,68,68,0.30)" : "rgba(239,68,68,0.10)", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.25)" }}>
                       <RotateCcw className="h-6 w-6 text-red-500" />
                     </div>
-                    <span className="text-xs font-black text-center leading-tight text-red-700">Reset</span>
+                    <span className="text-xs font-black text-center leading-tight text-red-700">{t("reset", "Reset")}</span>
                   </button>
                 )}
                 <button onClick={async () => { try { await signOut(); } catch { /* ignore */ } nav("/login"); }}

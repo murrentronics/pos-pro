@@ -1963,7 +1963,7 @@ export default function ProductsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-black leading-tight">{t("products_title", "Items")}</h1>
-            <p className="text-muted-foreground text-xs">{items.length} items</p>
+            <p className="text-muted-foreground text-xs">{items.length} {items.length === 1 ? t("item_1", "item") : t("items_n", "items")}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -1973,7 +1973,7 @@ export default function ProductsPage() {
               variant="outline"
               style={{ borderColor: "var(--primary)", color: "var(--primary)" }}
             >
-              <Pencil className="h-3.5 w-3.5 mr-1" /> Bulk Edit
+              <Pencil className="h-3.5 w-3.5 mr-1" /> {t("bulk_edit", "Bulk Edit")}
             </Button>
             <Button
               size="sm"
@@ -1981,7 +1981,7 @@ export default function ProductsPage() {
               style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
               onClick={() => setAddChooser(true)}
             >
-              + Add Items
+              + {t("add_items", "Add Items")}
             </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <AddItemDialog
@@ -2150,10 +2150,10 @@ export default function ProductsPage() {
                     <div className="px-1.5 py-1.5 pointer-events-none select-none" style={{ background: "rgba(var(--primary-rgb, 251 146 60) / 0.10)", borderTop: "1px solid rgba(var(--primary-rgb, 251 146 60) / 0.35)" }}>
                       <div className="font-bold text-[11px] truncate leading-tight" style={{ color: "var(--primary)" }}>{p.name}</div>
                       <div className="font-black text-[10px] leading-tight mt-0.5" style={{ color: cpMissing ? "#b91c1c" : "var(--primary)" }}>
-                        CP: ${cp.toFixed(2)}
+                        {t("cp_short", "CP")}: ${cp.toFixed(2)}
                       </div>
                       <div className="font-black text-[10px] leading-tight" style={{ color: spMissing ? "#b91c1c" : "var(--primary)" }}>
-                        SP: ${sp.toFixed(2)}
+                        {t("sp_short", "SP")}: ${sp.toFixed(2)}
                       </div>
                     </div>
                   );

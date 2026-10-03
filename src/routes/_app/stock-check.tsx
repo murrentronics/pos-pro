@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useNumpadKeyboard } from "@/lib/useNumpadKeyboard";
 import { downloadPdf } from "@/lib/download";
 import { drawHeader, addFootersToAllPages, LM, RM, CONTENT_BOTTOM } from "@/lib/pdfHelpers";
+import { useTranslation } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_app/stock-check")({
   component: StockCheckPage,
@@ -217,6 +218,7 @@ function ActualNumpad({
 
 function StockCheckPage() {
   const { profile } = useAuth();
+  const { t } = useTranslation();
   const { effectiveOwnerId } = useChain();
 
   const [items, setItems] = useState<Product[]>([]);
@@ -654,8 +656,8 @@ function StockCheckPage() {
           <div className="flex items-center gap-2">
             <ClipboardList className="h-5 w-5" style={{ color: "var(--primary)" }} />
             <div>
-              <h1 className="text-xl font-black leading-tight">Stock Check</h1>
-              <p className="text-muted-foreground text-xs">{items.length} items</p>
+              <h1 className="text-xl font-black leading-tight">{t("stock_check", "Stock Check")}</h1>
+              <p className="text-muted-foreground text-xs">{items.length} {items.length === 1 ? t("item_1", "item") : t("items_n", "items")}</p>
             </div>
           </div>
           {/* Summary pills */}
@@ -683,11 +685,11 @@ function StockCheckPage() {
         {/* Column header row — orange, full bleed */}
         <div className="-mx-3 flex items-center py-2 px-3 gap-2 text-xs font-black text-white uppercase tracking-wide border-b border-black/20" style={{ background: "var(--gradient-hero)" }}>
           <div className="w-8 shrink-0" />
-          <div className="flex-1 min-w-0">Name</div>
-          <div className="w-[46px] text-right">Qty</div>
-          <div className="w-[60px] text-right">Actual</div>
-          <div className="w-[52px] text-right">Price</div>
-          <div className="w-[56px] text-right">Loss</div>
+          <div className="flex-1 min-w-0">{t("col_name", "Name")}</div>
+          <div className="w-[46px] text-right">{t("col_qty", "Qty")}</div>
+          <div className="w-[60px] text-right">{t("col_actual", "Actual")}</div>
+          <div className="w-[52px] text-right">{t("col_price", "Price")}</div>
+          <div className="w-[56px] text-right">{t("col_loss", "Loss")}</div>
         </div>
       </div>
 
@@ -729,7 +731,7 @@ function StockCheckPage() {
                         style={{ background: "rgba(255,255,255,0.08)", border: "1px solid var(--border)", color: "var(--foreground)" }}
                       >
                         {pdfBusy === "all" ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileDown className="h-3 w-3" />}
-                        All
+                        {t("all", "All")}
                       </button>
                     )}
                     <button

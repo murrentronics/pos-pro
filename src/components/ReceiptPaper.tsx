@@ -1,8 +1,17 @@
 import type { ReceiptData } from "@/lib/receiptPrinter";
 
+function money(n: unknown) {
+  const v = Number(n);
+  return (Number.isFinite(v) ? v : 0).toFixed(2);
+}
+
 /** On-screen receipt. Same header as the sale screen: logo, store name, Served by, discount. */
 export function ReceiptPaper({ sale }: { sale: ReceiptData }) {
   const server = sale.serverName || "Staff";
+  const items = Array.isArray(sale.items) ? sale.items : [];
+  const discount = Number(sale.discount) || 0;
+  const originalTotal = sale.originalTotal != null ? Number(sale.originalTotal) : null;
+  const tax = Number(sale.tax) || 0;
   return (
     <div className="bg-white text-zinc-900 rounded-xl p-4 shadow-inner text-left font-mono text-xs leading-tight border border-zinc-300 select-none">
       {sale.logoUrl && <img src={sale.logoUrl} alt="" className="mx-auto mb-1 max-h-16 object-contain" />}
@@ -23,41 +32,41 @@ export function ReceiptPaper({ sale }: { sale: ReceiptData }) {
       </div>
       <div className="border-t border-dashed border-zinc-400 my-2" />
       <div className="space-y-1 my-2">
-        {sale.items.map((it, idx) => (
+        {items.map((it, idx) => (
           <div key={idx} className="flex justify-between items-start">
-            <span className="font-semibold text-zinc-900 pr-2 break-all">{it.qty}x {it.name}</span>
-            <span className="font-bold text-zinc-950 whitespace-nowrap">${(it.qty * it.price).toFixed(2)}</span>
+            <span className="font-semibold text-zinc-900 pr-2 break-all">{Number(it.qty) || 0}x {it.name}</span>
+            <span className="font-bold text-zinc-950 whitespace-nowrap">${money((Number(it.qty) || 0) * (Number(it.price) || 0))}</span>
           </div>
         ))}
       </div>
       <div className="border-t border-dashed border-zinc-400 my-2" />
       <div className="space-y-1">
         <div className="flex justify-between text-zinc-700">
-          <span>Subtotal</span><span>${sale.subtotal.toFixed(2)}</span>
+          <span>Subtotal</span><span>${money(sale.subtotal)}</span>
         </div>
-        {sale.discount != null && sale.discount > 0 && (
+        {discount > 0 && (
           <div className="flex justify-between font-black" style={{ color: "#d97706" }}>
-            <span>Discount{sale.originalTotal != null ? ` (was $${sale.originalTotal.toFixed(2)})` : ""}</span>
-            <span>-${sale.discount.toFixed(2)}</span>
+            <span>Discount{originalTotal != null && Number.isFinite(originalTotal) ? ` (was $${money(originalTotal)})` : ""}</span>
+            <span>-${money(discount)}</span>
           </div>
         )}
-        {sale.tax != null && sale.tax > 0 && (
+        {tax > 0 && (
           <div className="flex justify-between text-zinc-700">
-            <span>Tax</span><span>${sale.tax.toFixed(2)}</span>
+            <span>Tax</span><span>${money(tax)}</span>
           </div>
         )}
         <div className="flex justify-between font-black text-sm text-zinc-950 pt-0.5">
-          <span>Total</span><span>${sale.total.toFixed(2)}</span>
+          <span>Total</span><span>${money(sale.total)}</span>
         </div>
       </div>
       <div className="border-t border-dashed border-zinc-400 my-2" />
       <div className="space-y-1">
         <div className="flex justify-between text-zinc-700">
           <span>{sale.payMode === "credit" ? "Credit" : "Cash Tendered"}</span>
-          <span>${sale.paid.toFixed(2)}</span>
+          <span>${money(sale.paid)}</span>
         </div>
         <div className="flex justify-between font-bold text-zinc-900">
-          <span>Change</span><span>${sale.change.toFixed(2)}</span>
+          <span>Change</span><span>${money(sale.change)}</span>
         </div>
       </div>
       <div className="text-center text-[10px] text-zinc-500 mt-2">

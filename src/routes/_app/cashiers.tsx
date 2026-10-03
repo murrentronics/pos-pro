@@ -2409,23 +2409,23 @@ export default function CashiersPage() {
             style={{ background: "var(--gradient-card)" }}>
             <div className="px-6 pt-7 pb-4 text-center space-y-3">
               <div className="text-5xl">🔴</div>
-              <h2 className="font-black text-xl">Close the Store?</h2>
+              <h2 className="font-black text-xl">{t("close_store_title", "Close the Store?")}</h2>
               <p className="text-sm text-muted-foreground leading-snug">
-                This will end the current session. Cashiers will not be able to make sales until the store is reopened.
+                {t("close_store_msg", "This will end the current session. Cashiers will not be able to make sales until the store is reopened.")}
               </p>
             </div>
             <div className="grid grid-cols-2 border-t border-border">
               <button
                 onClick={() => setShowConfirmClose(false)}
                 className="h-14 font-black text-sm border-r border-border transition active:bg-muted/60">
-                Cancel
+                {t("cancel", "Cancel")}
               </button>
               <button
                 disabled={barToggleBusy}
                 onClick={async () => { setShowConfirmClose(false); await handleCloseBar(); }}
                 className="h-14 font-black text-sm text-white transition active:opacity-80 disabled:opacity-40"
                 style={{ background: "#dc2626" }}>
-                {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Close Store"}
+                {barToggleBusy ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : t("close_store_btn", "Close Store")}
               </button>
             </div>
           </div>
