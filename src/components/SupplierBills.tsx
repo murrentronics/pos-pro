@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import { Loader2, Printer, X } from "lucide-react";
+import { ChevronDown, Loader2, Printer, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { downloadPdf } from "@/lib/download";
@@ -112,10 +112,20 @@ export function SupplierBills({
                   setPage(0);
                   setOpenSupplier((cur) => (cur?.toLowerCase() === name.toLowerCase() ? null : name));
                 }}
-                className="w-full px-4 py-3 flex items-center justify-between text-left"
+                className="w-full px-4 py-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-left"
               >
                 <span className="font-black text-sm">{name}</span>
-                <span className={`text-xs font-black ${nameOwed > 0 ? "text-red-700" : "text-green-700"}`}>
+                <span
+                  className="h-8 w-8 rounded-full flex items-center justify-center shrink-0"
+                  style={{ background: "rgba(37,99,235,0.28)", color: "#1d4ed8", border: "1.5px solid rgba(37,99,235,0.75)" }}
+                  aria-hidden
+                >
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+                    strokeWidth={2.5}
+                  />
+                </span>
+                <span className={`text-xs font-black text-right ${nameOwed > 0 ? "text-red-700" : "text-green-700"}`}>
                   {nameOwed > 0 ? `$${fmt(nameOwed)} owed` : "Paid up"}
                 </span>
               </button>

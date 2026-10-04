@@ -2738,7 +2738,7 @@ export default function RegisterPage() {
                       onClick={() => { void handlePairUsb(); }}
                       disabled={pairingPrinter}
                       className="h-11 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 border-2"
-                      style={{ background: "rgba(99,102,241,0.10)", color: "#a5b4fc", borderColor: "rgba(99,102,241,0.35)" }}
+                      style={{ background: "rgba(99,102,241,0.28)", color: "#3730a3", borderColor: "rgba(99,102,241,0.75)" }}
                     >
                       {pairingPrinter ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Usb className="h-4 w-4" />USB</>}
                     </button>
@@ -2746,7 +2746,7 @@ export default function RegisterPage() {
                       onClick={() => { void handlePairBluetooth(); }}
                       disabled={pairingPrinter}
                       className="h-11 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 border-2"
-                      style={{ background: "rgba(59,130,246,0.10)", color: "#93c5fd", borderColor: "rgba(59,130,246,0.35)" }}
+                      style={{ background: "rgba(59,130,246,0.28)", color: "#1d4ed8", borderColor: "rgba(59,130,246,0.75)" }}
                     >
                       {pairingPrinter ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Bluetooth className="h-4 w-4" />Bluetooth</>}
                     </button>
@@ -2778,9 +2778,9 @@ export default function RegisterPage() {
                   onClick={() => { void handleSaleDone(); }}
                   className={`h-14 rounded-2xl font-black text-sm flex items-center justify-center transition active:scale-95 border-2 ${printerPaired === true || printerPaired === null ? "flex-1" : "w-full"}`}
                   style={{
-                    background: "rgba(37,211,102,0.10)",
-                    color: "#25D366",
-                    borderColor: "rgba(37,211,102,0.4)",
+                    background: "rgba(37,211,102,0.28)",
+                    color: "#15803d",
+                    borderColor: "rgba(22,163,74,0.75)",
                   }}
                 >
                   Done
@@ -3886,7 +3886,7 @@ function CashOverlay({
                   <button
                     onClick={() => setShowRightPanel(false)}
                     className="md:hidden h-12 px-10 rounded-2xl font-black text-sm border-2 active:scale-95 transition"
-                    style={{ background: "rgba(37,211,102,0.10)", color: "#25D366", borderColor: "rgba(37,211,102,0.4)" }}
+                    style={{ background: "rgba(37,211,102,0.28)", color: "#15803d", borderColor: "rgba(22,163,74,0.75)" }}
                   >
                     Done
                   </button>
@@ -3917,7 +3917,7 @@ function CashOverlay({
                   <button
                     onClick={() => setShowRightPanel(false)}
                     className="h-12 px-10 rounded-2xl font-black text-sm border-2 active:scale-95 transition"
-                    style={{ background: "rgba(37,211,102,0.10)", color: "#25D366", borderColor: "rgba(37,211,102,0.4)" }}
+                    style={{ background: "rgba(37,211,102,0.28)", color: "#15803d", borderColor: "rgba(22,163,74,0.75)" }}
                   >
                     Done
                   </button>
