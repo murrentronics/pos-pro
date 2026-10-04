@@ -52,6 +52,32 @@ function filterLabel(filter: FilterType, from: string, to: string): string {
 function isoToDate(iso: string) { return new Date(iso + "T00:00:00"); }
 function dateToIso(d: Date) { return toISO(d); }
 
+const ITEMS_COL_GRID = "grid grid-cols-[minmax(0,1.6fr)_3.25rem_1fr_1fr_1fr] gap-1 items-center";
+const ORDERS_COL_GRID = "grid grid-cols-[minmax(0,1.6fr)_1fr_1fr_1fr] gap-1 items-center";
+
+function ItemsSoldColHeader({ t }: { t: (key: string, fallback: string) => string }) {
+  return (
+    <div className={`px-3 py-1 ${ITEMS_COL_GRID} text-white`} style={{ background: "var(--gradient-hero)" }}>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white">{t("col_item", "Item")}</span>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("col_sold", "Sold")}</span>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("sp_short", "SP")}</span>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("cp_short", "CP")}</span>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("col_profit", "Profit")}</span>
+    </div>
+  );
+}
+
+function OrdersColHeader({ t }: { t: (key: string, fallback: string) => string }) {
+  return (
+    <div className={`px-3 py-1 ${ORDERS_COL_GRID} text-white`} style={{ background: "var(--gradient-hero)" }}>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white">{t("col_item", "Item")}</span>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("sp_short", "SP")}</span>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("cp_short", "CP")}</span>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("col_profit", "Profit")}</span>
+    </div>
+  );
+}
+
 // ─── CalendarPopover ──────────────────────────────────────────────────────────
 function CalendarPopover({ value, onChange, minDate, maxDate, label }: {
   value: string; onChange: (iso: string) => void; minDate?: string; maxDate?: string; label: string;
@@ -216,20 +242,17 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                       <span className="text-xs font-black">{t("items_sold", "Items Sold")}</span>
                       <span className="text-xs text-slate-800 ml-auto">{data.orders.length} {data.orders.length === 1 ? t("order_1", "order") : t("orders_n", "orders")}</span>
                     </div>
+                    <ItemsSoldColHeader t={t} />
                     <div className="divide-y" style={{ "--tw-divide-opacity": 1 } as React.CSSProperties}>
                       {items.map(it => {
                         const rp = it.revenue - it.costTotal;
                         return (
-                          <div key={it.name} className="px-3 py-2 space-y-0.5" style={{ borderColor: "#e2e8f0" }}>
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="font-bold text-xs flex-1">{it.name}</p>
-                              <p className="text-xs text-slate-800">{it.qty} {t("sold_lbl", "sold")}</p>
-                            </div>
-                            <div className="grid grid-cols-3 gap-1">
-                              <p className="text-right font-semibold text-xs" style={{ color: "#15803d" }}>${fmt(it.revenue)}</p>
-                              <p className="text-right font-semibold text-xs" style={{ color: "#b91c1c" }}>{it.costTotal > 0 ? `$${fmt(it.costTotal)}` : "—"}</p>
-                              <p className="text-right font-black text-xs" style={{ color: rp >= 0 ? "#15803d" : "#b91c1c" }}>{rp >= 0 ? "+" : ""}${fmt(rp)}</p>
-                            </div>
+                          <div key={it.name} className={`px-3 py-2 ${ITEMS_COL_GRID}`} style={{ borderColor: "#e2e8f0" }}>
+                            <p className="font-bold text-xs truncate">{it.name}</p>
+                            <p className="text-xs text-slate-800 text-center">{it.qty}</p>
+                            <p className="text-center font-semibold text-xs" style={{ color: "#15803d" }}>${fmt(it.revenue)}</p>
+                            <p className="text-center font-semibold text-xs" style={{ color: "#b91c1c" }}>{it.costTotal > 0 ? `$${fmt(it.costTotal)}` : "—"}</p>
+                            <p className="text-center font-black text-xs" style={{ color: rp >= 0 ? "#15803d" : "#b91c1c" }}>{rp >= 0 ? "+" : ""}${fmt(rp)}</p>
                           </div>
                         );
                       })}
@@ -240,40 +263,41 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
               {data.orders.length > 0 && (
                 <div style={{ borderTop: "1px solid #e2e8f0" }}>
                   <div className="px-3 py-1.5 flex items-center justify-between">
-                    <span className="text-xs font-black">Orders</span>
+                    <span className="text-xs font-black">{t("orders", "Orders")}</span>
                     <span className="text-xs text-slate-800">{data.orders.length}</span>
                   </div>
+                  <OrdersColHeader t={t} />
                   {data.orders.map(o => (
-                    <div key={o.id} className="px-3 py-2 flex items-start justify-between gap-2" style={{ borderTop: "1px solid #e2e8f0" }}>
-                      <div className="min-w-0 flex-1">
-                        <span className="text-xs text-slate-800 block">{new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}</span>
-                        <div className="mt-0.5 space-y-0.5">
-                          {(() => {
-                            const collected = orderItemCollected(o);
-                            return o.items.map((item, idx) => {
+                    <div key={o.id} className="px-3 py-2 space-y-1" style={{ borderTop: "1px solid #e2e8f0" }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-xs text-slate-800">{new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}</span>
+                        <span className="font-black text-xs shrink-0" style={{ color: "#15803d" }}>
+                          ${fmt(Number(o.total))}
+                          {o.discount_amount != null && Number(o.discount_amount) > 0 && (
+                            <span className="block text-xs font-black text-right" style={{ color: "#a16207" }}>
+                              -${fmt(Number(o.discount_amount))} off
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="space-y-0.5">
+                        {(() => {
+                          const collected = orderItemCollected(o);
+                          return o.items.map((item, idx) => {
                             const saleTotal = collected[idx]?.collected ?? 0;
                             const costTotal = lineStockCost(item, costProducts);
                             const profit    = saleTotal - costTotal;
                             return (
-                              <span key={idx} className="text-xs text-slate-800 block">
-                                {item.qty}× {item.name}
-                                {" · "}
-                                <span style={{ color: "#15803d" }}>${fmt(saleTotal)}</span>
-                                {costTotal > 0 && <> · <span style={{ color: "#b91c1c" }}>${fmt(costTotal)}</span> · <span style={{ color: profit >= 0 ? "#15803d" : "#b91c1c" }}>{profit >= 0 ? "+" : ""}${fmt(profit)}</span></>}
-                              </span>
+                              <div key={idx} className={`${ORDERS_COL_GRID} text-xs text-slate-800`}>
+                                <span className="truncate">{item.qty}× {item.name}</span>
+                                <span className="text-center font-semibold" style={{ color: "#15803d" }}>${fmt(saleTotal)}</span>
+                                <span className="text-center font-semibold" style={{ color: "#b91c1c" }}>{costTotal > 0 ? `$${fmt(costTotal)}` : "—"}</span>
+                                <span className="text-center font-black" style={{ color: profit >= 0 ? "#15803d" : "#b91c1c" }}>{profit >= 0 ? "+" : ""}${fmt(profit)}</span>
+                              </div>
                             );
                           });
-                          })()}
-                        </div>
+                        })()}
                       </div>
-                      <span className="font-black text-xs shrink-0" style={{ color: "#15803d" }}>
-                        ${fmt(Number(o.total))}
-                        {o.discount_amount != null && Number(o.discount_amount) > 0 && (
-                          <span className="block text-xs font-black text-right" style={{ color: "#a16207" }}>
-                            -${fmt(Number(o.discount_amount))} off
-                          </span>
-                        )}
-                      </span>
                     </div>
                   ))}
                 </div>
@@ -281,9 +305,9 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
               {/* Expenses */}
               {nonStockExpenses.length > 0 && (
                 <div style={{ borderTop: "1px solid #e2e8f0" }}>
-                  <div className="px-3 py-1.5 flex items-center gap-2">
-                    <TrendingDown className="h-3.5 w-3.5 text-red-700" />
-                    <span className="text-xs font-black">Expenses</span>
+                  <div className="px-3 py-1.5 flex items-center gap-2 text-white" style={{ background: "var(--gradient-hero)" }}>
+                    <TrendingDown className="h-3.5 w-3.5 text-white" />
+                    <span className="text-xs font-black text-white">{t("expenses", "Expenses")}</span>
                   </div>
                   {nonStockExpenses.map(e => {
                     const lines = (e.description ?? "").split("\n").filter(Boolean).slice(1).filter(l => !l.startsWith("[Cashier:") && !l.startsWith("[Manager:"));
@@ -504,20 +528,17 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
                   <span className="text-xs font-black">{t("items_sold", "Items Sold")}</span>
                   <span className="text-xs text-slate-800 ml-auto">{data.orders.length} {data.orders.length === 1 ? t("order_1", "order") : t("orders_n", "orders")}</span>
                 </div>
+                <ItemsSoldColHeader t={t} />
                 <div className="divide-y" style={{ "--tw-divide-opacity": 1 } as React.CSSProperties}>
                   {items.map(it => {
                     const rp = it.revenue - it.costTotal;
                     return (
-                      <div key={it.name} className="px-3 py-2 space-y-0.5" style={{ borderColor: "#e2e8f0" }}>
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-bold text-xs flex-1">{it.name}</p>
-                          <p className="text-xs text-slate-800">{it.qty} {t("sold_lbl", "sold")}</p>
-                        </div>
-                        <div className="grid grid-cols-3 gap-1">
-                          <p className="text-right font-semibold text-xs" style={{ color: "#15803d" }}>${fmt(it.revenue)}</p>
-                          <p className="text-right font-semibold text-xs" style={{ color: "#b91c1c" }}>{it.costTotal > 0 ? `$${fmt(it.costTotal)}` : "—"}</p>
-                          <p className="text-right font-black text-xs" style={{ color: rp >= 0 ? "#15803d" : "#b91c1c" }}>{rp >= 0 ? "+" : ""}${fmt(rp)}</p>
-                        </div>
+                      <div key={it.name} className={`px-3 py-2 ${ITEMS_COL_GRID}`} style={{ borderColor: "#e2e8f0" }}>
+                        <p className="font-bold text-xs truncate">{it.name}</p>
+                        <p className="text-xs text-slate-800 text-center">{it.qty}</p>
+                        <p className="text-center font-semibold text-xs" style={{ color: "#15803d" }}>${fmt(it.revenue)}</p>
+                        <p className="text-center font-semibold text-xs" style={{ color: "#b91c1c" }}>{it.costTotal > 0 ? `$${fmt(it.costTotal)}` : "—"}</p>
+                        <p className="text-center font-black text-xs" style={{ color: rp >= 0 ? "#15803d" : "#b91c1c" }}>{rp >= 0 ? "+" : ""}${fmt(rp)}</p>
                       </div>
                     );
                   })}
@@ -528,40 +549,41 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
           {data.orders.length > 0 && (
             <div style={{ borderTop: "1px solid #e2e8f0" }}>
               <div className="px-3 py-1.5 flex items-center justify-between">
-                <span className="text-xs font-black">Orders</span>
+                <span className="text-xs font-black">{t("orders", "Orders")}</span>
                 <span className="text-xs text-slate-800">{data.orders.length}</span>
               </div>
+              <OrdersColHeader t={t} />
               {data.orders.map(o => (
-                <div key={o.id} className="px-3 py-2 flex items-start justify-between gap-2" style={{ borderTop: "1px solid #e2e8f0" }}>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs text-slate-800 block">{new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}</span>
-                    <div className="mt-0.5 space-y-0.5">
-                      {(() => {
-                        const collected = orderItemCollected(o);
-                        return o.items.map((item, idx) => {
+                <div key={o.id} className="px-3 py-2 space-y-1" style={{ borderTop: "1px solid #e2e8f0" }}>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-xs text-slate-800">{new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}</span>
+                    <span className="font-black text-xs shrink-0" style={{ color: "#15803d" }}>
+                      ${fmt(Number(o.total))}
+                      {o.discount_amount != null && Number(o.discount_amount) > 0 && (
+                        <span className="block text-xs font-black text-right" style={{ color: "#a16207" }}>
+                          -${fmt(Number(o.discount_amount))} off
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {(() => {
+                      const collected = orderItemCollected(o);
+                      return o.items.map((item, idx) => {
                         const saleTotal = collected[idx]?.collected ?? 0;
                         const costTotal = lineStockCost(item, costProducts);
                         const profit    = saleTotal - costTotal;
                         return (
-                          <span key={idx} className="text-xs text-slate-800 block">
-                            {item.qty}× {item.name}
-                            {" · "}
-                            <span style={{ color: "#15803d" }}>${fmt(saleTotal)}</span>
-                            {costTotal > 0 && <> · <span style={{ color: "#b91c1c" }}>${fmt(costTotal)}</span> · <span style={{ color: profit >= 0 ? "#15803d" : "#b91c1c" }}>{profit >= 0 ? "+" : ""}${fmt(profit)}</span></>}
-                          </span>
+                          <div key={idx} className={`${ORDERS_COL_GRID} text-xs text-slate-800`}>
+                            <span className="truncate">{item.qty}× {item.name}</span>
+                            <span className="text-center font-semibold" style={{ color: "#15803d" }}>${fmt(saleTotal)}</span>
+                            <span className="text-center font-semibold" style={{ color: "#b91c1c" }}>{costTotal > 0 ? `$${fmt(costTotal)}` : "—"}</span>
+                            <span className="text-center font-black" style={{ color: profit >= 0 ? "#15803d" : "#b91c1c" }}>{profit >= 0 ? "+" : ""}${fmt(profit)}</span>
+                          </div>
                         );
                       });
-                      })()}
-                    </div>
+                    })()}
                   </div>
-                  <span className="font-black text-xs shrink-0" style={{ color: "#15803d" }}>
-                    ${fmt(Number(o.total))}
-                    {o.discount_amount != null && Number(o.discount_amount) > 0 && (
-                      <span className="block text-xs font-black text-right" style={{ color: "#a16207" }}>
-                        -${fmt(Number(o.discount_amount))} off
-                      </span>
-                    )}
-                  </span>
                 </div>
               ))}
             </div>
@@ -569,9 +591,9 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
           {/* Expenses */}
           {nonStockExpenses.length > 0 && (
             <div style={{ borderTop: "1px solid #e2e8f0" }}>
-              <div className="px-3 py-1.5 flex items-center gap-2">
-                <TrendingDown className="h-3.5 w-3.5 text-red-700" />
-                <span className="text-xs font-black">Expenses</span>
+              <div className="px-3 py-1.5 flex items-center gap-2 text-white" style={{ background: "var(--gradient-hero)" }}>
+                <TrendingDown className="h-3.5 w-3.5 text-white" />
+                <span className="text-xs font-black text-white">{t("expenses", "Expenses")}</span>
               </div>
               {nonStockExpenses.map(e => {
                 const lines = (e.description ?? "").split("\n").filter(Boolean).slice(1).filter(l => !l.startsWith("[Cashier:") && !l.startsWith("[Manager:"));

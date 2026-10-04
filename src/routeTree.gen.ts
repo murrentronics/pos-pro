@@ -91,7 +91,14 @@ export interface FileRouteTypes {
     | '/manager'
     | '/stock-check'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/download' | '/login' | '/capacitor' | '/credit' | '/manager' | '/stock-check'
+  to:
+    | '/'
+    | '/download'
+    | '/login'
+    | '/capacitor'
+    | '/credit'
+    | '/manager'
+    | '/stock-check'
   id:
     | '__root__'
     | '/_app'

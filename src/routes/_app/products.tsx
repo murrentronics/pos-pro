@@ -1,6 +1,6 @@
 ﻿import { createFileRoute } from "@tanstack/react-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, ImagePlus, Plus, Trash2, Loader2, X, ChevronLeft, Pencil, ListChecks, CheckCircle2 } from "lucide-react";
+import { Camera, Download, FileUp, ImagePlus, Plus, Trash2, Loader2, X, ChevronLeft, Pencil, ListChecks, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { useTranslation } from "@/lib/i18n";
@@ -16,6 +16,8 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { SupplierNameField } from "@/components/SupplierNameField";
 import { rememberSupplier } from "@/lib/suppliers";
 import { listPurchaseOrders, savePurchaseOrder, type PurchaseOrderLine, type PurchaseOrderTemplate } from "@/lib/purchaseOrders";
+import { buildProductsExportCsv, csvBatchTotal, extractProductsFromCsv } from "@/lib/csvProductImport";
+import { downloadText } from "@/lib/download";
 
 /** Money to the cent. Unit cost stays at 6 decimals so qty × cost rounds back to the amount paid. */
 function money(n: number): number {
@@ -1735,7 +1737,9 @@ export default function ProductsPage() {
   // so Back can reliably restore the Edit Item dialog regardless of Radix state.
   const editItemForBackRef = useRef<Product | null>(null);
   const [showBulkEdit, setShowBulkEdit] = useState(false);
-  const [bulkSeed, setBulkSeed] = useState<{ lines: PurchaseOrderLine[]; supplierName: string } | null>(null);
+  const [showExportConfirm, setShowExportConfirm] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [bulkSeed, setBulkSeed] = useState<{ lines: PurchaseOrderLine[]; supplierName: string; products?: Product[] } | null>(null);
   const [addChooser, setAddChooser] = useState(false);
   const [poListOpen, setPoListOpen] = useState(false);
   const [poLoading, setPoLoading] = useState(false);
@@ -1968,6 +1972,19 @@ export default function ProductsPage() {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
+              type="button"
+              onClick={() => setShowExportConfirm(true)}
+              disabled={items.length === 0}
+              className="hidden sm:inline-flex font-bold h-8 w-8 p-0"
+              variant="outline"
+              style={{ borderColor: "var(--primary)", color: "var(--primary)" }}
+              title={t("export_items", "Export items")}
+              aria-label={t("export_items", "Export items")}
+            >
+              <Download className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="sm"
               onClick={() => setShowBulkEdit(true)}
               className="font-bold h-8 px-3"
               variant="outline"
@@ -1987,6 +2004,7 @@ export default function ProductsPage() {
             <AddItemDialog
                 key={open ? "open" : "closed"}
                 ownerId={ownerIdForQuery}
+                defaultCategory={category}
                 onDone={() => { setOpen(false); load(); }}
                 onSaved={(product) => {
                   setItems((prev) => [...prev, product]);
@@ -1994,6 +2012,19 @@ export default function ProductsPage() {
                   editItemForBackRef.current = product;
                   setStockNumpadSource("addDialog");
                   setStockNumpadId(product.id);
+                }}
+                onImportBulk={(products, lines) => {
+                  setItems((prev) => {
+                    const ids = new Set(prev.map((p) => p.id));
+                    return [...prev, ...products.filter((p) => !ids.has(p.id))];
+                  });
+                  setOpen(false);
+                  setBulkSeed({
+                    lines,
+                    supplierName: "",
+                    products,
+                  });
+                  setShowBulkEdit(true);
                 }}
               />
           </Dialog>
@@ -2236,7 +2267,8 @@ export default function ProductsPage() {
       {showBulkEdit && (
         <BulkEditModal
           items={bulkSeed
-            ? bulkSeed.lines.map((l) => items.find((p) => p.id === l.productId)).filter((p): p is Product => !!p)
+            ? (bulkSeed.products
+              ?? bulkSeed.lines.map((l) => items.find((p) => p.id === l.productId)).filter((p): p is Product => !!p))
             : items}
           ownerId={ownerIdForQuery}
           storeCategories={storeCategories}
@@ -2261,6 +2293,59 @@ export default function ProductsPage() {
             setBulkSeed(null);
           }}
         />
+      )}
+
+      {showExportConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70" onClick={() => { if (!exportBusy) setShowExportConfirm(false); }}>
+          <div
+            className="w-full max-w-sm rounded-3xl border border-border p-5 flex flex-col gap-4"
+            style={{ background: "var(--gradient-card)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-black text-lg text-center">
+              {t("export_all_confirm", "Do you want to export all items?")}
+            </h2>
+            <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+              {t(
+                "export_all_hint",
+                "Downloads a CSV with all item details. You can re-upload it later with Import to get back up quickly.",
+              )}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={exportBusy}
+                onClick={() => setShowExportConfirm(false)}
+                className="h-12 rounded-2xl font-black text-sm border border-border"
+              >
+                {t("no", "No")}
+              </button>
+              <button
+                type="button"
+                disabled={exportBusy}
+                onClick={async () => {
+                  setExportBusy(true);
+                  try {
+                    const catMap = Object.fromEntries(storeCategories.map((c) => [c.id, c.name]));
+                    const csv = buildProductsExportCsv(items, catMap);
+                    const stamp = new Date().toISOString().slice(0, 10);
+                    await downloadText(`pos-pro-items-${stamp}.csv`, csv);
+                    toast.success(`Exported ${items.length} item${items.length === 1 ? "" : "s"}`);
+                    setShowExportConfirm(false);
+                  } catch (e: unknown) {
+                    toast.error(e instanceof Error ? e.message : "Export failed");
+                  } finally {
+                    setExportBusy(false);
+                  }
+                }}
+                className="h-12 rounded-2xl font-black text-sm text-primary-foreground"
+                style={{ background: "var(--gradient-hero)" }}
+              >
+                {exportBusy ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : t("yes", "Yes")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {addChooser && (
@@ -2531,15 +2616,118 @@ function ProdVarsBlock({ prodVars, setProdVars, activeNumpad, setActiveNumpad, n
 }
 
 // ─── Add Item Dialog ──────────────────────────────────────────────────────────
-function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: {
+function CsvImportModal({
+  open,
+  busy,
+  onClose,
+  onFile,
+}: {
+  open: boolean;
+  busy: boolean;
+  onClose: () => void;
+  onFile: (file: File) => void;
+}) {
+  const { t } = useTranslation();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  if (!open) return null;
+
+  const acceptFile = (file: File | null | undefined) => {
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (!name.endsWith(".csv") && file.type !== "text/csv" && file.type !== "application/vnd.ms-excel") {
+      toast.error("Only CSV files are allowed");
+      return;
+    }
+    onFile(file);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70" onClick={() => { if (!busy) onClose(); }}>
+      <div
+        className="w-full max-w-sm rounded-3xl border border-border p-5 flex flex-col gap-4"
+        style={{ background: "var(--gradient-card)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="font-black text-lg">{t("import_csv_title", "Import CSV")}</h2>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            className="h-8 w-8 rounded-full flex items-center justify-center bg-muted disabled:opacity-40"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+          onDragEnter={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={(e) => { e.preventDefault(); setDragging(false); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            acceptFile(e.dataTransfer.files?.[0]);
+          }}
+          className="w-full rounded-2xl border-2 border-dashed px-4 py-10 flex flex-col items-center justify-center gap-2 transition disabled:opacity-50"
+          style={{
+            borderColor: dragging ? "var(--primary)" : "rgba(37,99,235,0.45)",
+            background: dragging ? "rgba(37,99,235,0.12)" : "rgba(37,99,235,0.06)",
+          }}
+        >
+          {busy ? (
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          ) : (
+            <FileUp className="h-8 w-8" style={{ color: "#1d4ed8" }} />
+          )}
+          <span className="text-sm font-black text-center">
+            {busy
+              ? t("import_csv_busy", "Importing products…")
+              : t("import_csv_drop", "Drop CSV here or tap to browse")}
+          </span>
+          <span className="text-[11px] text-muted-foreground font-semibold">.csv only</span>
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv,text/csv"
+          hidden
+          disabled={busy}
+          onChange={(e) => {
+            acceptFile(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+
+        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+          {t(
+            "import_csv_hint",
+            "Product titles are required (images optional). If the CSV has CP, SP, and quantity, those fill in automatically. Total Cost is calculated as quantity × CP. All other columns are ignored.",
+          )}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function AddItemDialog({ onDone, onSaved, onImportBulk, ownerId, editProduct, defaultCategory }: {
   onDone: () => void;
   onSaved: (product: Product) => void;
+  onImportBulk?: (products: Product[], lines: PurchaseOrderLine[]) => void;
   ownerId: string;
   editProduct?: Product | null;
+  defaultCategory?: string;
 }) {
   const { profile } = useAuth();
   const { t } = useTranslation();
   const isEdit = !!editProduct;
+  const [showCsvImport, setShowCsvImport] = useState(false);
+  const [csvBusy, setCsvBusy] = useState(false);
 
   const [name,      setName]      = useState(editProduct?.name ?? "");
   const [price,     setPrice]     = useState(editProduct ? String(editProduct.price) : "");
@@ -2566,7 +2754,7 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: {
     const rv = editProduct?.bottle_variations?.find((v) => v.key === "retail");
     return rv ? String(rv.price) : "";
   });
-  const [category, setCategory] = useState<string>(editProduct?.category ?? "");
+  const [category, setCategory] = useState<string>(editProduct?.category ?? defaultCategory ?? "");
   const [storeCategories, setStoreCategories] = useState<{ id: string; name: string }[]>([]);
   // Base unit for the selling price (e.g. "1 lb", "1 each") — applies to all non-liquor/cigarette categories
   const UNIT_OPTIONS = ["each","lb","lbs","oz","kg","g","bag","bunch","bundle","lot","box","pack","case","dozen","pallet"];
@@ -2577,6 +2765,95 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: {
     // On edit: no existing rows yet (loaded via useEffect), start empty
     return [];
   });
+
+  const importCsvFile = async (file: File) => {
+    if (!onImportBulk) return;
+    setCsvBusy(true);
+    try {
+      const text = await file.text();
+      const { rows, error } = extractProductsFromCsv(text);
+      if (error || rows.length === 0) {
+        toast.error(error || "No products found in that CSV");
+        return;
+      }
+
+      const cat = category || storeCategories[0]?.id || defaultCategory || "";
+      if (!cat) {
+        toast.error("Create a category first, then import");
+        return;
+      }
+
+      const created: Product[] = [];
+      const lines: PurchaseOrderLine[] = [];
+      const CHUNK = 50;
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const chunk = rows.slice(i, i + CHUNK);
+        const payload = chunk.map((r) => ({
+          owner_id: ownerId,
+          name: r.name,
+          price: r.sellPrice,
+          cost_price: r.costPrice,
+          image_url: r.imageUrl,
+          category: cat,
+          units_per_item: 1,
+          barcode: null,
+          stock_qty: 0,
+        }));
+        const { data, error: insertErr } = await supabase
+          .from("products")
+          .insert(payload as any)
+          .select("*");
+        if (insertErr) throw new Error(insertErr.message);
+        const inserted = data ?? [];
+        for (let j = 0; j < inserted.length; j++) {
+          const row = inserted[j];
+          const src = chunk[j];
+          created.push({
+            ...row,
+            price: Number(row.price) || src?.sellPrice || 0,
+            cost_price: Number(row.cost_price) || src?.costPrice || 0,
+            units_per_item: row.units_per_item ?? 0,
+            bottle_variations: null,
+            stock_qty: row.stock_qty ?? 0,
+            sort_order: row.sort_order ?? 0,
+            stock_qty_undo: row.stock_qty_undo ?? null,
+            stock_qty_undo_saved: row.stock_qty_undo_saved ?? null,
+            stock_last_expense_id: row.stock_last_expense_id ?? null,
+          } as Product);
+          const qty = src?.qty ?? 0;
+          const unitCp = src?.costPrice ?? 0;
+          lines.push({
+            productId: row.id,
+            qty,
+            // Bulk Edit Total Cost = qty × unit CP (ignore any total column in the CSV)
+            batchCost: csvBatchTotal(qty, unitCp),
+            sellPrice: src?.sellPrice ?? 0,
+          });
+        }
+      }
+
+      // Base unit labels so items behave like hand-added products
+      const varRows = created.map((p) => ({
+        product_id: p.id,
+        owner_id: ownerId,
+        name: "_unit:each",
+        price: Number(p.price) || 0,
+        sort_order: -1,
+      }));
+      for (let i = 0; i < varRows.length; i += CHUNK) {
+        await supabase.from("product_variations").insert(varRows.slice(i, i + CHUNK));
+      }
+
+      toast.success(`Imported ${created.length} item${created.length === 1 ? "" : "s"} — review the bulk list`);
+      setShowCsvImport(false);
+      onImportBulk(created, lines);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "CSV import failed");
+    } finally {
+      setCsvBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!ownerId) return;
     supabase
@@ -2587,8 +2864,10 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: {
       .then(({ data }) => {
         const cats = data ?? [];
         setStoreCategories(cats);
-        // Default to first category if none set
-        if (!editProduct?.category && cats.length > 0) setCategory(cats[0].id);
+        // Keep current / defaultCategory when valid; otherwise first category
+        if (!editProduct?.category && cats.length > 0) {
+          setCategory((prev) => (prev && cats.some((c) => c.id === prev) ? prev : cats[0].id));
+        }
       });
   }, [ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
   // Load existing generic product_variations for edit mode
@@ -2755,6 +3034,7 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: {
   };
 
   return (
+    <>
     <DialogContent
       className="max-w-lg w-[calc(100vw-2rem)] max-h-[90dvh] flex flex-col p-4 gap-0"
       onInteractOutside={(e) => e.preventDefault()}
@@ -2789,13 +3069,35 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: {
                 <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => fileRef.current?.click()}>
                   <ImagePlus className="h-5 w-5 mr-2" /> Upload
                 </Button>
+                {!isEdit && onImportBulk && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full h-14 text-sm font-bold"
+                    onClick={() => setShowCsvImport(true)}
+                  >
+                    <FileUp className="h-5 w-5 mr-2" /> {t("import_csv", "Import")}
+                  </Button>
+                )}
                 <div className="h-2" />
-                <Button type="button" variant="secondary" className="w-full h-14 text-sm font-bold" onClick={() => {
-                  setBarcodeReady(true);
-                  window.dispatchEvent(new Event("pospro-toggle-scanner-panel"));
-                  requestAnimationFrame(() => document.getElementById("barcode-input")?.focus());
-                }}>
-                  <span className="mr-2">🏷️</span> Add Barcode
+                <Button
+                  type="button"
+                  variant={barcodeReady ? "default" : "secondary"}
+                  className="w-full h-14 text-sm font-bold"
+                  style={barcodeReady ? { background: "var(--gradient-hero)", color: "var(--primary-foreground)" } : undefined}
+                  onClick={() => {
+                    setBarcodeReady((prev) => {
+                      const next = !prev;
+                      if (next) {
+                        requestAnimationFrame(() => document.getElementById("barcode-input")?.focus());
+                      }
+                      return next;
+                    });
+                    window.dispatchEvent(new Event("pospro-toggle-scanner-panel"));
+                  }}
+                >
+                  <span className="mr-2">{barcodeReady ? "📡" : "🏷️"}</span>
+                  {barcodeReady ? t("scanner_active", "Scanner Active") : t("add_barcode", "Add Barcode")}
                 </Button>
               </div>
             </div>
@@ -3091,5 +3393,12 @@ function AddItemDialog({ onDone, onSaved, ownerId, editProduct }: {
           </Button>
         </div>
     </DialogContent>
+    <CsvImportModal
+      open={showCsvImport}
+      busy={csvBusy}
+      onClose={() => { if (!csvBusy) setShowCsvImport(false); }}
+      onFile={(file) => { void importCsvFile(file); }}
+    />
+    </>
   );
 }
