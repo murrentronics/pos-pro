@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { useChain } from "@/lib/ChainContext";
 import { supabase } from "@/integrations/supabase/client";
-import { TrendingDown, ShoppingBag, Loader2, Download, CalendarIcon, Clock, ChevronDown, Users } from "lucide-react";
+import { TrendingDown, ShoppingBag, Receipt, Loader2, Download, CalendarIcon, Clock, ChevronDown, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -52,8 +52,10 @@ function filterLabel(filter: FilterType, from: string, to: string): string {
 function isoToDate(iso: string) { return new Date(iso + "T00:00:00"); }
 function dateToIso(d: Date) { return toISO(d); }
 
-const ITEMS_COL_GRID = "grid grid-cols-[minmax(0,1.6fr)_3.25rem_1fr_1fr_1fr] gap-1 items-center";
-const ORDERS_COL_GRID = "grid grid-cols-[minmax(0,1.6fr)_1fr_1fr_1fr] gap-1 items-center";
+/** Shared 5-track grid so Orders SP/CP/P/Totals line up under Items Sold/SP/CP/P. */
+const SUMMARY_COL_GRID = "grid grid-cols-[minmax(0,1.6fr)_3.25rem_1fr_1fr_1fr] gap-1 items-center";
+const ITEMS_COL_GRID = SUMMARY_COL_GRID;
+const ORDERS_COL_GRID = SUMMARY_COL_GRID;
 
 function ItemsSoldColHeader({ t }: { t: (key: string, fallback: string) => string }) {
   return (
@@ -62,7 +64,7 @@ function ItemsSoldColHeader({ t }: { t: (key: string, fallback: string) => strin
       <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("col_sold", "Sold")}</span>
       <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("sp_short", "SP")}</span>
       <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("cp_short", "CP")}</span>
-      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("col_profit", "Profit")}</span>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("col_profit_short", "P")}</span>
     </div>
   );
 }
@@ -73,7 +75,8 @@ function OrdersColHeader({ t }: { t: (key: string, fallback: string) => string }
       <span className="text-[10px] font-black uppercase tracking-wider text-white">{t("col_item", "Item")}</span>
       <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("sp_short", "SP")}</span>
       <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("cp_short", "CP")}</span>
-      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("col_profit", "Profit")}</span>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("col_profit_short", "P")}</span>
+      <span className="text-[10px] font-black uppercase tracking-wider text-white text-center">{t("totals", "Totals")}</span>
     </div>
   );
 }
@@ -236,7 +239,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
               {/* Items */}
               {items.length === 0
                 ? <div className="py-6 text-center text-slate-800 text-xs">No sales in this shift</div>
-                : <div>
+                : <div className="pb-3">
                     <div className="px-3 py-1.5 flex items-center gap-2" style={{ borderBottom: "1px solid #e2e8f0" }}>
                       <ShoppingBag className="h-3.5 w-3.5 text-primary" />
                       <span className="text-xs font-black">{t("items_sold", "Items Sold")}</span>
@@ -261,20 +264,26 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
               }
               {/* Order records */}
               {data.orders.length > 0 && (
-                <div style={{ borderTop: "1px solid #e2e8f0" }}>
-                  <div className="px-3 py-1.5 flex items-center justify-between">
+                <div className="mt-3 pt-3" style={{ borderTop: "1px solid #e2e8f0" }}>
+                  <div className="px-3 py-1.5 flex items-center gap-2">
+                    <Receipt className="h-3.5 w-3.5 text-primary" />
                     <span className="text-xs font-black">{t("orders", "Orders")}</span>
-                    <span className="text-xs text-slate-800">{data.orders.length}</span>
+                    <span className="text-xs text-slate-800 ml-auto">{data.orders.length}</span>
                   </div>
                   <OrdersColHeader t={t} />
                   {data.orders.map(o => (
                     <div key={o.id} className="px-3 py-2 space-y-1" style={{ borderTop: "1px solid #e2e8f0" }}>
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-xs text-slate-800">{new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}</span>
-                        <span className="font-black text-xs shrink-0" style={{ color: "#15803d" }}>
+                      <div className={ORDERS_COL_GRID}>
+                        <span className="text-xs text-slate-800 truncate">
+                          {new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}
+                        </span>
+                        <span />
+                        <span />
+                        <span />
+                        <span className="font-black text-xs text-center leading-tight" style={{ color: "#15803d" }}>
                           ${fmt(Number(o.total))}
                           {o.discount_amount != null && Number(o.discount_amount) > 0 && (
-                            <span className="block text-xs font-black text-right" style={{ color: "#a16207" }}>
+                            <span className="block text-xs font-black" style={{ color: "#a16207" }}>
                               -${fmt(Number(o.discount_amount))} off
                             </span>
                           )}
@@ -293,6 +302,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
                                 <span className="text-center font-semibold" style={{ color: "#15803d" }}>${fmt(saleTotal)}</span>
                                 <span className="text-center font-semibold" style={{ color: "#b91c1c" }}>{costTotal > 0 ? `$${fmt(costTotal)}` : "—"}</span>
                                 <span className="text-center font-black" style={{ color: profit >= 0 ? "#15803d" : "#b91c1c" }}>{profit >= 0 ? "+" : ""}${fmt(profit)}</span>
+                                <span />
                               </div>
                             );
                           });
@@ -304,7 +314,7 @@ function SubSessionAccordion({ sub, products, categoryFilter, isActive, ownerId 
               )}
               {/* Expenses */}
               {nonStockExpenses.length > 0 && (
-                <div style={{ borderTop: "1px solid #e2e8f0" }}>
+                <div className="mt-3 pt-3" style={{ borderTop: "1px solid #e2e8f0" }}>
                   <div className="px-3 py-1.5 flex items-center gap-2 text-white" style={{ background: "var(--gradient-hero)" }}>
                     <TrendingDown className="h-3.5 w-3.5 text-white" />
                     <span className="text-xs font-black text-white">{t("expenses", "Expenses")}</span>
@@ -522,7 +532,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
           {/* Items */}
           {items.length === 0
             ? <div className="py-6 text-center text-slate-800 text-xs">{t("no_sales_period", "No sales in this period")}</div>
-            : <div>
+            : <div className="pb-3">
                 <div className="px-3 py-1.5 flex items-center gap-2" style={{ borderBottom: "1px solid #e2e8f0" }}>
                   <ShoppingBag className="h-3.5 w-3.5 text-primary" />
                   <span className="text-xs font-black">{t("items_sold", "Items Sold")}</span>
@@ -547,20 +557,26 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
           }
           {/* Order records */}
           {data.orders.length > 0 && (
-            <div style={{ borderTop: "1px solid #e2e8f0" }}>
-              <div className="px-3 py-1.5 flex items-center justify-between">
+            <div className="mt-3 pt-3" style={{ borderTop: "1px solid #e2e8f0" }}>
+              <div className="px-3 py-1.5 flex items-center gap-2">
+                <Receipt className="h-3.5 w-3.5 text-primary" />
                 <span className="text-xs font-black">{t("orders", "Orders")}</span>
-                <span className="text-xs text-slate-800">{data.orders.length}</span>
+                <span className="text-xs text-slate-800 ml-auto">{data.orders.length}</span>
               </div>
               <OrdersColHeader t={t} />
               {data.orders.map(o => (
                 <div key={o.id} className="px-3 py-2 space-y-1" style={{ borderTop: "1px solid #e2e8f0" }}>
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs text-slate-800">{new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}</span>
-                    <span className="font-black text-xs shrink-0" style={{ color: "#15803d" }}>
+                  <div className={ORDERS_COL_GRID}>
+                    <span className="text-xs text-slate-800 truncate">
+                      {new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ })}
+                    </span>
+                    <span />
+                    <span />
+                    <span />
+                    <span className="font-black text-xs text-center leading-tight" style={{ color: "#15803d" }}>
                       ${fmt(Number(o.total))}
                       {o.discount_amount != null && Number(o.discount_amount) > 0 && (
-                        <span className="block text-xs font-black text-right" style={{ color: "#a16207" }}>
+                        <span className="block text-xs font-black" style={{ color: "#a16207" }}>
                           -${fmt(Number(o.discount_amount))} off
                         </span>
                       )}
@@ -579,6 +595,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
                             <span className="text-center font-semibold" style={{ color: "#15803d" }}>${fmt(saleTotal)}</span>
                             <span className="text-center font-semibold" style={{ color: "#b91c1c" }}>{costTotal > 0 ? `$${fmt(costTotal)}` : "—"}</span>
                             <span className="text-center font-black" style={{ color: profit >= 0 ? "#15803d" : "#b91c1c" }}>{profit >= 0 ? "+" : ""}${fmt(profit)}</span>
+                            <span />
                           </div>
                         );
                       });
@@ -590,7 +607,7 @@ function CombinedSummaryView({ fromDate, toDate, products, categoryFilter, owner
           )}
           {/* Expenses */}
           {nonStockExpenses.length > 0 && (
-            <div style={{ borderTop: "1px solid #e2e8f0" }}>
+            <div className="mt-3 pt-3" style={{ borderTop: "1px solid #e2e8f0" }}>
               <div className="px-3 py-1.5 flex items-center gap-2 text-white" style={{ background: "var(--gradient-hero)" }}>
                 <TrendingDown className="h-3.5 w-3.5 text-white" />
                 <span className="text-xs font-black text-white">{t("expenses", "Expenses")}</span>

@@ -65,6 +65,96 @@ function formatTxWhen(iso: string) {
     + " " + dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/Port_of_Spain" });
 }
 
+/** Same discount math as sale receipts: item discounts, note Disc:, or items sum − charged amount. */
+function creditTxFigures(tx: { amount: number; items?: any[] | null; note?: string | null }) {
+  const charged = Number(tx.amount) || 0;
+  const items = Array.isArray(tx.items) ? tx.items : [];
+  const lineDiscount = items.reduce((sum: number, it: any) => {
+    const qty = Number(it?.qty ?? 1);
+    const per = Number(it?.discount ?? 0);
+    if (per > 0) return sum + per * qty;
+    const orig = Number(it?.original_price ?? 0);
+    const price = Number(it?.price ?? 0);
+    if (orig > price) return sum + (orig - price) * qty;
+    return sum;
+  }, 0);
+  const note = tx.note ?? "";
+  const noteDisc = note.match(/Disc:\s*-?\$?\s*([\d.]+)/i);
+  const noteOrig = note.match(/orig\s*\$?\s*([\d.]+)/i);
+  const fromNote = noteDisc ? Number(noteDisc[1]) : 0;
+  const itemsSum = items.reduce(
+    (s, it) => s + (Number(it?.price) || 0) * (Number(it?.qty) || 1),
+    0,
+  );
+  const inferred =
+    itemsSum > charged + 0.009 ? Math.round((itemsSum - charged) * 100) / 100 : 0;
+  const discount =
+    lineDiscount > 0 ? lineDiscount : fromNote > 0 ? fromNote : inferred;
+  const before =
+    discount > 0
+      ? (noteOrig ? Number(noteOrig[1]) : lineDiscount > 0 ? charged + lineDiscount : itemsSum > charged ? itemsSum : charged + discount)
+      : charged;
+  return {
+    subtotal: before,
+    total: charged,
+    discount: discount > 0 ? discount : undefined,
+    originalTotal: discount > 0 ? before : undefined,
+  };
+}
+
+/** Pull Order # from a [CASH] note if register stamped it. */
+function orderNumberFromNote(note: string | null | undefined): number | null {
+  const m = (note ?? "").match(/Order\s*#\s*(\d+)/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Find the real cash order for a customer cash history row (same total / time / cashier). */
+async function findCashOrderForTx(tx: CreditTx, ownerId: string): Promise<{
+  order_number: number | null;
+  paid: number;
+  change_given: number;
+  total: number;
+  discount_amount?: number | null;
+  original_total?: number | null;
+} | null> {
+  const stamped = orderNumberFromNote(tx.note);
+  if (stamped != null) {
+    const { data } = await supabase
+      .from("orders")
+      .select("order_number, paid, change_given, total, discount_amount, original_total")
+      .eq("owner_id", ownerId)
+      .eq("order_number", stamped)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) return data as any;
+  }
+
+  const t0 = new Date(tx.created_at).getTime();
+  if (Number.isNaN(t0)) return null;
+  let q = supabase
+    .from("orders")
+    .select("order_number, paid, change_given, total, discount_amount, original_total, created_at, cashier_id")
+    .eq("owner_id", ownerId)
+    .eq("total", Number(tx.amount))
+    .gte("created_at", new Date(t0 - 20000).toISOString())
+    .lte("created_at", new Date(t0 + 20000).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(8);
+  if (tx.cashier_id) q = q.eq("cashier_id", tx.cashier_id);
+  const { data } = await q;
+  const rows = (data ?? []) as any[];
+  if (rows.length === 0) return null;
+  rows.sort(
+    (a, b) =>
+      Math.abs(new Date(a.created_at).getTime() - t0) -
+      Math.abs(new Date(b.created_at).getTime() - t0),
+  );
+  return rows[0];
+}
+
 /** Charges that were rung as credit, payments that reduced the tab, and cash sales kept separate so they do not change the balance. */
 function summarizeBill(txs: BillTx[], balanceOwed: number): CreditBill {
   let charges = 0;
@@ -184,14 +274,11 @@ async function buildBillPdf(account: CreditAccount, ownerName: string): Promise<
       doc.setDrawColor(210,210,210); doc.setLineWidth(0.15);
       doc.line(C_ITEM, y, RM, y); y += 3;
 
-      let chargeTotalSP = 0;
-
       for (const it of tx.items as any[]) {
         if (y > CONTENT_BOTTOM - 6) { doc.addPage(); y = 20; }
         const qty  = Number(it.qty ?? 1);
         const sp   = Number(it.price ?? 0);
         const rowTotal = sp * qty;
-        chargeTotalSP += rowTotal;
 
         doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(30,30,30);
         const nameStr = doc.splitTextToSize(it.name ?? "", 90)[0];
@@ -209,12 +296,24 @@ async function buildBillPdf(account: CreditAccount, ownerName: string): Promise<
       // Subtotal row
       if (y > CONTENT_BOTTOM - 6) { doc.addPage(); y = 20; }
       doc.setDrawColor(210,210,210); doc.setLineWidth(0.15); doc.line(C_ITEM, y, RM, y); y += 3;
+      const money = creditTxFigures(tx);
       doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(80,80,80);
       doc.text("Subtotal", C_ITEM, y);
       doc.setTextColor(...ORANGE);
-      doc.text("$"+chargeTotalSP.toFixed(2), C_TOTAL, y, { align:"right" });
+      doc.text("$"+money.subtotal.toFixed(2), C_TOTAL, y, { align:"right" });
       doc.setTextColor(0,0,0); doc.setFontSize(8.5);
       y += 5;
+      if (money.discount != null && money.discount > 0) {
+        doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(200,60,40);
+        doc.text(
+          money.originalTotal != null ? `Discount (was $${money.originalTotal.toFixed(2)})` : "Discount",
+          C_ITEM,
+          y,
+        );
+        doc.text("-$"+money.discount.toFixed(2), C_TOTAL, y, { align:"right" });
+        doc.setTextColor(0,0,0); doc.setFontSize(8.5);
+        y += 5;
+      }
     }
 
     // Note — only show if no items table (avoids duplicate text)
@@ -307,13 +406,10 @@ async function buildSingleRecordPdf(
     doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.15);
     doc.line(C_ITEM, y, RM, y); y += 3;
 
-    let totalSP = 0;
-
     for (const it of tx.items as any[]) {
       if (y > CONTENT_BOTTOM - 6) { doc.addPage(); y = 20; }
       const qty = Number(it.qty ?? 1);
       const sp  = Number(it.price ?? 0) * qty;
-      totalSP += sp;
 
       doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(30, 30, 30);
       doc.text(doc.splitTextToSize(it.name ?? "", 95)[0], C_ITEM, y);
@@ -328,12 +424,25 @@ async function buildSingleRecordPdf(
     // Subtotal
     if (y > CONTENT_BOTTOM - 6) { doc.addPage(); y = 20; }
     doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.15); doc.line(C_ITEM, y, RM, y); y += 3;
+    const money = creditTxFigures(tx);
     doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(80, 80, 80);
     doc.text("Subtotal", C_ITEM, y);
     doc.setTextColor(...ORANGE);
-    doc.text("$" + totalSP.toFixed(2), C_SP, y, { align: "right" });
+    doc.text("$" + money.subtotal.toFixed(2), C_SP, y, { align: "right" });
     doc.setTextColor(0, 0, 0);
-    y += 8;
+    y += 5;
+    if (money.discount != null && money.discount > 0) {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(200, 60, 40);
+      doc.text(
+        money.originalTotal != null ? `Discount (was $${money.originalTotal.toFixed(2)})` : "Discount",
+        C_ITEM,
+        y,
+      );
+      doc.text("-$" + money.discount.toFixed(2), C_SP, y, { align: "right" });
+      doc.setTextColor(0, 0, 0);
+      y += 5;
+    }
+    y += 3;
   } else if (tx.note) {
     // No items — show note
     doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(100, 100, 100);
@@ -651,6 +760,7 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
   const [printerPaired, setPrinterPaired] = useState<boolean | null>(null);
   const [pairing, setPairing] = useState(false);
   const isCharge = tx.type === "charge";
+  const isCash = isCharge && isCashCharge(tx.note);
   const dt = new Date(tx.created_at);
   const dateStr = dt.toLocaleString("en-US", {
     month: "numeric", day: "numeric", year: "numeric",
@@ -659,17 +769,8 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
   const items: { name: string; qty: number; price: number }[] =
     isCharge && tx.items && Array.isArray(tx.items) && tx.items.length > 0
       ? tx.items.map((i: any) => ({ name: i.name ?? "Item", qty: i.qty ?? 1, price: Number(i.price) || 0 }))
-      : [{ name: tx.note || (isCharge ? "Charge" : "Payment"), qty: 1, price: Number(tx.amount) }];
-  const lineDiscount = (tx.items ?? []).reduce((sum: number, it: any) => {
-    const qty = Number(it?.qty ?? 1);
-    const per = Number(it?.discount ?? 0);
-    if (per > 0) return sum + per * qty;
-    const orig = Number(it?.original_price ?? 0);
-    const price = Number(it?.price ?? 0);
-    if (orig > price) return sum + (orig - price) * qty;
-    return sum;
-  }, 0);
-  const charged = Number(tx.amount);
+      : [{ name: (tx.note || (isCharge ? "Charge" : "Payment")).replace(/^\[CASH\]\s*/, "").replace(/\s*\|\s*Disc:.*$/i, "").replace(/\s*\|\s*Order\s*#\s*\d+/i, "") || (isCharge ? "Charge" : "Payment"), qty: 1, price: Number(tx.amount) }];
+  const money = creditTxFigures(tx);
   const [shown, setShown] = useState<ReceiptData | null>(null);
 
   useEffect(() => {
@@ -679,21 +780,6 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
     return () => window.removeEventListener("pospro-printer-changed", refresh);
   }, []);
 
-  const receiptData = (): ReceiptData => ({
-    storeName: ownerName,
-    customerName: account.full_name,
-    orderNumber: isCharge ? "CHARGE" : "PAYMENT",
-    date: dateStr,
-    items,
-    subtotal: lineDiscount > 0 ? charged + lineDiscount : charged,
-    discount: lineDiscount > 0 ? lineDiscount : undefined,
-    originalTotal: lineDiscount > 0 ? charged + lineDiscount : undefined,
-    total: charged,
-    paid: isCharge ? 0 : charged,
-    change: 0,
-    payMode: "credit",
-  });
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -702,11 +788,59 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
         const { data } = await supabase.from("profiles").select("username, first_name").eq("id", tx.cashier_id).maybeSingle();
         serverName = (data?.first_name ?? "").trim() || data?.username || "";
       }
-      const branded = await brandReceipt({ ...receiptData(), serverName: serverName || undefined });
+
+      let orderNumber: string = isCharge ? "CHARGE" : "PAYMENT";
+      let paid = isCharge ? 0 : money.total;
+      let change = 0;
+      let payMode: "cash" | "credit" = "credit";
+      let subtotal = money.subtotal;
+      let discount = money.discount;
+      let originalTotal = money.originalTotal;
+      let total = money.total;
+
+      if (isCash) {
+        const order = await findCashOrderForTx(tx, account.owner_id);
+        payMode = "cash";
+        if (order) {
+          const stamped = orderNumberFromNote(tx.note);
+          orderNumber = String(order.order_number ?? stamped ?? "CASH");
+          paid = Number(order.paid) || 0;
+          change = Number(order.change_given) || 0;
+          const ordDisc = Number(order.discount_amount) || 0;
+          if (ordDisc > 0) {
+            const before = Number(order.original_total) || Number(order.total) + ordDisc;
+            subtotal = before;
+            discount = ordDisc;
+            originalTotal = before;
+            total = Number(order.total);
+          }
+        } else {
+          const stamped = orderNumberFromNote(tx.note);
+          orderNumber = stamped != null ? String(stamped) : "CASH";
+          paid = money.total;
+          change = 0;
+        }
+      }
+
+      const branded = await brandReceipt({
+        storeName: ownerName,
+        customerName: account.full_name,
+        orderNumber,
+        date: dateStr,
+        items,
+        subtotal,
+        discount,
+        originalTotal,
+        total,
+        paid,
+        change,
+        payMode,
+        serverName: serverName || undefined,
+      });
       if (!cancelled) setShown(branded);
     })();
     return () => { cancelled = true; };
-  }, [tx, account.full_name]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tx, account.full_name, account.owner_id, ownerName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePrint = async () => {
     setBusy("print");
@@ -718,7 +852,8 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
         if (!paired) { setBusy(null); return; }
         setPrinterPaired(true);
       }
-      const result = await printReceipt(shown ?? receiptData());
+      if (!shown) { setBusy(null); return; }
+      const result = await printReceipt(shown);
       if (result.error) toast.error(result.error);
       else toast.success("Receipt sent to printer");
     } catch (e: any) {
@@ -757,7 +892,7 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
       <div className="relative w-full max-w-sm rounded-3xl overflow-hidden border border-border shadow-2xl"
         style={{ background: "var(--gradient-card)" }} onClick={(e) => e.stopPropagation()}>
         <div className="px-5 pt-5 pb-2 flex items-center justify-between">
-          <h2 className="font-black text-lg">{isCharge ? "Charge Receipt" : "Payment Receipt"}</h2>
+          <h2 className="font-black text-lg">{isCash ? "Cash Receipt" : isCharge ? "Charge Receipt" : "Payment Receipt"}</h2>
           <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center bg-muted">
             <X className="h-4 w-4" />
           </button>
@@ -774,7 +909,7 @@ function SingleReceiptModal({ tx, account, ownerName, onClose }: {
           <div className="flex gap-2">
             <button
               onClick={handlePrint}
-              disabled={busy === "print" || pairing}
+              disabled={busy === "print" || pairing || !shown}
               className="flex-1 h-12 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 text-primary-foreground shadow-lg"
               style={{ background: "var(--gradient-hero)" }}
             >
@@ -1388,18 +1523,43 @@ function OpenedTab({ accounts, loading, onRefresh, onEdit }: {
                             🍺 TAB
                           </span>
                         )}
-                        {isTabCharge && tx.items && tx.items.length > 0 ? (
+                        {isCharge && tx.items && tx.items.length > 0 ? (
                           <div className="space-y-0.5">
+                            {isCashCharge(tx.note) && (
+                              <span className="inline-block text-[9px] font-black px-1.5 py-0.5 rounded-full mb-0.5 bg-muted text-muted-foreground">
+                                CASH
+                              </span>
+                            )}
                             {tx.items.map((item: any, i: number) => (
                               <p key={i} className="text-xs font-bold leading-snug">
                                 {item.qty}x {item.name}
                               </p>
                             ))}
+                            {(() => {
+                              const disc = creditTxFigures(tx).discount;
+                              if (!(disc != null && disc > 0)) return null;
+                              return (
+                                <p className="text-[10px] font-black" style={{ color: "#a16207" }}>
+                                  -${disc.toFixed(2)} discount
+                                </p>
+                              );
+                            })()}
                           </div>
                         ) : (
-                          <p className="text-xs font-bold leading-snug">
-                            {tx.note ?? (isCharge ? "Credit charge" : "Payment received")}
-                          </p>
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-bold leading-snug">
+                              {tx.note ?? (isCharge ? "Credit charge" : "Payment received")}
+                            </p>
+                            {(() => {
+                              const disc = creditTxFigures(tx).discount;
+                              if (!(disc != null && disc > 0)) return null;
+                              return (
+                                <p className="text-[10px] font-black" style={{ color: "#a16207" }}>
+                                  -${disc.toFixed(2)} discount
+                                </p>
+                              );
+                            })()}
+                          </div>
                         )}
                         <p className="text-[10px] text-muted-foreground mt-0.5">{date} · {time}</p>
                       </div>
@@ -1665,18 +1825,43 @@ function ClosedTab({ accounts, loading, onRefresh, onEdit }: { accounts: CreditA
                             🍺 TAB
                           </span>
                         )}
-                        {isTabCharge && tx.items && tx.items.length > 0 ? (
+                        {isCharge && tx.items && tx.items.length > 0 ? (
                           <div className="space-y-0.5">
+                            {isCashCharge(tx.note) && (
+                              <span className="inline-block text-[9px] font-black px-1.5 py-0.5 rounded-full mb-0.5 bg-muted text-muted-foreground">
+                                CASH
+                              </span>
+                            )}
                             {tx.items.map((item: any, i: number) => (
                               <p key={i} className="text-xs font-bold leading-snug">
                                 {item.qty}x {item.name}
                               </p>
                             ))}
+                            {(() => {
+                              const disc = creditTxFigures(tx).discount;
+                              if (!(disc != null && disc > 0)) return null;
+                              return (
+                                <p className="text-[10px] font-black" style={{ color: "#a16207" }}>
+                                  -${disc.toFixed(2)} discount
+                                </p>
+                              );
+                            })()}
                           </div>
                         ) : (
-                          <p className="text-xs font-bold leading-snug">
-                            {tx.note ?? (isCharge ? "Credit charge" : "Payment received")}
-                          </p>
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-bold leading-snug">
+                              {tx.note ?? (isCharge ? "Credit charge" : "Payment received")}
+                            </p>
+                            {(() => {
+                              const disc = creditTxFigures(tx).discount;
+                              if (!(disc != null && disc > 0)) return null;
+                              return (
+                                <p className="text-[10px] font-black" style={{ color: "#a16207" }}>
+                                  -${disc.toFixed(2)} discount
+                                </p>
+                              );
+                            })()}
+                          </div>
                         )}
                         <p className="text-[10px] text-muted-foreground mt-0.5">{date} · {time}</p>
                       </div>

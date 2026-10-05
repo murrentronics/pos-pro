@@ -898,7 +898,7 @@ const ProductGrid = React.memo(function ProductGrid({
   return (
     <>
       <div
-        className="grid grid-cols-4 min-[500px]:grid-cols-5 min-[640px]:grid-cols-6 min-[780px]:grid-cols-7 gap-2"
+        className="grid grid-cols-4 min-[500px]:grid-cols-5 min-[640px]:grid-cols-6 min-[780px]:grid-cols-7 min-[1100px]:grid-cols-8 gap-2"
         onContextMenu={(e) => e.preventDefault()}
       >
         {barOrdered.map((p) => (
@@ -2223,7 +2223,7 @@ export default function RegisterPage() {
                     <div>
                       {barEditMode ? (
                         <div>
-                          <div ref={barEditGridRef} className="grid grid-cols-4 min-[500px]:grid-cols-5 min-[640px]:grid-cols-6 min-[780px]:grid-cols-7 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
+                          <div ref={barEditGridRef} className="grid grid-cols-4 min-[500px]:grid-cols-5 min-[640px]:grid-cols-6 min-[780px]:grid-cols-7 min-[1100px]:grid-cols-8 gap-2" onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "pan-y" }}>
                             {barOrdered.map((p) => {
                               const inCart = cart.find((i) => i.id === p.id);
                               const outOfStock = (p.stock_qty ?? 1) === 0;
@@ -3169,7 +3169,8 @@ function CashOverlay({
         cost_price: Number(c.cost_price ?? 0),
         units_per_item: Number(c.units_per_item ?? 0),
             })),
-            note: "[CASH] " + itemsDesc,
+            note: "[CASH] " + itemsDesc
+              + (orderDiscount > 0 ? ` | Disc: -$${orderDiscount.toFixed(2)} (orig $${total.toFixed(2)})` : ""),
           },
           groupId,
         );
@@ -3247,7 +3248,9 @@ function CashOverlay({
         cost_price: Number(c.cost_price ?? 0),
         units_per_item: Number(c.units_per_item ?? 0),
         })),
-        note: "[CASH] " + itemsDesc,
+        note: "[CASH] " + itemsDesc
+          + (orderDiscount > 0 ? ` | Disc: -$${orderDiscount.toFixed(2)} (orig $${total.toFixed(2)})` : "")
+          + (savedOrderNumber != null ? ` | Order #${savedOrderNumber}` : ""),
       });
     }
 
@@ -4201,7 +4204,7 @@ function CashCustomerOverlay({
       type: "charge",
       amount: total,
       items: cart.map((c) => withSavedUnitCost({ id: c.id, name: c.name, price: c.price, qty: c.qty, units_consumed: (c as any)._units_consumed ?? null, cost_price: Number(c.cost_price ?? 0), units_per_item: Number(c.units_per_item ?? 0) })),
-      note: "[CASH] " + itemsDesc,
+      note: "[CASH] " + itemsDesc + (orderDiscount > 0 ? ` | Disc: -$${orderDiscount.toFixed(2)} (orig $${total.toFixed(2)})` : ""),
     };
 
     if (!isOnline) {
@@ -4237,7 +4240,12 @@ function CashCustomerOverlay({
     }
     // handle_order_insert trigger fires automatically — no separate stock RPC needed
 
-    await supabase.from("credit_transactions").insert(creditTxPayload);
+    await supabase.from("credit_transactions").insert({
+      ...creditTxPayload,
+      note:
+        creditTxPayload.note
+        + (savedOrderNumber != null ? ` | Order #${savedOrderNumber}` : ""),
+    });
 
     setBusy(false);
     onSuccess({

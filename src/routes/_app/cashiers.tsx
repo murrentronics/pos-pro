@@ -290,6 +290,10 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
   // Clock tab state
   const [selectedEmp, setSelectedEmp] = useState<{ id: string; username: string } | null>(null);
   const [clockBusy, setClockBusy] = useState(false);
+  const [showSetClockOut, setShowSetClockOut] = useState(false);
+  const [setClockOutDate, setSetClockOutDate] = useState("");
+  const [setClockOutTime, setSetClockOutTime] = useState("12:00");
+  const [setClockOutPeriod, setSetClockOutPeriod] = useState<"AM" | "PM">("PM");
 
   // Timesheets tab state
   const [tsSelectedDate, setTsSelectedDate] = useState<string | null>(null);
@@ -432,6 +436,31 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
     toast.success(`${openCard.employee_name} clocked out`); loadCards();
   };
 
+  const handleSetClockOut = async () => {
+    if (!openCard || !setClockOutDate || !setClockOutTime) return;
+    setClockBusy(true);
+    const localIso = shiftIso(setClockOutDate, setClockOutTime, setClockOutPeriod);
+    if (openCard.clocked_in_at && new Date(localIso) <= new Date(openCard.clocked_in_at)) {
+      toast.error("Clock out must be after clock in");
+      setClockBusy(false);
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).from("time_cards").update({ clocked_out_at: localIso }).eq("id", openCard.id);
+    setClockBusy(false);
+    if (error) { toast.error(error.message); return; }
+    const label = new Date(localIso).toLocaleString("en-US", {
+      month: "short", day: "numeric", year: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true,
+    });
+    toast.success(`${openCard.employee_name} clocked out at ${label}`);
+    setShowSetClockOut(false);
+    setSetClockOutDate("");
+    setSetClockOutTime("12:00");
+    setSetClockOutPeriod("PM");
+    loadCards();
+  };
+
   function roleLabel(emp: { role: string; job_title?: string }) {
     if (emp.role === "manager" || emp.job_title === "manager") return "Manager";
     if (emp.role === "custom" && emp.job_title) return emp.job_title;
@@ -538,17 +567,42 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
                         : <span className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(255,255,255,0.06)", color: "var(--muted-foreground)", border: "1px solid var(--border)" }}>Out</span>}
                     </button>
                     {isSel && (
-                      <div className="grid grid-cols-2 gap-3 pt-2 pb-4">
+                      <div className="grid grid-cols-3 gap-3 pt-2 pb-4">
                         <button onClick={handleClockIn} disabled={isCIn || clockBusy || !storeIsOpen}
-                          className="h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="col-span-1 h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                           style={!isCIn && storeIsOpen ? { background: "#166534", border: "1.5px solid #14532d", color: "#ffffff" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
                           {clockBusy && !isCIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />} Clock In
                         </button>
-                        <button onClick={handleClockOut} disabled={!isCIn || clockBusy}
-                          className="h-14 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                          style={isCIn ? { background: "rgba(239,68,68,0.12)", border: "1.5px solid #b91c1c", color: "#b91c1c" } : { background: "var(--gradient-card)", border: "1.5px solid var(--border)", color: "var(--muted-foreground)" }}>
-                          {clockBusy && isCIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />} Clock Out
-                        </button>
+                        <div
+                          className="col-span-2 flex h-14 rounded-2xl overflow-hidden"
+                          style={{ border: isCIn ? "1.5px solid #b91c1c" : "1.5px solid var(--border)" }}
+                        >
+                          <button
+                            onClick={handleClockOut}
+                            disabled={!isCIn || clockBusy}
+                            className="flex-1 flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{
+                              background: isCIn ? "rgba(239,68,68,0.12)" : "var(--gradient-card)",
+                              color: isCIn ? "#b91c1c" : "var(--muted-foreground)",
+                            }}
+                          >
+                            {clockBusy && isCIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                            <span className="text-sm font-black">Clock Out</span>
+                          </button>
+                          <div className="w-px" style={{ background: isCIn ? "rgba(185,28,28,0.4)" : "var(--border)" }} />
+                          <button
+                            onClick={() => setShowSetClockOut(true)}
+                            disabled={!isCIn || clockBusy}
+                            className="flex-1 flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{
+                              background: isCIn ? "rgba(239,68,68,0.12)" : "var(--gradient-card)",
+                              color: isCIn ? "#b91c1c" : "var(--muted-foreground)",
+                            }}
+                          >
+                            <CalendarDays className="h-4 w-4" />
+                            <span className="text-sm font-black">Set Clock Out</span>
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -825,6 +879,145 @@ function HoursTab({ ownerId, storeIsOpen }: { ownerId: string; storeIsOpen: bool
               })()}
         </div>
       )}
+
+      {/* Set Clock Out Dialog */}
+      <Dialog open={showSetClockOut} onOpenChange={setShowSetClockOut}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Set Clock Out Time</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 pt-2">
+            <div>
+              <Label className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-2 block">Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm font-black flex items-center justify-between gap-2 hover:bg-accent/40 transition-colors"
+                  >
+                    <span>
+                      {setClockOutDate
+                        ? new Date(setClockOutDate + "T12:00:00").toLocaleDateString("en-US", {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })
+                        : "Select date"}
+                    </span>
+                    <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 z-[200]" align="center" sideOffset={4}>
+                  <Calendar
+                    mode="single"
+                    selected={setClockOutDate ? new Date(setClockOutDate + "T12:00:00") : undefined}
+                    onSelect={(day) => {
+                      if (day) {
+                        const y = day.getFullYear();
+                        const m = String(day.getMonth() + 1).padStart(2, "0");
+                        const d = String(day.getDate()).padStart(2, "0");
+                        setSetClockOutDate(`${y}-${m}-${d}`);
+                      }
+                    }}
+                    captionLayout="dropdown"
+                    className="rounded-xl border-0"
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div>
+              <Label className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-2 block">Time</Label>
+              <div className="flex items-center gap-2">
+                <ScrollArea className="h-40 flex-1 rounded-xl border border-border">
+                  <div className="p-2 space-y-1">
+                    {Array.from({ length: 12 }).map((_, i) => {
+                      const h = i + 1;
+                      const currentHour = setClockOutTime.split(":")[0] || "12";
+                      const isSelected = parseInt(currentHour) === h;
+                      return (
+                        <button
+                          key={h}
+                          type="button"
+                          onClick={() => {
+                            const currentMins = setClockOutTime.split(":")[1] || "00";
+                            setSetClockOutTime(`${String(h).padStart(2, "0")}:${currentMins}`);
+                          }}
+                          className={`w-full h-10 rounded-lg text-sm font-black transition active:scale-95 ${
+                            isSelected
+                              ? "bg-primary text-primary-foreground"
+                              : "hover:bg-accent text-foreground"
+                          }`}
+                        >
+                          {String(h).padStart(2, "0")}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+
+                <ScrollArea className="h-40 flex-1 rounded-xl border border-border">
+                  <div className="p-2 space-y-1">
+                    {Array.from({ length: 60 }).map((_, i) => {
+                      const m = i;
+                      const isSelected = parseInt(setClockOutTime.split(":")[1] || "0") === m;
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setSetClockOutTime(`${setClockOutTime.split(":")[0] || "12"}:${String(m).padStart(2, "0")}`)}
+                          className={`w-full h-10 rounded-lg text-sm font-black transition active:scale-95 ${
+                            isSelected
+                              ? "bg-primary text-primary-foreground"
+                              : "hover:bg-accent text-foreground"
+                          }`}
+                        >
+                          {String(m).padStart(2, "0")}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setSetClockOutPeriod("AM")}
+                    className={`h-20 w-14 rounded-xl text-sm font-black transition active:scale-95 ${
+                      setClockOutPeriod === "AM"
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border hover:bg-accent text-foreground"
+                    }`}
+                  >
+                    AM
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSetClockOutPeriod("PM")}
+                    className={`h-20 w-14 rounded-xl text-sm font-black transition active:scale-95 ${
+                      setClockOutPeriod === "PM"
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border hover:bg-accent text-foreground"
+                    }`}
+                  >
+                    PM
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              onClick={() => { void handleSetClockOut(); }}
+              disabled={clockBusy || !setClockOutDate || !setClockOutTime}
+              className="w-full h-12 font-black text-base"
+              style={{ background: "var(--gradient-hero)", color: "var(--primary-foreground)" }}
+            >
+              {clockBusy ? "Saving…" : "Set Clockout"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!tsEditCard} onOpenChange={(open) => !open && setTsEditCard(null)}>
         <DialogContent className="sm:max-w-md">

@@ -276,10 +276,10 @@ function AppLayout() {
         { to: "/register",    label: "Store",       icon: ShoppingCart  },
         { to: "/credit",      label: "Customers",   icon: User          },
         ...(isOwner ? [{ to: "/products",    label: "Items",       icon: Package       }] : []),
+        { to: "/wallet",      label: "Wallet",      icon: Wallet        },
+        ...(isOwner ? [{ to: "/cashiers",    label: "Staff",       icon: Users         }] : []),
         ...(isOwner ? [{ to: "/stock-check", label: "Stock Check", icon: ClipboardList }] : []),
         { to: "/stock-count", label: "Stock Count", icon: ClipboardList },
-        ...(isOwner ? [{ to: "/cashiers",    label: "Staff",       icon: Users         }] : []),
-        { to: "/wallet",      label: "Wallet",      icon: Wallet        },
       ];
 
   return (
